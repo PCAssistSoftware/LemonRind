@@ -1799,6 +1799,19 @@ Namespace ViewModels
                     options.ModelId = SelectedModel
                 End If
 
+                ' Left unset, this falls back to Lemonade/llama.cpp's own
+                ' server-side default n_predict, which can be low enough that
+                ' a reasoning-heavy model exhausts it mid-<think> block and
+                ' never reaches real answer text - indistinguishable, from
+                ' this app's side, from the model genuinely getting stuck
+                ' (see the retry loop below). Sized off the selected model's
+                ' own context window (already known from
+                ' _modelContextWindows) so a small-context model isn't asked
+                ' for more output than it could ever produce; falls back to a
+                ' flat generous default when the context window isn't known.
+                Dim contextWindow = _modelContextWindows.GetValueOrDefault(SelectedModel, 0)
+                options.MaxOutputTokens = If(contextWindow > 0, Math.Min(contextWindow \ 2, 16384), 8192)
+
                 ' After a tool call, Qwen sometimes never properly closes its
                 ' reasoning and puts its whole real answer inside
                 ' reasoning_content, leaving the actual response text empty -
@@ -1807,6 +1820,7 @@ Namespace ViewModels
                 Dim fullReplyText = ""
                 Dim wasCancelled = False
                 Dim errorMessage As String = Nothing
+                Dim finishReason As ChatFinishReason? = Nothing
                 Const maxAttempts = 2
                 Dim attempt = 1
                 While attempt <= maxAttempts
@@ -1826,6 +1840,7 @@ Namespace ViewModels
                     fullReplyText = result.Text
                     wasCancelled = result.WasCancelled
                     errorMessage = result.ErrorMessage
+                    finishReason = result.FinishReason
 
                     ' A real error isn't retried - the empty-reply retry above
                     ' is for known model flakiness on an otherwise-working
@@ -1852,7 +1867,16 @@ Namespace ViewModels
                     assistantBubble.Text = $"⚠️ Something went wrong generating a reply: {errorMessage}" &
                         Environment.NewLine & "If you've selected a non-chat model (e.g. an embedding model) in the model dropdown above, switch back to a real chat model and try again."
                 ElseIf String.IsNullOrWhiteSpace(fullReplyText) Then
-                    assistantBubble.Text = "(No response - the model's reasoning didn't lead to an answer. Try asking again.)"
+                    ' A Length finish reason means the reply was cut off by
+                    ' MaxOutputTokens before any real answer text arrived -
+                    ' most often a reasoning-heavy model still inside its
+                    ' <think> block when the budget ran out. Worth telling
+                    ' apart from the model genuinely never producing an
+                    ' answer, since the fix for each is different (raise the
+                    ' token budget vs. just try again).
+                    assistantBubble.Text = If(finishReason = ChatFinishReason.Length,
+                        "(No response - the model's reply was cut off before it reached an answer, most likely still mid-reasoning when it ran out of output tokens. Try asking again or simplifying the request.)",
+                        "(No response - the model's reasoning didn't lead to an answer. Try asking again.)")
                 End If
 
                 ' What actually goes into history/the DB: the model's real
@@ -2115,7 +2139,7 @@ Namespace ViewModels
         ''' loop there can call this more than once without duplicating the
         ''' whole streaming/parsing block.
         ''' </summary>
-        Private Async Function StreamOneReplyAsync(bubble As ChatMessageViewModel, options As ChatOptions, volatileContextText As String, cancellationToken As CancellationToken) As Task(Of (Text As String, WasCancelled As Boolean, ErrorMessage As String))
+        Private Async Function StreamOneReplyAsync(bubble As ChatMessageViewModel, options As ChatOptions, volatileContextText As String, cancellationToken As CancellationToken) As Task(Of (Text As String, WasCancelled As Boolean, ErrorMessage As String, FinishReason As ChatFinishReason?))
             ' VB has no "await foreach" and no "Await" inside a Finally
             ' block, so the IAsyncEnumerator is walked and disposed by hand,
             ' outside any Try/Finally, rather than the C#-style "await
@@ -2124,6 +2148,7 @@ Namespace ViewModels
             Dim pendingReasoning As New Text.StringBuilder()
             Dim wasCancelled = False
             Dim errorMessage As String = Nothing
+            Dim finishReason As ChatFinishReason? = Nothing
             Dim hasStartedAnswering = False
             Dim thinkingStopwatch = Stopwatch.StartNew()
 
@@ -2145,6 +2170,7 @@ Namespace ViewModels
                 While Await enumerator.MoveNextAsync()
                     Dim update = enumerator.Current
                     fullReply.Append(update.Text)
+                    If update.FinishReason IsNot Nothing Then finishReason = update.FinishReason
 
                     ' Prompt-processing progress ("62% (ETA: 8s)") - only
                     ' meaningful before any real generation has started;
@@ -2280,7 +2306,7 @@ Namespace ViewModels
             ' once real generation actually starts.
             bubble.PromptProgressText = Nothing
 
-            Return (Text:=fullReply.ToString(), WasCancelled:=wasCancelled, ErrorMessage:=errorMessage)
+            Return (Text:=fullReply.ToString(), WasCancelled:=wasCancelled, ErrorMessage:=errorMessage, FinishReason:=finishReason)
         End Function
 
         ''' <summary>Pushes accumulated text/reasoning to the bubble's bound properties and clears the reasoning buffer - see StreamOneReplyAsync's throttling comment.</summary>
