@@ -1,0 +1,24 @@
+<Window x:Class="FileWriteApprovalDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Confirm file write" Height="380" Width="480"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False">
+
+    <StackPanel Margin="16">
+        <TextBlock Name="ActionLabelText" Text="The assistant wants to write a file:" FontWeight="Bold" Margin="0,0,0,4" />
+        <TextBlock Name="FilePathText" TextWrapping="Wrap" Margin="0,0,0,12" FontFamily="Consolas" FontSize="12" />
+
+        <TextBlock Text="Preview:" Margin="0,0,0,4" />
+        <Border BorderBrush="LightGray" BorderThickness="1" Padding="6" MaxHeight="160">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <TextBlock Name="ContentPreviewText" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12" />
+            </ScrollViewer>
+        </Border>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Name="DenyButton" Content="Deny" Padding="12,6" Margin="0,0,8,0" Click="OnDenyClick" />
+            <Button Name="AllowOnceButton" Content="Allow once" Padding="12,6" Margin="0,0,8,0" Click="OnAllowOnceClick" />
+            <Button Name="AllowSessionButton" Content="Allow for this session" Padding="12,6" Click="OnAllowSessionClick" />
+        </StackPanel>
+    </StackPanel>
+</Window>

@@ -1,0 +1,10 @@
+# Normalize line endings for everyone (git stores LF internally, checks
+# out native line endings per platform) - this repo currently has a mix
+# of CRLF (original Visual Studio scaffolding) and LF (later edits), which
+# would otherwise show up as whole-file diffs the first time each file is
+# next touched.
+* text=auto
+
+*.png binary
+*.ico binary
+*.zip binary

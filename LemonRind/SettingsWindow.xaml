@@ -1,0 +1,791 @@
+<Window x:Class="SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:converters="clr-namespace:LemonRind.Converters"
+        Title="Settings" Height="820" Width="860"
+        Icon="Assets/AppIcon.ico"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize">
+
+    <Window.Resources>
+        <converters:SectionVisibilityConverter x:Key="SectionVisibilityConverter" />
+        <converters:CountToVisibilityConverter x:Key="CountToVisibilityConverter" />
+        <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
+        <converters:InverseBooleanConverter x:Key="InverseBooleanConverter" />
+        <converters:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter" />
+
+        <!-- Shown at the top of a module-gated section (Image generation/
+             MCP Servers/Web search/File system access/Scheduler) when that
+             module is currently off - settings here still work and still
+             save, but visibly flag that they won't do anything until the
+             module's re-enabled, rather than leaving that easy to miss. -->
+        <Style x:Key="ModuleDisabledBannerStyle" TargetType="Border">
+            <Setter Property="Background" Value="#FDEBD3" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="Margin" Value="0,0,0,14" />
+        </Style>
+
+        <Style TargetType="TextBlock" x:Key="SectionHeader">
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+            <Setter Property="FontSize" Value="14" />
+        </Style>
+        <Style TargetType="TextBlock" x:Key="FieldLabel">
+            <Setter Property="Margin" Value="0,10,0,2" />
+            <Setter Property="Foreground" Value="Gray" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <!-- Every content panel shares this style: Visible only when the
+             nav ListBox's selection matches this panel's own name, via
+             ConverterParameter - see SectionVisibilityConverter. -->
+        <Style TargetType="StackPanel" x:Key="SectionPanelStyle">
+            <Setter Property="Visibility" Value="Collapsed" />
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Nav + content, matching the layout already agreed on and mocked
+             up earlier - not the single-scroll form this screen was first
+             (mistakenly) built as. -->
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="190" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <ListBox Grid.Column="0" ItemsSource="{Binding Sections}" SelectedItem="{Binding SelectedSection}"
+                     BorderThickness="0,0,1,0" BorderBrush="#E0E0E0" Padding="0,0,8,0" Background="Transparent"
+                     FontSize="15">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Padding" Value="8,8" />
+                    </Style>
+                </ListBox.ItemContainerStyle>
+            </ListBox>
+
+            <ScrollViewer Grid.Column="1" Margin="16,0,0,0" Padding="0,0,10,0" VerticalScrollBarVisibility="Auto">
+                <Grid>
+
+                    <StackPanel Style="{StaticResource SectionPanelStyle}"
+                                Visibility="{Binding SelectedSection, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=Storage}">
+                        <TextBlock Text="Storage" Style="{StaticResource SectionHeader}" />
+                        <TextBlock Text="Where the app's database (chats, memories) lives. Relative paths resolve next to the app itself, so the whole folder stays portable - copy it anywhere and its data comes with it."
+                                   Foreground="Gray" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,4" />
+                        <TextBlock Text="Data folder" Style="{StaticResource FieldLabel}" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0" Text="{Binding DataFolder, UpdateSourceTrigger=PropertyChanged}" Padding="6" />
+                            <Button Grid.Column="1" Content="Browse..." Padding="10,6" Margin="6,0,0,0" Command="{Binding BrowseForDataFolderCommand}" />
+                        </Grid>
+                        <TextBlock Margin="0,4,0,0" Foreground="Gray" FontSize="12" TextWrapping="Wrap">
+                            <Run Text="Resolves to: " /><Run Text="{Binding ResolvedDataFolderPreview, Mode=OneWay}" FontFamily="Consolas" />
+                        </TextBlock>
+                        <TextBlock Text="Changing this points the app at a different (or new, empty) database after restart - it does not move your existing data."
+                                   Foreground="Gray" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0" FontStyle="Italic" />
+                    </StackPanel>
+
+                    <StackPanel Style="{StaticResource SectionPanelStyle}"
+                                Visibility="{Binding SelectedSection, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=Lemonade}">
+                        <TextBlock Text="Lemonade server" Style="{StaticResource SectionHeader}" />
+                        <TextBlock Text="Base URL" Style="{StaticResource FieldLabel}" />
+                        <TextBox Text="{Binding LemonadeBaseUrl, UpdateSourceTrigger=PropertyChanged}" Padding="6" />
+                        <TextBlock Text="Default chat model" Style="{StaticResource FieldLabel}" />
+                        <TextBox Text="{Binding LemonadeChatModel, UpdateSourceTrigger=PropertyChanged}" Padding="6" />
+                        <TextBlock Text="Default embedding model" Style="{StaticResource FieldLabel}" />
+                        <TextBox Text="{Binding LemonadeEmbeddingModel, UpdateSourceTrigger=PropertyChanged}" Padding="6" />
+                        <TextBlock Text="API key (optional)" Style="{StaticResource FieldLabel}" />
+                        <TextBox Text="{Binding LemonadeApiKey, UpdateSourceTrigger=PropertyChanged}" Padding="6" />
+                        <TextBlock Text="Base URL/model/API key changes need an app restart to take effect."
+                                   Foreground="Gray" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0" FontStyle="Italic" />
+                    </StackPanel>
+
+                    <StackPanel Style="{StaticResource SectionPanelStyle}"
+                                Visibility="{Binding SelectedSection, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=Assistant}">
+                        <TextBlock Text="Assistant" Style="{StaticResource SectionHeader}" />
+                        <TextBlock Text="The base system prompt sent with every chat - combined with pinned facts and a running summary of older messages, never with anything specific to a single turn. Applies to new messages immediately, no restart needed."
+                                   Foreground="Gray" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,14" />
+                        <TextBlock Text="System prompt" Style="{StaticResource FieldLabel}" />
+                        <TextBox Text="{Binding SystemPrompt, UpdateSourceTrigger=PropertyChanged}" Padding="8"
+                                 AcceptsReturn="True" TextWrapping="Wrap" Height="140"
+                                 VerticalScrollBarVisibility="Auto" />
+                    </StackPanel>
+
+                    <!-- Persona is deliberately settings-authored only, not
+                         AI-self-editable via a tool (see
+                         AppSettings.PersonaSettings). "About you" is the
+                         field most directly responsible for a "feels like it
+                         knows me" effect: unlike Memories below (which only
+                         surfaces a fact when something in the current turn
+                         is similar enough to it), this is included on every
+                         single turn unconditionally. -->
+                    <StackPanel Style="{StaticResource SectionPanelStyle}"
+                                Visibility="{Binding SelectedSection, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=Persona}">
+                        <TextBlock Text="Persona" Style="{StaticResource SectionHeader}" />
+                        <TextBlock Text="Gives the assistant a consistent personality and a standing sense of who you are, so it doesn't feel like a stranger at the start of every chat. Everything here is optional - leave a field blank and it's left out of the prompt entirely, at no cost. Applies to new messages immediately, no restart needed."
+                                   Foreground="Gray" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,14" />
+
+                        <TextBlock Text="Identity (who the assistant is)" Style="{StaticResource FieldLabel}" />
+                        <TextBlock Text="A name and personality for the assistant, separate from the System prompt's operating instructions. E.g. &quot;You are Max, a dry-witted, practical assistant who prefers short, direct answers.&quot;"
+                                   Foreground="Gray" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4" />
+                        <TextBox Text="{Binding PersonaIdentity, UpdateSourceTrigger=PropertyChanged}" Padding="8"
+                                 AcceptsReturn="True" TextWrapping="Wrap" Height="80"
+                                 VerticalScrollBarVisibility="Auto" Margin="0,0,0,16" />
+
+                        <TextBlock Text="About you (who you are)" Style="{StaticResource FieldLabel}" />
+                        <TextBlock Text="A short standing bio - your name, role, and anything the assistant should always know about you. Unlike Memories, this is always included, not just when something recent seems relevant to it."
+                                   Foreground="Gray" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4" />
+                        <TextBox Text="{Binding PersonaAboutUser, UpdateSourceTrigger=PropertyChanged}" Padding="8"
+                                 AcceptsReturn="True" TextWrapping="Wrap" Height="80"
+                                 VerticalScrollBarVisibility="Auto" Margin="0,0,0,16" />
+
+                        <TextBlock Text="Writing style" FontWeight="Bold" Margin="0,0,0,6" />
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="Tone" Style="{StaticResource FieldLabel}" />
+                                <ComboBox ItemsSource="{Binding PersonaToneOptions}" SelectedItem="{Binding PersonaTone}" Padding="6" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="Verbosity" Style="{StaticResource FieldLabel}" />
+                                <ComboBox ItemsSource="{Binding PersonaVerbosityOptions}" SelectedItem="{Binding PersonaVerbosity}" Padding="6" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="4">
+                                <TextBlock Text="Emoji use" Style="{StaticResource FieldLabel}" />
+                                <ComboBox ItemsSource="{Binding PersonaEmojiUsageOptions}" SelectedItem="{Binding PersonaEmojiUsage}" Padding="6" />
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock Text="Custom instructions (anything else)" Style="{StaticResource FieldLabel}" />
+                        <TextBox Text="{Binding PersonaCustomInstructions, UpdateSourceTrigger=PropertyChanged}" Padding="8"
+                                 AcceptsReturn="True" TextWrapping="Wrap" Height="60"
+                                 VerticalScrollBarVisibility="Auto" />
+                    </StackPanel>
+
+                    <StackPanel Style="{StaticResource SectionPanelStyle}"
+                                Visibility="{Binding SelectedSection, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter='Web search'}">
+                        <TextBlock Text="Web search" Style="{StaticResource SectionHeader}" />
+                        <Border Style="{StaticResource ModuleDisabledBannerStyle}"
+                                Visibility="{Binding IsWebSearchModuleEnabled, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                            <TextBlock Text="The Web search module is currently off - these settings are saved but won't take effect until you enable it in Modules." TextWrapping="Wrap" FontSize="12" />
+                        </Border>
+
+                        <!-- This one choice controls the backend for BOTH
+                             search_web (this module) and read_webpage (Web
+                             reader module), rather than two independent
+                             settings. Only the fields for whichever engine
+                             is actually selected matter - both are always
+                             shown rather than conditionally hidden, to keep
+                             the binding simple. -->
+                        <TextBlock Text="Engine (used for both web search and page reading)" Style="{StaticResource FieldLabel}" />
+                        <ComboBox ItemsSource="{Binding WebEngineOptions}" SelectedItem="{Binding WebEngine}" Padding="6" HorizontalAlignment="Left" MinWidth="160" />
+
+                        <TextBlock Text="SearXNG base URL" Style="{StaticResource FieldLabel}" Margin="0,16,0,2" />
+                        <TextBox Text="{Binding SearXngBaseUrl, UpdateSourceTrigger=PropertyChanged}" Padding="6" />
+
+                        <TextBlock Text="Jina API key" Style="{StaticResource FieldLabel}" />
+                        <TextBlock Text="Reader (page reading) works without a key too, at a lower rate limit - Search requires one."
+                                   Foreground="Gray" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4" />
+                        <TextBox Text="{Binding JinaApiKey, UpdateSourceTrigger=PropertyChanged}" Padding="6" />
+
+                        <TextBlock Text="Tavily API key" Style="{StaticResource FieldLabel}" />
+                        <TextBlock Text="Required for both search and page reading when Tavily is the selected engine."
+                                   Foreground="Gray" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4" />
+                        <TextBox Text="{Binding TavilyApiKey, UpdateSourceTrigger=PropertyChanged}" Padding="6" />
+
+                        <TextBlock Text="Firecrawl API key" Style="{StaticResource FieldLabel}" />
+                        <TextBlock Text="Required for search and page reading when Firecrawl is the selected engine. Also unlocks the crawl_website tool (multi-page site crawling) regardless of which engine is selected."
+                                   Foreground="Gray" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4" />
+                        <TextBox Text="{Binding FirecrawlApiKey, UpdateSourceTrigger=PropertyChanged}" Padding="6" />
+                    </StackPanel>
+
+                    <StackPanel Style="{StaticResource SectionPanelStyle}"
+                                Visibility="{Binding SelectedSection, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter='File system access'}">
+                        <TextBlock Text="File system access - allowed folders" Style="{StaticResource SectionHeader}" />
+                        <Border Style="{StaticResource ModuleDisabledBannerStyle}"
+                                Visibility="{Binding IsFileSystemModuleEnabled, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                            <TextBlock Text="The File system module is currently off - these settings are saved but won't take effect until you enable it in Modules. (The Coder module also uses these same allowed folders.)" TextWrapping="Wrap" FontSize="12" />
+                        </Border>
+                        <ItemsControl ItemsSource="{Binding AllowedRoots}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding}" VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <Button Grid.Column="1" Content="Remove" Padding="8,2"
+                                                Command="{Binding DataContext.RemoveRootCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                CommandParameter="{Binding}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <Grid Margin="0,8,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0" Text="{Binding NewRootPath, UpdateSourceTrigger=PropertyChanged}" Padding="6" />
+                            <Button Grid.Column="1" Content="Add" Padding="10,6" Margin="6,0,0,0" Command="{Binding AddRootCommand}" />
+                            <Button Grid.Column="2" Content="Browse..." Padding="10,6" Margin="6,0,0,0" Command="{Binding BrowseForRootCommand}" />
+                        </Grid>
+                    </StackPanel>
+
+                    <StackPanel Style="{StaticResource SectionPanelStyle}"
+                                Visibility="{Binding SelectedSection, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=Modules}">
+                        <TextBlock Text="Enable or disable features" Style="{StaticResource SectionHeader}" />
+                        <ItemsControl ItemsSource="{Binding ModuleToggles}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <CheckBox Grid.Column="0" IsChecked="{Binding IsEnabled}" VerticalAlignment="Top" Margin="0,2,8,0" />
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Text="{Binding Name}" FontWeight="Bold" />
+                                            <TextBlock Text="{Binding Description}" Foreground="Gray" FontSize="12" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <StackPanel Style="{StaticResource SectionPanelStyle}"
+                                Visibility="{Binding SelectedSection, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=Memories}">
+                        <TextBlock Text="Memories" Style="{StaticResource SectionHeader}" />
+                        <TextBlock Text="What the assistant has learned about you over time. Edit or delete anything wrong or no longer relevant."
+                                   Foreground="Gray" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,12" />
+
+                        <TextBlock Text="Short-term memory (this chat)" FontWeight="Bold" Margin="0,0,0,6" />
+                        <TextBlock Text="Once a chat's context window gets this full, older messages are summarized and trimmed to make room - the full conversation still stays visible on screen, only what's sent to the model shrinks."
+                                   Foreground="Gray" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,4" />
+                        <!-- Slider instead of a free-text box - can't produce
+                             an invalid value in the first place (Minimum/
+                             Maximum enforce the 10-95 range at the UI level),
+                             unlike a text box + save-time clamp, which would
+                             accept anything while typing and only correct/
+                             explain itself on Save. -->
+                        <Grid Margin="0,4,0,20">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="50" />
+                            </Grid.ColumnDefinitions>
+                            <Slider Grid.Column="0" Minimum="10" Maximum="95" TickFrequency="5" IsSnapToTickEnabled="True"
+                                    Value="{Binding CompactionTriggerPercent}" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="1" Text="{Binding CompactionTriggerPercent, StringFormat={}{0}%}"
+                                       VerticalAlignment="Center" HorizontalAlignment="Right" FontWeight="Bold" Margin="8,0,0,0" />
+                        </Grid>
+
+                        <TextBlock Text="Pinned facts (always included)" FontWeight="Bold" Margin="0,0,0,6" />
+                        <ItemsControl ItemsSource="{Binding PinnedMemories}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderBrush="#E0E0E0" BorderThickness="0,0,0,1" Padding="0,8">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox Grid.Column="0" Text="{Binding Content, UpdateSourceTrigger=PropertyChanged}"
+                                                     TextWrapping="Wrap" AcceptsReturn="True" Padding="6" VerticalAlignment="Center" />
+                                            <Button Grid.Column="1" Content="Save" Padding="10,6" Margin="6,0,0,0"
+                                                    Command="{Binding DataContext.SaveMemoryEditCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                    CommandParameter="{Binding}" />
+                                            <Button Grid.Column="2" Content="Delete" Padding="10,6" Margin="6,0,0,0"
+                                                    Command="{Binding DataContext.DeleteMemoryCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                    CommandParameter="{Binding}" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="No pinned facts yet." Foreground="Gray" FontStyle="Italic" Margin="0,4,0,0"
+                                   Visibility="{Binding PinnedMemories.Count, Converter={StaticResource CountToVisibilityConverter}}" />
+
+                        <TextBlock Text="Other memories (used when relevant)" FontWeight="Bold" Margin="0,20,0,6" />
+                        <ItemsControl ItemsSource="{Binding SearchableMemories}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderBrush="#E0E0E0" BorderThickness="0,0,0,1" Padding="0,8">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox Grid.Column="0" Text="{Binding Content, UpdateSourceTrigger=PropertyChanged}"
+                                                     TextWrapping="Wrap" AcceptsReturn="True" Padding="6" VerticalAlignment="Center" />
+                                            <Button Grid.Column="1" Content="Save" Padding="10,6" Margin="6,0,0,0"
+                                                    Command="{Binding DataContext.SaveMemoryEditCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                    CommandParameter="{Binding}" />
+                                            <Button Grid.Column="2" Content="Delete" Padding="10,6" Margin="6,0,0,0"
+                                                    Command="{Binding DataContext.DeleteMemoryCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                    CommandParameter="{Binding}" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="No other memories yet." Foreground="Gray" FontStyle="Italic" Margin="0,4,0,0"
+                                   Visibility="{Binding SearchableMemories.Count, Converter={StaticResource CountToVisibilityConverter}}" />
+
+                        <TextBlock Text="{Binding MemoriesStatusText}" Foreground="Gray" Margin="0,12,0,0" />
+                    </StackPanel>
+
+                    <StackPanel Style="{StaticResource SectionPanelStyle}"
+                                Visibility="{Binding SelectedSection, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter='Knowledge Bases'}">
+                        <TextBlock Text="Knowledge Bases" Style="{StaticResource SectionHeader}" />
+                        <Border Style="{StaticResource ModuleDisabledBannerStyle}"
+                                Visibility="{Binding IsKnowledgeModuleEnabled, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                            <TextBlock Text="The Knowledge Bases module is currently off - the attach-a-knowledge-base dropdown is hidden from the main window, but your existing knowledge bases and their content are untouched. Manage/add sources here regardless." TextWrapping="Wrap" FontSize="12" />
+                        </Border>
+                        <TextBlock Text="Files, folders, websites, and pasted text you've added stay searchable across future chats - attach a knowledge base to a chat from the main window to use it there."
+                                   Foreground="Gray" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,14" />
+
+                        <TextBlock Text="New knowledge base" FontWeight="Bold" Margin="0,0,0,6" />
+                        <Grid Margin="0,0,0,20">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Name" Style="{StaticResource FieldLabel}" Margin="0,0,0,2" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="Description (optional)" Style="{StaticResource FieldLabel}" Margin="6,0,0,2" />
+                            <TextBox Grid.Row="1" Grid.Column="0" Text="{Binding NewKnowledgeBaseName, UpdateSourceTrigger=PropertyChanged}"
+                                     Padding="6" Margin="0,0,6,0" />
+                            <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding NewKnowledgeBaseDescription, UpdateSourceTrigger=PropertyChanged}"
+                                     Padding="6" Margin="0,0,6,0" />
+                            <Button Grid.Row="1" Grid.Column="2" Content="Create" Padding="12,6" VerticalAlignment="Bottom"
+                                    Command="{Binding CreateKnowledgeBaseCommand}" />
+                        </Grid>
+
+                        <ItemsControl ItemsSource="{Binding KnowledgeBases}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6" Padding="12" Margin="0,0,0,12">
+                                        <StackPanel>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="13" />
+                                                    <TextBlock Text="{Binding Description}" Foreground="Gray" FontSize="12" TextWrapping="Wrap"
+                                                               Visibility="{Binding Description, Converter={StaticResource NullToVisibilityConverter}}" />
+                                                </StackPanel>
+                                                <Button Grid.Column="1" Content="Delete knowledge base" Padding="8,4" VerticalAlignment="Top"
+                                                        Command="{Binding DataContext.DeleteKnowledgeBaseCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                        CommandParameter="{Binding}" />
+                                            </Grid>
+
+                                            <!-- Sources already ingested into this knowledge base. -->
+                                            <ItemsControl ItemsSource="{Binding Sources}" Margin="0,10,0,0">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Grid Margin="0,3">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="Auto" />
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Grid.Column="0" Text="{Binding Icon}" FontFamily="Segoe MDL2 Assets"
+                                                                       Foreground="Gray" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                                            <TextBlock Grid.Column="1" Text="{Binding DisplayName}" VerticalAlignment="Center"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       ToolTip="{Binding ErrorMessage}" />
+                                                            <TextBlock Grid.Column="2" Text="{Binding Status}" FontSize="11" Margin="8,0" VerticalAlignment="Center">
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Setter Property="Foreground" Value="Gray" />
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding Status}" Value="Ready">
+                                                                                <Setter Property="Foreground" Value="#1E8E3E" />
+                                                                            </DataTrigger>
+                                                                            <DataTrigger Binding="{Binding Status}" Value="Failed">
+                                                                                <Setter Property="Foreground" Value="#D93025" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                            </TextBlock>
+                                                            <TextBlock Grid.Column="3" Text="{Binding ChunkCount, StringFormat={}{0} chunks}"
+                                                                       Foreground="Gray" FontSize="11" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                                            <Button Grid.Column="4" Content="Remove" Padding="6,2"
+                                                                    Command="{Binding DataContext.RemoveSourceCommand, RelativeSource={RelativeSource AncestorType=ItemsControl, AncestorLevel=2}}"
+                                                                    CommandParameter="{Binding}" />
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                            <TextBlock Text="No sources yet - add one below." Foreground="Gray" FontStyle="Italic" FontSize="12" Margin="0,4,0,0"
+                                                       Visibility="{Binding Sources.Count, Converter={StaticResource CountToVisibilityConverter}}" />
+
+                                            <!-- Add-source mini-form. -->
+                                            <StackPanel Margin="0,12,0,0">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <Button Grid.Column="0" Content="Add file(s)..." Padding="10,6" Margin="0,0,6,0"
+                                                            IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBooleanConverter}}"
+                                                            Command="{Binding DataContext.AddFileSourceCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                            CommandParameter="{Binding}" />
+                                                    <Button Grid.Column="1" Content="Add folder..." Padding="10,6"
+                                                            IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBooleanConverter}}"
+                                                            Command="{Binding DataContext.AddFolderSourceCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                            CommandParameter="{Binding}" />
+                                                </Grid>
+
+                                                <TextBlock Text="Website URL" Style="{StaticResource FieldLabel}" Margin="0,8,0,2" />
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox Grid.Column="0" Text="{Binding PendingWebsiteUrl, UpdateSourceTrigger=PropertyChanged}"
+                                                             Padding="6" Margin="0,0,6,0"
+                                                             IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBooleanConverter}}" />
+                                                    <Button Grid.Column="1" Content="Add website" Padding="10,6"
+                                                            IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBooleanConverter}}"
+                                                            Command="{Binding DataContext.AddWebsiteSourceCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                            CommandParameter="{Binding}" />
+                                                </Grid>
+
+                                                <TextBlock Text="Paste text" Style="{StaticResource FieldLabel}" Margin="0,8,0,2" />
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBox Text="{Binding PendingTextName, UpdateSourceTrigger=PropertyChanged}"
+                                                                 Padding="6" Margin="0,0,0,4"
+                                                                 IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBooleanConverter}}"
+                                                                 ToolTip="Name for this source (optional)" />
+                                                        <TextBox Text="{Binding PendingTextContent, UpdateSourceTrigger=PropertyChanged}"
+                                                                 Padding="6" TextWrapping="Wrap" AcceptsReturn="True" Height="60"
+                                                                 VerticalScrollBarVisibility="Auto"
+                                                                 IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBooleanConverter}}"
+                                                                 ToolTip="The text content to add" />
+                                                    </StackPanel>
+                                                    <Button Grid.Column="1" Content="Add text" Padding="10,6" VerticalAlignment="Bottom" Margin="6,0,0,0"
+                                                            IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBooleanConverter}}"
+                                                            Command="{Binding DataContext.AddTextSourceCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                            CommandParameter="{Binding}" />
+                                                </Grid>
+
+                                                <TextBlock Text="{Binding StatusText}" Foreground="Gray" FontSize="12" Margin="0,6,0,0" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="No knowledge bases yet - create one above." Foreground="Gray" FontStyle="Italic" Margin="0,4,0,0"
+                                   Visibility="{Binding KnowledgeBases.Count, Converter={StaticResource CountToVisibilityConverter}}" />
+                    </StackPanel>
+
+                    <StackPanel Style="{StaticResource SectionPanelStyle}"
+                                Visibility="{Binding SelectedSection, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter='MCP Servers'}">
+                        <TextBlock Text="MCP Servers" Style="{StaticResource SectionHeader}" />
+                        <Border Style="{StaticResource ModuleDisabledBannerStyle}"
+                                Visibility="{Binding IsMcpModuleEnabled, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                            <TextBlock Text="The MCP module is currently off - servers are saved but won't connect until you enable it in Modules." TextWrapping="Wrap" FontSize="12" />
+                        </Border>
+                        <TextBlock Text="Connects to external MCP servers and exposes their tools to the assistant - added/edited/deleted servers reconnect immediately, no restart needed."
+                                   Foreground="Gray" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,14" />
+
+                        <TextBlock Text="Paste server config JSON" FontWeight="Bold" Margin="0,0,0,4" />
+                        <TextBlock Text="The standard config snippet most MCP servers' own docs give you, e.g. from Postmark's README - paste it as-is."
+                                   Foreground="Gray" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,4" />
+                        <TextBox Text="{Binding PendingMcpServerConfigJson, UpdateSourceTrigger=PropertyChanged}"
+                                 Padding="6" TextWrapping="Wrap" AcceptsReturn="True" Height="110"
+                                 FontFamily="Consolas" VerticalScrollBarVisibility="Auto" />
+                        <Button Content="Import" Padding="12,6" Margin="0,6,0,0" HorizontalAlignment="Left"
+                                Command="{Binding ImportMcpServerConfigJsonCommand}" />
+
+                        <TextBlock Text="Or add one manually" FontWeight="Bold" Margin="0,20,0,6" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Name" Style="{StaticResource FieldLabel}" Margin="0,0,0,2" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="Command (e.g. npx)" Style="{StaticResource FieldLabel}" Margin="6,0,0,2" />
+                            <TextBox Grid.Row="1" Grid.Column="0" Text="{Binding NewMcpServerName, UpdateSourceTrigger=PropertyChanged}" Padding="6" Margin="0,0,6,0" />
+                            <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding NewMcpServerCommand, UpdateSourceTrigger=PropertyChanged}" Padding="6" />
+                        </Grid>
+                        <TextBlock Text="Arguments (space-separated)" Style="{StaticResource FieldLabel}" Margin="0,8,0,2" />
+                        <TextBox Text="{Binding NewMcpServerArguments, UpdateSourceTrigger=PropertyChanged}" Padding="6" />
+                        <TextBlock Text="Environment variables (one KEY=VALUE per line)" Style="{StaticResource FieldLabel}" Margin="0,8,0,2" />
+                        <TextBox Text="{Binding NewMcpServerEnvironmentVariables, UpdateSourceTrigger=PropertyChanged}"
+                                 Padding="6" TextWrapping="Wrap" AcceptsReturn="True" Height="60" FontFamily="Consolas"
+                                 VerticalScrollBarVisibility="Auto" />
+                        <Button Content="Add server" Padding="12,6" Margin="0,8,0,0" HorizontalAlignment="Left"
+                                Command="{Binding CreateMcpServerCommand}" />
+
+                        <TextBlock Text="{Binding McpStatusText}" Foreground="Gray" FontSize="12" Margin="0,10,0,20" />
+
+                        <TextBlock Text="Configured servers" FontWeight="Bold" Margin="0,0,0,6" />
+                        <ItemsControl ItemsSource="{Binding McpServers}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderBrush="#E0E0E0" BorderThickness="0,0,0,1" Padding="0,8">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <CheckBox Grid.Column="0" IsChecked="{Binding IsEnabled}" VerticalAlignment="Top" Margin="0,2,10,0" />
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Text="{Binding Name}" FontWeight="Bold" />
+                                                <TextBlock FontSize="12" Foreground="Gray">
+                                                    <Run Text="{Binding Command, Mode=OneWay}" />
+                                                    <Run Text="{Binding ArgumentsDisplay, Mode=OneWay}" />
+                                                </TextBlock>
+                                                <TextBlock Text="{Binding EnvironmentVariableNamesDisplay, StringFormat='env: {0}'}" FontSize="11" Foreground="Gray"
+                                                           Visibility="{Binding EnvironmentVariableNamesDisplay, Converter={StaticResource NullToVisibilityConverter}}" />
+                                            </StackPanel>
+                                            <Button Grid.Column="2" Content="Delete" Padding="8,4" VerticalAlignment="Top"
+                                                    Command="{Binding DataContext.DeleteMcpServerCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                    CommandParameter="{Binding}" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="No MCP servers configured yet." Foreground="Gray" FontStyle="Italic" Margin="0,4,0,0"
+                                   Visibility="{Binding McpServers.Count, Converter={StaticResource CountToVisibilityConverter}}" />
+                    </StackPanel>
+
+                    <StackPanel Style="{StaticResource SectionPanelStyle}"
+                                Visibility="{Binding SelectedSection, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=Scheduler}">
+                        <TextBlock Text="Scheduler" Style="{StaticResource SectionHeader}" />
+                        <Border Style="{StaticResource ModuleDisabledBannerStyle}"
+                                Visibility="{Binding IsSchedulerModuleEnabled, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                            <TextBlock Text="The Scheduler module is currently off - jobs are saved but won't run until you enable it in Modules." TextWrapping="Wrap" FontSize="12" />
+                        </Border>
+                        <TextBlock Text="Runs a saved prompt through the assistant on a recurring schedule, with full tool access (search, files, email, knowledge bases). You can also ask the assistant to create one for you in chat, e.g. &quot;remind me every Monday at 9am to...&quot;. Cron times and the times shown below are your own local time, not UTC. Only fires while the app is running."
+                                   Foreground="Gray" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,14" />
+
+                        <TextBlock Text="New scheduled job" FontWeight="Bold" Margin="0,0,0,6" />
+                        <TextBlock Text="Name" Style="{StaticResource FieldLabel}" Margin="0,0,0,2" />
+                        <TextBox Text="{Binding NewJobName, UpdateSourceTrigger=PropertyChanged}" Padding="6" />
+
+                        <TextBlock Text="Schedule" Style="{StaticResource FieldLabel}" Margin="0,8,0,2" />
+                        <StackPanel Orientation="Horizontal">
+                            <ComboBox ItemsSource="{Binding JobFrequencyOptions}" SelectedItem="{Binding JobFrequency}" Padding="6" Margin="0,0,6,0" MinWidth="130" />
+                            <ComboBox ItemsSource="{Binding JobDayOfWeekOptions}" SelectedItem="{Binding JobDayOfWeek}" Padding="6" Margin="0,0,6,0" MinWidth="90"
+                                      Visibility="{Binding JobFrequency, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=Weekly}" />
+                            <ComboBox ItemsSource="{Binding JobDayOfMonthOptions}" SelectedItem="{Binding JobDayOfMonth}" Padding="6" Margin="0,0,6,0" MinWidth="60"
+                                      Visibility="{Binding JobFrequency, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=Monthly}" />
+                            <TextBlock Text="at" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="Gray" />
+                            <ComboBox ItemsSource="{Binding JobHourOptions}" SelectedItem="{Binding JobHour}" Padding="6" Margin="0,0,2,0" MinWidth="50">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding StringFormat={}{0:00}}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <TextBlock Text=":" VerticalAlignment="Center" Margin="0,0,2,0" />
+                            <ComboBox ItemsSource="{Binding JobMinuteOptions}" SelectedItem="{Binding JobMinute}" Padding="6" MinWidth="50">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding StringFormat={}{0:00}}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                        </StackPanel>
+
+                        <TextBlock Text="Cron expression (auto-filled above, or type your own) - order is: minute hour day month weekday" Style="{StaticResource FieldLabel}" Margin="0,8,0,2" TextWrapping="Wrap" />
+                        <TextBox Text="{Binding NewJobCronExpressionText, UpdateSourceTrigger=PropertyChanged}" Padding="6" FontFamily="Consolas"
+                                 ToolTip="Field order: minute hour day month weekday. E.g. 50 19 * * * runs at 19:50 every day." />
+
+                        <TextBlock Text="Prompt (what the assistant should do when this fires)" Style="{StaticResource FieldLabel}" Margin="0,8,0,2" />
+                        <TextBox Text="{Binding NewJobPrompt, UpdateSourceTrigger=PropertyChanged}"
+                                 Padding="6" TextWrapping="Wrap" AcceptsReturn="True" Height="70" VerticalScrollBarVisibility="Auto" />
+
+                        <TextBlock Text="Model (optional - different jobs can use different models)" Style="{StaticResource FieldLabel}" Margin="0,8,0,2" />
+                        <ComboBox ItemsSource="{Binding AvailableModels}" SelectedItem="{Binding NewJobModelId}" Padding="6" HorizontalAlignment="Left" MinWidth="220" />
+
+                        <Button Content="Add job" Padding="12,6" Margin="0,8,0,0" HorizontalAlignment="Left"
+                                Command="{Binding CreateScheduledJobCommand}" />
+
+                        <TextBlock Text="{Binding SchedulerStatusText}" Foreground="Gray" FontSize="12" Margin="0,10,0,20" TextWrapping="Wrap" />
+
+                        <TextBlock Text="Scheduled jobs" FontWeight="Bold" Margin="0,0,0,6" />
+                        <ItemsControl ItemsSource="{Binding ScheduledJobs}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderBrush="#E0E0E0" BorderThickness="0,0,0,1" Padding="0,8">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <CheckBox Grid.Column="0" IsChecked="{Binding IsEnabled}" VerticalAlignment="Top" Margin="0,4,10,0" />
+                                            <StackPanel Grid.Column="1">
+                                                <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" FontWeight="Bold" Padding="4" Margin="0,0,0,3" />
+                                                <TextBox Text="{Binding CronExpressionText, UpdateSourceTrigger=PropertyChanged}" FontSize="12" FontFamily="Consolas" Padding="4" Margin="0,0,0,3"
+                                                         ToolTip="Field order: minute hour day month weekday. E.g. 50 19 * * * runs at 19:50 every day." />
+                                                <TextBox Text="{Binding Prompt, UpdateSourceTrigger=PropertyChanged}" FontSize="12"
+                                                         TextWrapping="Wrap" AcceptsReturn="True" Padding="4" Height="50" VerticalScrollBarVisibility="Auto" Margin="0,0,0,3" />
+                                                <ComboBox ItemsSource="{Binding DataContext.AvailableModels, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                          SelectedItem="{Binding ModelId}" FontSize="12" Padding="4" HorizontalAlignment="Left" MinWidth="220" Margin="0,0,0,3" />
+                                                <TextBlock FontSize="11" Foreground="Gray" Margin="0,2,0,0">
+                                                    <Run Text="Last: " /><Run Text="{Binding LastRunDisplay, Mode=OneWay}" />
+                                                    <Run Text="  •  Next: " /><Run Text="{Binding NextRunDisplay, Mode=OneWay}" />
+                                                </TextBlock>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2" VerticalAlignment="Top">
+                                                <Button Content="Save" Padding="8,4" Margin="0,0,0,4"
+                                                        Command="{Binding DataContext.SaveScheduledJobEditCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                        CommandParameter="{Binding}" />
+                                                <Button Content="Delete" Padding="8,4"
+                                                        Command="{Binding DataContext.DeleteScheduledJobCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                        CommandParameter="{Binding}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="No scheduled jobs yet." Foreground="Gray" FontStyle="Italic" Margin="0,4,0,0"
+                                   Visibility="{Binding ScheduledJobs.Count, Converter={StaticResource CountToVisibilityConverter}}" />
+                    </StackPanel>
+
+                    <StackPanel Style="{StaticResource SectionPanelStyle}"
+                                Visibility="{Binding SelectedSection, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter='Image generation'}">
+                        <TextBlock Text="Image generation" Style="{StaticResource SectionHeader}" />
+                        <Border Style="{StaticResource ModuleDisabledBannerStyle}"
+                                Visibility="{Binding IsImageGenModuleEnabled, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                            <TextBlock Text="The Image generation module is currently off - these settings are saved but won't take effect until you enable it in Modules." TextWrapping="Wrap" FontSize="12" />
+                        </Border>
+                        <TextBlock Text="Width/height are confirmed with you every time you generate an image (these are just the dialog's starting defaults). Steps/CFG scale/seed apply to every generation quietly - different image models often want different values, so update these when you switch which image model you're using."
+                                   Foreground="Gray" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,14" />
+
+                        <TextBlock Text="Image model" Style="{StaticResource FieldLabel}" />
+                        <TextBox Text="{Binding ImageGenModelId, UpdateSourceTrigger=PropertyChanged}" Padding="6" />
+
+                        <TextBlock Text="Default size" Style="{StaticResource FieldLabel}" Margin="0,8,0,2" />
+                        <StackPanel Orientation="Horizontal">
+                            <TextBox Text="{Binding ImageGenDefaultWidth, UpdateSourceTrigger=PropertyChanged}" Padding="6" Width="80" />
+                            <TextBlock Text="×" VerticalAlignment="Center" Margin="8,0" />
+                            <TextBox Text="{Binding ImageGenDefaultHeight, UpdateSourceTrigger=PropertyChanged}" Padding="6" Width="80" />
+                        </StackPanel>
+
+                        <TextBlock Text="Steps" Style="{StaticResource FieldLabel}" Margin="0,8,0,2" />
+                        <TextBox Text="{Binding ImageGenSteps, UpdateSourceTrigger=PropertyChanged}" Padding="6" Width="80" HorizontalAlignment="Left" />
+
+                        <TextBlock Text="CFG scale" Style="{StaticResource FieldLabel}" Margin="0,8,0,2" />
+                        <TextBox Text="{Binding ImageGenCfgScale, UpdateSourceTrigger=PropertyChanged}" Padding="6" Width="80" HorizontalAlignment="Left" />
+
+                        <TextBlock Text="Seed (-1 = random every time)" Style="{StaticResource FieldLabel}" Margin="0,8,0,2" />
+                        <TextBox Text="{Binding ImageGenSeed, UpdateSourceTrigger=PropertyChanged}" Padding="6" Width="80" HorizontalAlignment="Left" />
+                    </StackPanel>
+
+                    <!-- Post-audit "Auto-backup" feature - see
+                         AutoBackupModule for the design rationale. Purely
+                         operational (no AI involvement), but gets a section
+                         here like every other module for the same reason it
+                         gets a Modules-tab toggle. -->
+                    <StackPanel Style="{StaticResource SectionPanelStyle}"
+                                Visibility="{Binding SelectedSection, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter='Auto-backup'}">
+                        <TextBlock Text="Auto-backup" Style="{StaticResource SectionHeader}" />
+                        <Border Style="{StaticResource ModuleDisabledBannerStyle}"
+                                Visibility="{Binding IsBackupModuleEnabled, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                            <TextBlock Text="The Auto-backup module is currently off - these settings are saved but won't take effect until you enable it in Modules." TextWrapping="Wrap" FontSize="12" />
+                        </Border>
+                        <TextBlock Text="Periodically zips your whole data folder (database, generated/attached images, workspace files) to a separate folder as a safety net - no AI involvement. Checked a few times a day; a new backup is made once the interval below has passed."
+                                   Foreground="Gray" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,14" />
+
+                        <TextBlock Text="Back up every (days)" Style="{StaticResource FieldLabel}" />
+                        <TextBox Text="{Binding BackupIntervalDays, UpdateSourceTrigger=PropertyChanged}" Padding="6" Width="80" HorizontalAlignment="Left" />
+
+                        <TextBlock Text="Backup folder" Style="{StaticResource FieldLabel}" />
+                        <TextBlock Text="Kept separate from your data folder on purpose - storing backups inside the folder being backed up would make each new backup include every previous one."
+                                   Foreground="Gray" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4" />
+                        <TextBox Text="{Binding BackupFolder, UpdateSourceTrigger=PropertyChanged}" Padding="6" />
+
+                        <TextBlock Text="Keep this many recent backups" Style="{StaticResource FieldLabel}" />
+                        <TextBox Text="{Binding BackupKeepCount, UpdateSourceTrigger=PropertyChanged}" Padding="6" Width="80" HorizontalAlignment="Left" />
+                    </StackPanel>
+
+                </Grid>
+            </ScrollViewer>
+        </Grid>
+
+        <Grid Grid.Row="1" Margin="0,12,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <!-- Bold/green (this app's existing "success" color - see the
+                 Modules tab's "Enabled" text), not plain gray - confirmed
+                 live plain gray plus a same-content refresh wasn't
+                 noticeable enough. Auto-clears a few seconds after being
+                 set (SettingsViewModel.ShowStatusTextTemporarily) rather
+                 than sitting until the next save, so it reads as a genuine
+                 "just happened" flash instead of a static status line. -->
+            <TextBlock Grid.Column="0" Text="{Binding StatusText}" Foreground="#3A7A3A" FontWeight="SemiBold"
+                       VerticalAlignment="Center" TextWrapping="Wrap" />
+            <!-- Content/IsEnabled both driven by SaveCommand.IsRunning
+                 (IAsyncRelayCommand's own observable property) - an
+                 immediate, hard-to-miss "Saving..." right on the button
+                 itself, rather than only the separate StatusText line
+                 below, which is easy to miss if the window gets closed
+                 right after clicking. Most saves are fast (see
+                 ModuleRegistry.ReconcileEnabledModulesAsync's comment on why
+                 a full module restart isn't forced on every save), so this
+                 is mostly a brief flash rather than a long wait, but still
+                 worth showing. -->
+            <Button Grid.Column="1" Padding="16,8" Command="{Binding SaveCommand}"
+                    IsEnabled="{Binding SaveCommand.IsRunning, Converter={StaticResource InverseBooleanConverter}}">
+                <Button.Style>
+                    <Style TargetType="Button">
+                        <Setter Property="Content" Value="Save" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding SaveCommand.IsRunning}" Value="True">
+                                <Setter Property="Content" Value="Saving..." />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+            </Button>
+        </Grid>
+    </Grid>
+</Window>

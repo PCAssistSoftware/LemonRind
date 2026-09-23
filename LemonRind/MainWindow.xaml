@@ -1,0 +1,1382 @@
+<Window x:Class="MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:LemonRind"
+        xmlns:converters="clr-namespace:LemonRind.Converters"
+        xmlns:vm="clr-namespace:LemonRind.ViewModels"
+        xmlns:data="clr-namespace:LemonRind.Data"
+        xmlns:mdxaml="clr-namespace:Markdig.Wpf;assembly=Markdig.Wpf"
+        mc:Ignorable="d"
+        Title="Lemon Rind" Height="1007" Width="1400"
+        MinHeight="500" MinWidth="900"
+        Icon="Assets/AppIcon.ico"
+        WindowStartupLocation="CenterScreen"
+        PreviewMouseDown="OnWindowPreviewMouseDown">
+
+    <Window.Resources>
+        <converters:InverseBooleanConverter x:Key="InverseBooleanConverter" />
+        <converters:BooleanToHealthBrushConverter x:Key="BooleanToHealthBrushConverter" />
+        <converters:HealthStatusTextConverter x:Key="HealthStatusTextConverter" />
+        <converters:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter" />
+        <converters:SectionVisibilityConverter x:Key="SectionVisibilityConverter" />
+        <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+
+        <!-- Groups the sessions sidebar by folder, same
+             CollectionViewSource + PropertyGroupDescription technique as
+             the model dropdown's Chat/Image/Embedding grouping.
+             ChatSessionRepository.ListSessions/SearchSessions already sort
+             folders-then-Unfiled/alphabetical/most-recent-within-folder in
+             SQL, since PropertyGroupDescription groups in first-encountered
+             order, not alphabetically - the source list's own order is what
+             actually controls group order here. -->
+        <!-- Groups the model dropdown by capability (Chat/Image/Embedding/
+             Other - see ModelSelectorItem), so an image-only or embedding-
+             only model can't be mistaken for a chat model - picking an
+             image model as the active chat model would otherwise produce a
+             confusing HTTP 400 with no warning beforehand. AvailableModels
+             is already sorted by CategorySortOrder in
+             MainViewModel.InitializeAsync, since PropertyGroupDescription
+             groups in first-encountered order, not alphabetically. -->
+        <CollectionViewSource x:Key="GroupedAvailableModels" Source="{Binding AvailableModels}">
+            <CollectionViewSource.GroupDescriptions>
+                <PropertyGroupDescription PropertyName="Category" />
+            </CollectionViewSource.GroupDescriptions>
+        </CollectionViewSource>
+
+        <!-- Round icon button (Send/Stop) - Button has no CornerRadius of its
+             own, so this replaces its whole visual with a circular Border.
+             A fully custom ControlTemplate like this one replaces ALL of
+             the default theme's Button visuals, including its own built-in
+             IsEnabled dimming - without the IsEnabled trigger below, a
+             disabled Send button would show literally no visual change at
+             all when clicking does nothing (e.g. no model loaded/loading,
+             or empty input). -->
+        <Style x:Key="CircleIconButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="36" />
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Background" Value="#007AFF" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ButtonBorder" Background="{TemplateBinding Background}" CornerRadius="18">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <!-- Custom templates like this one replace the
+                             default Button visuals entirely, including the
+                             built-in mouseover/pressed feedback - these
+                             Triggers put that back by darkening the same
+                             Border on hover/press. -->
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#0064D6" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#0052AD" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#B0B0B0" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Same shape as CircleIconButtonStyle but red, specifically for
+             Stop, since Send and Stop are opposite actions (start vs
+             interrupt generation) and shouldn't share the same colour. A
+             separate style rather than a parameterized colour, matching
+             this app's existing pattern of one named style per
+             colour/purpose (CircleIconButtonStyle vs
+             CircleSecondaryButtonStyle). -->
+        <Style x:Key="CircleStopButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="36" />
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Background" Value="#FF3B30" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ButtonBorder" Background="{TemplateBinding Background}" CornerRadius="18">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#E0352B" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#C72E24" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#B0B0B0" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Full-width pill-shaped button (rounded ends, white/bordered,
+             gray hover/press darken) - shared by New chat, the sidebar
+             Settings button, and the Modules tab's "Manage in Settings"
+             button. Extracted here after the third near-identical inline
+             ControlTemplate showed up - the first two were fine
+             duplicated once, a third was the signal to share it. -->
+        <Style x:Key="PillButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="White" />
+            <Setter Property="BorderBrush" Value="#D0D0D0" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ButtonBorder" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="18" Padding="0,10">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#F5F5F5" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#EBEBEB" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Same circular shape as CircleIconButtonStyle (Send) but white/
+             bordered rather than filled blue - for secondary actions like
+             Settings, which shouldn't look as visually "loud" as the
+             primary Send action. -->
+        <Style x:Key="CircleSecondaryButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="36" />
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Background" Value="White" />
+            <Setter Property="BorderBrush" Value="#D0D0D0" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="Gray" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ButtonBorder" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="18">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#F2F2F2" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#E5E5E5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Rounded ComboBox (the model selector). Unlike Button/TextBox, a
+             ComboBox's default template has its own internal chrome (the
+             dropdown-arrow ToggleButton) that keeps its square corners and
+             background even when the outer ComboBox's own
+             Background/BorderThickness are overridden - wrapping it in a
+             rounded Border (the trick used for the search box and New chat
+             button) left a visibly square shape underneath the rounded one.
+             This replaces the whole template instead: a rounded
+             ToggleButton for the visible box + arrow, a borderless
+             ContentPresenter showing the current selection on top of it, and
+             a separately-styled rounded Popup for the dropdown list. -->
+        <Style x:Key="RoundedComboBoxStyle" TargetType="ComboBox">
+            <Setter Property="Background" Value="White" />
+            <Setter Property="BorderBrush" Value="#D0D0D0" />
+            <Setter Property="BorderThickness" Value="1" />
+            <!-- Right padding is wider than the others (28 vs 12) to
+                 explicitly reserve room for the dropdown arrow, so long
+                 model names can't grow into and overlap it. -->
+            <Setter Property="Padding" Value="12,8,28,8" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="ToggleButton"
+                                          IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
+                                          ClickMode="Press" Focusable="False">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="ToggleBorder"
+                                                Background="{Binding Background, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                BorderBrush="{Binding BorderBrush, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                BorderThickness="{Binding BorderThickness, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                CornerRadius="18">
+                                            <TextBlock Text="&#9662;" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                       Margin="0,0,12,0" Foreground="Gray" FontSize="10" />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="ToggleBorder" Property="Background" Value="#F5F5F5" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <ContentPresenter x:Name="ContentSite" IsHitTestVisible="False"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              Margin="{TemplateBinding Padding}"
+                                              HorizontalAlignment="Left" VerticalAlignment="Center" />
+                            <Popup x:Name="Popup" Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   AllowsTransparency="True" Focusable="False" PopupAnimation="Slide">
+                                <Border Background="White" BorderBrush="#D0D0D0" BorderThickness="1" CornerRadius="8"
+                                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                                        MaxHeight="240" Margin="0,4,0,0" Padding="4">
+                                    <!-- CanContentScroll="False" - the default
+                                         True uses the ItemsPresenter's panel's
+                                         own logical/item-based scrolling
+                                         (jumps by a whole item/group per
+                                         "unit" instead of smoothly by pixel),
+                                         which looks broken once grouping is
+                                         involved (jumps between groups rather
+                                         than scrolling smoothly). False forces
+                                         ordinary pixel-based scrolling
+                                         instead - fine for a dropdown this
+                                         size, no real virtualization benefit
+                                         needed here. -->
+                                    <ScrollViewer x:Name="DropDownScrollViewer" VerticalScrollBarVisibility="Auto" CanContentScroll="False">
+                                        <ItemsPresenter />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- One style for every bubble, then a DataTrigger flips alignment/color
+             based on IsUser, rather than two separate templates. -->
+        <Style x:Key="BubbleBorderStyle" TargetType="Border">
+            <Setter Property="CornerRadius" Value="16" />
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="Margin" Value="8,4" />
+            <Setter Property="MaxWidth" Value="500" />
+            <Setter Property="Background" Value="#E5E5EA" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsUser}" Value="True">
+                    <Setter Property="Background" Value="#007AFF" />
+                    <Setter Property="HorizontalAlignment" Value="Right" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <!-- Right-click menu for the read-only text boxes below - plain
+             click-drag selection over a long, multi-paragraph reply is
+             fiddly, so this gives an explicit, discoverable "Select All"
+             rather than relying on Ctrl+A. Command targets the
+             TextBox the menu was opened on automatically - standard WPF
+             routed-command behavior, no code-behind needed. -->
+        <ContextMenu x:Key="SelectableTextContextMenu">
+            <MenuItem Header="Copy" Command="ApplicationCommands.Copy" />
+            <MenuItem Header="Select all" Command="ApplicationCommands.SelectAll" />
+        </ContextMenu>
+
+        <!-- A read-only TextBox rather than a TextBlock - TextBlock has no
+             built-in text selection, so bubble content couldn't be
+             copy-pasted at all. Styled to be visually indistinguishable from
+             plain text (no border/background/padding/caret of its own). -->
+        <Style x:Key="BubbleTextStyle" TargetType="TextBox">
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Foreground" Value="#1C1C1E" />
+            <Setter Property="IsReadOnly" Value="True" />
+            <!-- WPF's TextBox tracks an undo history for every Text change
+                 by default, including programmatic ones from data binding -
+                 not just user keystrokes. A long streamed reply fires
+                 hundreds/thousands of small Text updates, so that undo stack
+                 would grow unbounded and eventually stall the UI thread
+                 mid-stream. Undo serves no purpose on a read-only display
+                 anyway. -->
+            <Setter Property="IsUndoEnabled" Value="False" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Cursor" Value="IBeam" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="ContextMenu" Value="{StaticResource SelectableTextContextMenu}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsUser}" Value="True">
+                    <Setter Property="Foreground" Value="White" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Same "white on the blue user bubble, dark on the gray assistant
+             bubble" rule as BubbleTextStyle above, for the rendered-Markdown
+             view (see MainWindow.xaml's message DataTemplate) - without this
+             the user's own message would show near-black text on a blue
+             background, hard to read. -->
+        <Style x:Key="MarkdownBubbleStyle" TargetType="mdxaml:MarkdownViewer">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#1C1C1E" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsUser}" Value="True">
+                    <Setter Property="Foreground" Value="White" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Caps a generated image's on-screen size so it can't blow out the
+             chat bubble's width; Markdig.Wpf's image renderer looks this
+             style up by this exact ComponentResourceKey whenever an
+             assistant reply's Markdown includes an image, so nothing else
+             needs to reference this directly. -->
+        <Style x:Key="{x:Static mdxaml:Styles.ImageStyleKey}" TargetType="Image">
+            <Setter Property="MaxWidth" Value="360" />
+            <Setter Property="MaxHeight" Value="360" />
+            <Setter Property="Stretch" Value="Uniform" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="Margin" Value="0,4,0,4" />
+        </Style>
+
+        <!-- Wraps the avatar + (optional reasoning Expander + tool chips +
+             bubble Border) together so the whole message aligns the same way
+             (right for the user, left for the assistant) as one visual unit.
+             TargetType is FrameworkElement (not a specific element type) -
+             HorizontalAlignment is defined there and inherited by every
+             layout element, and this style is applied to a Grid (needed for
+             the avatar's own column). -->
+        <Style x:Key="MessageContainerStyle" TargetType="FrameworkElement">
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsUser}" Value="True">
+                    <Setter Property="HorizontalAlignment" Value="Right" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="280" MinWidth="180" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="260" MinWidth="200" />
+        </Grid.ColumnDefinitions>
+
+        <!-- Sessions sidebar - "organize/search chats". Folder/tag grouping
+             isn't in the UI yet even though the schema already supports it
+             (see Data\AppDatabase.vb's comment) - this is a flat, searchable
+             list for now. -->
+        <Grid Grid.Column="0" Margin="12,12,6,12" Background="Transparent">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Button Grid.Row="0" Command="{Binding NewChatCommand}" Margin="0,0,0,10" Style="{StaticResource PillButtonStyle}">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="+" FontWeight="Bold" FontSize="14" Margin="0,0,6,0" />
+                    <TextBlock Text="New chat" FontSize="14" />
+                </StackPanel>
+            </Button>
+
+            <!-- Rounded search box with a magnifying-glass icon and a
+                 placeholder label shown only while SearchText is empty (a
+                 plain TextBox has no native placeholder support in WPF). -->
+            <Grid Grid.Row="1" Margin="0,0,0,10">
+                <Border CornerRadius="16" BorderBrush="#D0D0D0" BorderThickness="1" Background="White">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="&#128269;" Margin="10,0,4,0" VerticalAlignment="Center"
+                                   FontSize="13" Foreground="Gray" />
+                        <TextBox Grid.Column="1" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                 BorderThickness="0" Background="Transparent" Padding="0,8,10,8"
+                                 FontSize="14" VerticalContentAlignment="Center" />
+                    </Grid>
+                </Border>
+                <TextBlock Text="Search chats" Foreground="Gray" FontSize="14" Margin="34,0,0,0"
+                           VerticalAlignment="Center" IsHitTestVisible="False">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding SearchText}" Value="">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </Grid>
+
+            <!-- Deliberately NOT using IsEnabled to block switching sessions
+                 mid-reply - a disabled ListBox falls back to the OS theme's
+                 default "disabled control" palette, which rendered as a
+                 jarring tan/peach wash over the whole sidebar in testing.
+                 IsHitTestVisible blocks the same interactions; Opacity gives
+                 a deliberate, theme-independent dim instead. -->
+            <ListBox Grid.Row="2" Name="SessionsListBox" ItemsSource="{Binding SidebarItems}"
+                     SelectedItem="{Binding SelectedSidebarItem}"
+                     IsHitTestVisible="{Binding IsBusy, Converter={StaticResource InverseBooleanConverter}}"
+                     HorizontalContentAlignment="Stretch"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     BorderThickness="0" Background="Transparent">
+                <ListBox.Style>
+                    <Style TargetType="ListBox">
+                        <Setter Property="Opacity" Value="1" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsBusy}" Value="True">
+                                <Setter Property="Opacity" Value="0.5" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ListBox.Style>
+                <!-- Replaces the default sharp-cornered selection rectangle
+                     with a soft rounded highlight (selected/hover), matching
+                     the mockup - the default ListBoxItem template has no
+                     CornerRadius to set via a plain Style, so this swaps the
+                     whole item template for one built around a Border. -->
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Padding" Value="10,8" />
+                        <!-- Right margin only - leaves a gap between the
+                             rounded selection/hover highlight and the
+                             ListBox's own vertical scrollbar track, which
+                             would otherwise touch directly and make the
+                             highlight look like it runs under the
+                             scrollbar. -->
+                        <Setter Property="Margin" Value="0,1,6,1" />
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListBoxItem">
+                                    <Border x:Name="RowBorder" Background="Transparent" CornerRadius="8"
+                                            Padding="{TemplateBinding Padding}">
+                                        <ContentPresenter />
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter TargetName="RowBorder" Property="Background" Value="#E5E5EA" />
+                                        </Trigger>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="RowBorder" Property="Background" Value="#F2F2F2" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </ListBox.ItemContainerStyle>
+                <!-- SidebarItems mixes FolderHeaderSummary and
+                     ChatSessionSummary rows in one flat list (a collapsed
+                     folder's sessions are simply omitted, not hidden via
+                     Visibility), so each gets its own implicit,
+                     DataType-keyed template here instead of a single
+                     ListBox.ItemTemplate - WPF picks the matching one per
+                     item automatically. -->
+                <ListBox.Resources>
+                    <!-- "Unfiled" (no real Folders row) renders without a
+                         chevron and isn't clickable - IsCollapsible is False
+                         for it (see FolderHeaderSummary/RebuildSidebarItems). -->
+                    <DataTemplate DataType="{x:Type vm:FolderHeaderSummary}">
+                        <Button Command="{Binding ToggleExpandedCommand}" Background="Transparent" BorderThickness="0"
+                                Padding="0" HorizontalContentAlignment="Left" Cursor="Hand"
+                                IsHitTestVisible="{Binding IsCollapsible}">
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,4">
+                                <!-- Segoe MDL2 Assets chevrons (same icon
+                                     font already used for the gear/log
+                                     icons elsewhere), not black-triangle
+                                     Unicode glyphs - those render visibly
+                                     thinner pointing right than pointing
+                                     down at the same size. Purpose-built
+                                     chevron icons render with consistent
+                                     weight in both orientations. -->
+                                <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="#3C3C43" Width="16" VerticalAlignment="Center"
+                                           Visibility="{Binding IsCollapsible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Text" Value="&#xE70D;" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsCollapsed}" Value="True">
+                                                    <Setter Property="Text" Value="&#xE76C;" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                                <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="11" Foreground="Gray"
+                                           Margin="6,0,0,0" />
+                            </StackPanel>
+                        </Button>
+                    </DataTemplate>
+
+                    <DataTemplate DataType="{x:Type data:ChatSessionSummary}">
+                        <!-- Outer Grid adds a second row for tag chips
+                             below the title/icons row, plus a right-click
+                             menu for folder/tag assignment. -->
+                        <Grid Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=ListBox}}">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <!-- Neither RelativeSource AncestorType=ListBox
+                                 nor ElementName=SessionsListBox works here -
+                                 a ContextMenu opens in its own separate
+                                 visual tree (like a Popup), which breaks
+                                 RelativeSource FindAncestor, and
+                                 ElementName resolution too, in this
+                                 templated-ItemsControl-per-row setup.
+                                 PlacementTarget is the reliable fix: WPF
+                                 always keeps it pointing at whichever
+                                 element the context menu was actually
+                                 opened on (this Grid), regardless of
+                                 NameScope/visual-tree timing - this Grid's
+                                 own Tag is bound (above, via a binding that
+                                 DOES work, since it's declared directly on
+                                 an element genuinely inside the ListBox's
+                                 visual tree) to MainViewModel, so
+                                 PlacementTarget.Tag reaches it from inside
+                                 the popup. CommandParameter goes through
+                                 PlacementTarget.DataContext (this row's own
+                                 ChatSessionSummary) the same way, rather
+                                 than relying on the MenuItem's own inherited
+                                 DataContext. -->
+                            <Grid.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Move to folder..."
+                                              Command="{Binding PlacementTarget.Tag.MoveToFolderCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                              CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                    <MenuItem Header="Manage tags..."
+                                              Command="{Binding PlacementTarget.Tag.ManageTagsCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                              CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                    <MenuItem Header="Export to Markdown..."
+                                              Command="{Binding PlacementTarget.Tag.ExportChatToMarkdownCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                              CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                </ContextMenu>
+                            </Grid.ContextMenu>
+
+                            <!-- Two rows for the same slot (display vs. edit),
+                                 toggled by IsEditing - see MainViewModel's
+                                 StartRename/CommitRename/CancelRename. Clicking
+                                 anywhere else in the window (even a non-focusable
+                                 area like the message bubbles) commits it too -
+                                 see MainWindow.xaml.vb's OnWindowPreviewMouseDown. -->
+                            <Grid Grid.Row="0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Column="0" Text="{Binding Title}" TextTrimming="CharacterEllipsis"
+                                           FontSize="14" Padding="6,4" ToolTip="{Binding Title}"
+                                           Visibility="{Binding IsEditing, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+
+                                <TextBox Grid.Column="0" Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}"
+                                         FontSize="14" Padding="4" Margin="2"
+                                         Visibility="{Binding IsEditing, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <TextBox.InputBindings>
+                                        <KeyBinding Key="Return"
+                                                    Command="{Binding DataContext.CommitRenameCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                    CommandParameter="{Binding}" />
+                                        <KeyBinding Key="Escape"
+                                                    Command="{Binding DataContext.CancelRenameCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                                    CommandParameter="{Binding}" />
+                                    </TextBox.InputBindings>
+                                </TextBox>
+
+                                <!-- Pencil (rename) + trash (delete) icons, both
+                                     hidden while this row is being edited. -->
+                                <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                            Visibility="{Binding IsEditing, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                                    <Button Content="&#9998;" Width="22" Padding="0" BorderThickness="0"
+                                            Background="Transparent" ToolTip="Rename"
+                                            Command="{Binding DataContext.StartRenameCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                            CommandParameter="{Binding}" />
+                                    <Button Content="&#128465;" Width="22" Padding="0" BorderThickness="0"
+                                            Background="Transparent" ToolTip="Delete"
+                                            Command="{Binding DataContext.DeleteSessionCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                            CommandParameter="{Binding}" />
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Tag chips - same small-pill styling already
+                                 used for tool-call/file-attachment chips
+                                 elsewhere in this window. Collapsed
+                                 entirely (via the WrapPanel having nothing
+                                 to show) rather than reserving empty space
+                                 when a session has no tags. -->
+                            <ItemsControl Grid.Row="1" ItemsSource="{Binding Tags}" Margin="6,0,0,2"
+                                          Visibility="{Binding IsEditing, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="#E5E5EA" CornerRadius="8" Padding="6,1" Margin="0,0,4,4">
+                                            <TextBlock Text="{Binding}" FontSize="10" Foreground="Gray" />
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.Resources>
+            </ListBox>
+
+            <!-- Bottom-of-sidebar is the common place other apps (VS Code,
+                 Spotify, Claude Desktop) put Settings, and a full-width
+                 labelled button is easier to spot than a small icon-only
+                 one. -->
+            <Button Grid.Row="3" Command="{Binding OpenSettingsCommand}" Margin="0,10,0,0" Style="{StaticResource PillButtonStyle}">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="14" Margin="0,0,8,0" />
+                    <TextBlock Text="Settings" FontSize="14" />
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
+                      VerticalAlignment="Stretch" Background="#E0E0E0" ShowsPreview="True" />
+
+        <Grid Grid.Column="2" Margin="6,12,12,12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Model selector header. SelectedItem is two-way bound straight to
+             SelectedModel - picking a different item in the dropdown is what
+             triggers MainViewModel's Lemonade /v1/load call (see
+             MainViewModel.SelectedModel's setter). -->
+        <Grid Grid.Row="0" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- SelectedValue/SelectedValuePath, not SelectedItem - AvailableModels
+                 now holds ModelSelectorItem objects (for grouping), but
+                 SelectedModel itself must stay a plain String (it's used
+                 directly as ChatOptions.ModelId and in Lemonade /v1/load
+                 calls elsewhere) - SelectedValuePath="Id" keeps that
+                 unchanged. ItemTemplate, not DisplayMemberPath - confirmed
+                 elsewhere in this app that DisplayMemberPath is unreliable
+                 against this ComboBox's fully custom ControlTemplate
+                 (showed the raw object's ToString() instead), while an
+                 explicit ItemTemplate correctly drives both the dropdown
+                 list and the closed box's display. -->
+            <!-- DropDownOpened="OnModelComboBoxDropDownOpened" - a ComboBox
+                 auto-scrolls its dropdown to the currently selected item
+                 when it opens (Selector's own default behavior), which
+                 looks like a jarring jump once the list has group headers.
+                 The handler resets scroll position to the top instead,
+                 every time it opens. -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                <ComboBox MinWidth="280" Style="{StaticResource RoundedComboBoxStyle}"
+                          ItemsSource="{Binding Source={StaticResource GroupedAvailableModels}}"
+                          SelectedValue="{Binding SelectedModel, UpdateSourceTrigger=PropertyChanged}"
+                          SelectedValuePath="Id"
+                          IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBooleanConverter}}"
+                          DropDownOpened="OnModelComboBoxDropDownOpened">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Id}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                    <ComboBox.GroupStyle>
+                        <GroupStyle>
+                            <GroupStyle.HeaderTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="11" Foreground="Gray" Margin="6,6,0,2" />
+                                </DataTemplate>
+                            </GroupStyle.HeaderTemplate>
+                        </GroupStyle>
+                    </ComboBox.GroupStyle>
+                </ComboBox>
+
+                <!-- Opens ModelDetailsDialog for whichever model
+                     is currently selected. Only actually off while there's no
+                     model loaded yet or one is actively loading (IsModelDetails
+                     Available) - deliberately narrower than IsBusy, which also
+                     covers an ordinary reply streaming, since this should
+                     stay usable mid-reply. Uses
+                     IsHitTestVisible + Opacity rather than IsEnabled, same
+                     reasoning as the sidebar's own session list (see its
+                     comment) - a disabled plain Button falls back to the OS
+                     theme's own disabled chrome, which rendered as an ugly
+                     grey background box around this icon-only button, not
+                     just a dimmed icon. -->
+                <Button Content="&#x24D8;" FontSize="16" Foreground="Gray" Background="Transparent" BorderThickness="0"
+                        Padding="6,0" Margin="4,0,0,0" Cursor="Hand" ToolTip="Model details"
+                        Command="{Binding OpenModelDetailsCommand}"
+                        IsHitTestVisible="{Binding IsModelDetailsAvailable}">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Opacity" Value="1" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsModelDetailsAvailable}" Value="False">
+                                    <Setter Property="Opacity" Value="0.35" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+            </StackPanel>
+
+            <!-- Settings lives at the bottom of the sidebar (see the left
+                 panel's own Grid) - this column just carries StatusText
+                 here. -->
+            <TextBlock Grid.Column="1" Text="{Binding StatusText}" Foreground="Gray"
+                       VerticalAlignment="Center" Margin="12,0,0,0" TextTrimming="CharacterEllipsis" />
+
+            <!-- Health dot + label: green/"healthy" when Lemonade's
+                 /v1/health last reported status "ok", red/"unreachable"
+                 otherwise. Right-aligned at the far edge of the header row,
+                 away from the model dropdown so it doesn't crowd it. A
+                 clickable Button (retries immediately) with the detailed
+                 error as a ToolTip rather than in the shared StatusText
+                 field, which doesn't have room for a long connection-refused
+                 message without crowding out everything else in the header.
+                 WPF suppresses a ToolTip binding that's Nothing, so nothing
+                 shows while healthy. -->
+            <Button Grid.Column="2" Command="{Binding RetryConnectionCommand}" Cursor="Hand"
+                    Background="Transparent" BorderThickness="0" Padding="0" Margin="12,0,0,0"
+                    HorizontalContentAlignment="Left" VerticalAlignment="Center"
+                    ToolTip="{Binding LastHealthCheckError}">
+                <StackPanel Orientation="Horizontal">
+                    <Ellipse Width="10" Height="10" Margin="0,0,6,0" VerticalAlignment="Center"
+                             Fill="{Binding IsHealthy, Converter={StaticResource BooleanToHealthBrushConverter}}" />
+                    <TextBlock Text="Lemonade" FontSize="12" Foreground="Gray" />
+                    <TextBlock Text="{Binding IsHealthy, Converter={StaticResource HealthStatusTextConverter}}"
+                               FontSize="12" Foreground="Gray" Margin="4,0,0,0" />
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <!-- VirtualizingStackPanel keeps this cheap even with a long chat
+             history, since only on-screen bubbles get realized. -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                      x:Name="MessagesScrollViewer">
+            <ItemsControl ItemsSource="{Binding Messages}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <!-- Outer StackPanel just to stack the optional date
+                             divider above the per-message Grid -
+                             the divider itself needs to be centered/full-
+                             width, independent of MessageContainerStyle's
+                             own left/right alignment logic on the Grid
+                             below. -->
+                        <StackPanel>
+                            <Border HorizontalAlignment="Center" Background="#F0F0F0" CornerRadius="10"
+                                    Padding="10,3" Margin="0,12,0,8"
+                                    Visibility="{Binding DateDividerText, Converter={StaticResource NullToVisibilityConverter}}">
+                                <TextBlock Text="{Binding DateDividerText}" FontSize="11" FontWeight="SemiBold" Foreground="Gray" />
+                            </Border>
+
+                            <!-- Grid rather than a plain StackPanel so a small
+                                 avatar can sit to the left of assistant messages
+                                 only - the avatar
+                                 column contributes zero width for user messages
+                                 since Visibility=Collapsed elements don't reserve
+                                 layout space, so the Grid still right-aligns
+                                 correctly via MessageContainerStyle. ToolTip
+                                 gives the exact send time on hover,
+                                 deliberately not shown as always-visible text,
+                                 since a timestamp on every bubble reads as
+                                 cluttered. -->
+                            <Grid Style="{StaticResource MessageContainerStyle}"
+                                  ToolTip="{Binding CreatedAt, StringFormat='dd/MM/yyyy HH:mm'}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <Border Grid.Column="0" Width="26" Height="26" CornerRadius="13"
+                                    Background="#E5E5EA" VerticalAlignment="Top" Margin="0,6,6,0"
+                                    Visibility="{Binding IsUser, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                                <TextBlock Text="&#129302;" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+
+                            <StackPanel Grid.Column="1">
+                            <!-- Attached-file chip - only present on a user
+                                 message that had a file attached; see
+                                 ChatMessageViewModel.AttachedFileName's
+                                 comment for why this is live-session-only. -->
+                            <Border Background="#D6EAF8" CornerRadius="10" Padding="8,2" Margin="8,4,8,0"
+                                    HorizontalAlignment="Left"
+                                    Visibility="{Binding AttachedFileName, Converter={StaticResource NullToVisibilityConverter}}">
+                                <TextBlock FontSize="11" Foreground="#1B4F72">
+                                    <Run Text="&#128206; " />
+                                    <Run Text="{Binding AttachedFileName, Mode=OneWay}" />
+                                </TextBlock>
+                            </Border>
+
+                            <!-- Attached-image thumbnail - a real
+                                 Image control, not the Markdown pipeline
+                                 (that one's for the assistant's own
+                                 generated-image replies), sized
+                                 the same as a generated image's own cap so
+                                 both read consistently at a glance. -->
+                            <Image Source="{Binding AttachedImagePath}" MaxWidth="360" MaxHeight="360" Stretch="Uniform"
+                                   HorizontalAlignment="Left" Margin="8,4,8,0"
+                                   Visibility="{Binding AttachedImagePath, Converter={StaticResource NullToVisibilityConverter}}" />
+
+                            <!-- Prompt-processing progress ("62% (ETA: 8s)") -
+                                 shown independently of the Expander below,
+                                 since it only exists BEFORE any reasoning/
+                                 answer token has arrived at all (HasReasoning
+                                 is still False the whole time this is
+                                 visible, so it can't live inside that
+                                 Expander's own gated visibility). Cleared by
+                                 MainViewModel the moment real content starts
+                                 streaming - see StreamOneReplyAsync. -->
+                            <TextBlock Text="{Binding PromptProgressText}" FontSize="12" Foreground="Gray"
+                                       Margin="8,4,8,0"
+                                       Visibility="{Binding PromptProgressText, Converter={StaticResource NullToVisibilityConverter}}" />
+
+                            <!-- Collapsible "thinking" panel - only present
+                                 (Visibility, not just Collapsed content) when
+                                 the model actually returned reasoning_content
+                                 for this message; starts collapsed, matching
+                                 the standard chat-UI "Thoughts" convention.
+                                 Header shows elapsed thinking time once known
+                                 (MainViewModel times it), "Thinking" while
+                                 still in progress. -->
+                            <Expander Header="{Binding ThinkingHeaderText}" IsExpanded="{Binding IsReasoningExpanded}"
+                                      Margin="8,4,8,0" FontSize="12" Foreground="Gray"
+                                      MaxWidth="500" HorizontalAlignment="Stretch">
+                                <Expander.Visibility>
+                                    <Binding Path="HasReasoning">
+                                        <Binding.Converter>
+                                            <BooleanToVisibilityConverter />
+                                        </Binding.Converter>
+                                    </Binding>
+                                </Expander.Visibility>
+                                <!-- Same read-only-TextBox trick as the reply
+                                     bubble (BubbleTextStyle) so the thinking
+                                     text can be selected/copied too. -->
+                                <TextBox Text="{Binding ReasoningText, Mode=OneWay}" TextWrapping="Wrap"
+                                         Foreground="Gray" FontSize="12" Margin="4"
+                                         IsReadOnly="True" IsUndoEnabled="False" BorderThickness="0" Background="Transparent"
+                                         Padding="0" Cursor="IBeam" FocusVisualStyle="{x:Null}"
+                                         ContextMenu="{StaticResource SelectableTextContextMenu}" />
+                            </Expander>
+
+                            <!-- Tool-call chips - one per distinct tool used
+                                 for this reply. An empty ToolCalls collection
+                                 just renders as nothing, no extra visibility
+                                 binding needed. A real ✓/✗ per call
+                                 (Succeeded, from the matching
+                                 FunctionResultContent's own Exception), not
+                                 a hardcoded decoration. Nothing shows while
+                                 Succeeded is still Nothing (the call was
+                                 made but no result has arrived yet) -
+                                 showing a premature checkmark before the
+                                 real result exists would be misleading. -->
+                            <!-- MaxWidth matches the thinking Expander's own
+                                 cap right above - without a bounded width,
+                                 WrapPanel has nothing to actually wrap
+                                 against (it just lays everything out on one
+                                 ever-widening line), and since this sits in
+                                 an Auto-width Grid column, the whole bubble
+                                 - including "Thought for N.Ns" above it -
+                                 would stretch and visibly reflow as more
+                                 same-named chips (e.g. several search_web
+                                 calls) stream in. -->
+                            <ItemsControl ItemsSource="{Binding ToolCalls}" Margin="8,4,8,0" MaxWidth="500" HorizontalAlignment="Left">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="#E5E5EA" CornerRadius="10" Padding="8,2" Margin="0,0,6,0"
+                                                ToolTip="{Binding ErrorMessage}">
+                                            <TextBlock FontSize="11" Foreground="#3C3C43">
+                                                <Run Text="&#128295; " />
+                                                <Run Text="{Binding Name, Mode=OneWay}" />
+                                                <Run Text=" " />
+                                                <Run>
+                                                    <Run.Style>
+                                                        <Style TargetType="Run">
+                                                            <Setter Property="Text" Value="" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding Succeeded}" Value="True">
+                                                                    <Setter Property="Text" Value="&#10003;" />
+                                                                    <Setter Property="Foreground" Value="Green" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding Succeeded}" Value="False">
+                                                                    <Setter Property="Text" Value="&#10005;" />
+                                                                    <Setter Property="Foreground" Value="#D32F2F" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Run.Style>
+                                                </Run>
+                                            </TextBlock>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- App-level housekeeping notices (e.g.
+                                 compaction) - same chip pattern as ToolCalls
+                                 above but visually distinct (amber, a
+                                 different icon) since these aren't something
+                                 the model did. -->
+                            <ItemsControl ItemsSource="{Binding SystemNotes}" Margin="8,4,8,0" MaxWidth="500" HorizontalAlignment="Left">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="#FDEBD3" CornerRadius="10" Padding="8,2" Margin="0,0,6,0">
+                                            <TextBlock FontSize="11" Foreground="#8A5A00">
+                                                <Run Text="&#128230; " />
+                                                <Run Text="{Binding Mode=OneWay}" />
+                                            </TextBlock>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- Plain live text while a reply is actively
+                                 streaming, swapped for rendered Markdown once
+                                 it's done (or loaded from history, which
+                                 never streams) - see
+                                 ChatMessageViewModel.IsStreaming's comment
+                                 for why these aren't the same control the
+                                 whole time. -->
+                            <Border Style="{StaticResource BubbleBorderStyle}">
+                                <Grid>
+                                    <TextBox Text="{Binding Text, Mode=OneWay}" Style="{StaticResource BubbleTextStyle}"
+                                             Visibility="{Binding IsStreaming, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                    <mdxaml:MarkdownViewer Markdown="{Binding Text, Mode=OneWay}" Style="{StaticResource MarkdownBubbleStyle}"
+                                                            Visibility="{Binding IsStreaming, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+                                </Grid>
+                            </Border>
+                            </StackPanel>
+                        </Grid>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <!-- Context-usage bar - tokens used vs. the selected model's max
+             context window (MainViewModel.ContextUsageCurrent/Max, updated
+             after each completed reply from Lemonade's own GET /v1/stats). -->
+        <Grid Grid.Row="2" Margin="0,8,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <ProgressBar Grid.Column="0" Height="4" Minimum="0"
+                         Maximum="{Binding ContextUsageMax}" Value="{Binding ContextUsageCurrent, Mode=OneWay}"
+                         VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1" Text="{Binding ContextUsageText}" Foreground="Gray" FontSize="11"
+                       Margin="8,0,0,0" VerticalAlignment="Center" />
+        </Grid>
+
+        <Grid Grid.Row="3" Margin="0,8,0,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- Attached-file/-image chip - only visible once something's
+                 been picked via the paperclip button (extraction/resizing
+                 has already happened by this point - see AttachFileCommand),
+                 so this is just showing what's queued up to go with the next
+                 message, with a way to back out before sending. Document and
+                 image are mutually exclusive, so only one of the two chips
+                 below is ever visible at once. -->
+            <StackPanel Grid.Row="0" Margin="0,0,0,6">
+                <Border Background="#E5E5EA" CornerRadius="10" Padding="8,4"
+                        HorizontalAlignment="Left"
+                        Visibility="{Binding AttachedFileName, Converter={StaticResource NullToVisibilityConverter}}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock FontSize="12" Foreground="#3C3C43">
+                            <Run Text="&#128206; " />
+                            <Run Text="{Binding AttachedFileName, Mode=OneWay}" />
+                        </TextBlock>
+                        <TextBlock Text=" &#10005;" FontSize="12" Foreground="#8E8E93" Cursor="Hand" Margin="6,0,0,0">
+                            <TextBlock.InputBindings>
+                                <MouseBinding MouseAction="LeftClick" Command="{Binding RemoveAttachedFileCommand}" />
+                            </TextBlock.InputBindings>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+
+                <!-- A small preview thumbnail rather than just a
+                     filename chip, since the picked image itself is more
+                     informative here than its filename. -->
+                <Border Background="#E5E5EA" CornerRadius="10" Padding="6" HorizontalAlignment="Left"
+                        Visibility="{Binding AttachedImagePath, Converter={StaticResource NullToVisibilityConverter}}">
+                    <StackPanel Orientation="Horizontal">
+                        <Image Source="{Binding AttachedImagePath}" Width="40" Height="40" Stretch="UniformToFill" />
+                        <TextBlock Text="&#10005;" FontSize="12" Foreground="#8E8E93" Cursor="Hand"
+                                   VerticalAlignment="Top" Margin="6,0,0,0">
+                            <TextBlock.InputBindings>
+                                <MouseBinding MouseAction="LeftClick" Command="{Binding RemoveAttachedFileCommand}" />
+                            </TextBlock.InputBindings>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+
+                <!-- Blocks Send (see MainViewModel.CanSend) until the model
+                     is swapped for a vision-capable one or the image is
+                     removed - explaining why, rather than just silently
+                     graying out the Send button. -->
+                <TextBlock Text="{Binding AttachedImageVisionWarning}" Foreground="#B8860B" FontSize="12"
+                           Margin="0,4,0,0" TextWrapping="Wrap"
+                           Visibility="{Binding AttachedImageVisionWarning, Converter={StaticResource NullToVisibilityConverter}}" />
+            </StackPanel>
+
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Which knowledge base (if any) is attached to this chat -
+                     one at a time, persisted per-session (see
+                     MainViewModel.SelectedKnowledgeBaseId). "(No knowledge
+                     base)" is always the first entry, not a separate
+                     checkbox/toggle, since attaching none is the normal
+                     default rather than a special case. -->
+                <!-- ItemTemplate, not DisplayMemberPath - DisplayMemberPath
+                     alone doesn't reliably drive the closed box's own
+                     display text against this fully custom ControlTemplate
+                     (it falls back to showing KnowledgeBaseSummary's raw
+                     ToString()), even though the dropdown list itself
+                     renders correctly. An explicit ItemTemplate is used for
+                     both the list AND the closed-box display
+                     (SelectionBoxItemTemplate), so there's no ambiguity
+                     either way. -->
+                <!-- Hidden entirely (not just disabled) when the
+                     Knowledge Bases module is off, matching the same
+                     "a disabled module's own affordances disappear, not just
+                     grey out" principle already used for the model
+                     dropdown's image-category filtering. -->
+                <!-- VerticalAlignment="Bottom" on this and the two buttons
+                     below - without it they default to Stretch and grow
+                     tall/distorted along with the input box as it grows
+                     past a single line. Bottom-anchored so
+                     they stay level with the input box's last line, the
+                     same convention as WhatsApp/Telegram's growing input. -->
+                <ComboBox Grid.Column="0" Style="{StaticResource RoundedComboBoxStyle}" MinWidth="130" Margin="0,0,8,0"
+                          VerticalAlignment="Bottom"
+                          ItemsSource="{Binding AvailableKnowledgeBases}"
+                          SelectedItem="{Binding SelectedKnowledgeBase}"
+                          ToolTip="Knowledge base attached to this chat"
+                          Visibility="{Binding IsKnowledgeModuleEnabled, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Name}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+
+                <Button Grid.Column="1" Content="&#128206;" Style="{StaticResource CircleSecondaryButtonStyle}"
+                        VerticalAlignment="Bottom"
+                        Command="{Binding AttachFileCommand}" Margin="0,0,8,0" ToolTip="Attach a file (PDF, Word, Excel) or an image" />
+
+                <!-- Rounded "pill" input, matching the mockup - a Border carries
+                     the shape/edge since TextBox itself has no CornerRadius of
+                     its own, with the actual TextBox borderless/transparent
+                     inside it so it reads as one seamless field. -->
+                <!-- AcceptsReturn/Wrap + a MaxHeight (scrolls beyond it) so a
+                     long or multi-line prompt can actually be typed and read
+                     back before sending, unlike a fixed-height single-line
+                     box. Enter-sends is handled in code-behind
+                     (OnInputTextBoxPreviewKeyDown) instead of a declarative
+                     KeyBinding, since a KeyBinding can't express "only when
+                     Shift isn't held, otherwise let the TextBox's own
+                     newline-insertion through" - Shift+Enter for a newline
+                     is the standard chat-app convention (Discord/Slack/
+                     Telegram). -->
+                <Border Grid.Column="2" CornerRadius="18" BorderBrush="#D0D0D0" BorderThickness="1" Padding="14,8">
+                    <TextBox Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
+                             VerticalContentAlignment="Center" MinHeight="20" MaxHeight="140"
+                             BorderThickness="0" Background="Transparent"
+                             AcceptsReturn="True" TextWrapping="Wrap"
+                             VerticalScrollBarVisibility="Auto"
+                             PreviewKeyDown="OnInputTextBoxPreviewKeyDown" />
+                </Border>
+
+                <!-- Send and Stop occupy the same slot, toggled by IsBusy - only
+                     one is ever visible, so there's no layout shift between them. -->
+                <Button Grid.Column="3" Content="&#8593;" Style="{StaticResource CircleIconButtonStyle}"
+                        VerticalAlignment="Bottom"
+                        Command="{Binding SendCommand}" Margin="8,0,0,0" ToolTip="Send"
+                        Visibility="{Binding IsBusy, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+                <Button Grid.Column="3" Content="&#9632;" Style="{StaticResource CircleStopButtonStyle}"
+                        VerticalAlignment="Bottom"
+                        Command="{Binding StopCommand}" Margin="8,0,0,0" ToolTip="Stop"
+                        Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}" />
+            </Grid>
+        </Grid>
+        </Grid>
+
+        <GridSplitter Grid.Column="3" Width="4" HorizontalAlignment="Stretch"
+                      VerticalAlignment="Stretch" Background="#E0E0E0" ShowsPreview="True" />
+
+        <!-- Right panel: Stats (last-reply + session-total numbers + tool
+             calls) and Modules (read-only status - see MainViewModel.Modules's
+             comment for why toggling actually lives in Settings, not here). -->
+        <Grid Grid.Column="4" Margin="6,12,12,12">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0" Margin="0,0,0,12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <!-- The tab key ("Stats" below) matches
+                     MainViewModel.RightPanelTab's default value, so the code
+                     and UI stay consistent rather than a name only living in
+                     one of the two places. -->
+                <Button Grid.Column="0" Content="Stats" Background="Transparent" BorderThickness="0"
+                        Command="{Binding SelectRightPanelTabCommand}" CommandParameter="Stats"
+                        FontSize="13" Padding="0,6">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Foreground" Value="Gray" />
+                            <Setter Property="FontWeight" Value="Normal" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding RightPanelTab}" Value="Stats">
+                                    <Setter Property="Foreground" Value="Black" />
+                                    <Setter Property="FontWeight" Value="Bold" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                <Button Grid.Column="1" Content="Modules" Background="Transparent" BorderThickness="0"
+                        Command="{Binding SelectRightPanelTabCommand}" CommandParameter="Modules"
+                        FontSize="13" Padding="0,6">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Foreground" Value="Gray" />
+                            <Setter Property="FontWeight" Value="Normal" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding RightPanelTab}" Value="Modules">
+                                    <Setter Property="Foreground" Value="Black" />
+                                    <Setter Property="FontWeight" Value="Bold" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+            </Grid>
+
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                <Grid>
+                    <StackPanel Visibility="{Binding RightPanelTab, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=Stats}">
+                        <!-- "Last reply" changes every turn - Lemonade's GET
+                             /v1/stats only ever reports the most recent
+                             request. "Session" below is a
+                             real running total the app accumulates itself
+                             turn by turn, kept as its own subsection rather
+                             than folded into the same grid. -->
+                        <TextBlock Text="Last reply" Foreground="Gray" FontSize="12" Margin="0,0,0,8" />
+                        <!-- One card per row - three across would be too
+                             cramped, especially once labels wrap to two
+                             lines. -->
+                        <Border Background="#F5F5F5" CornerRadius="8" Padding="10" Margin="0,0,0,6">
+                            <StackPanel>
+                                <TextBlock Text="Tokens in/out" Foreground="Gray" FontSize="11" />
+                                <TextBlock Text="{Binding TokensInOutText}" FontSize="15" FontWeight="Bold" Margin="0,2,0,0" />
+                            </StackPanel>
+                        </Border>
+                        <Border Background="#F5F5F5" CornerRadius="8" Padding="10" Margin="0,0,0,6">
+                            <StackPanel>
+                                <TextBlock Text="Tokens/sec" Foreground="Gray" FontSize="11" />
+                                <TextBlock Text="{Binding TokensPerSecondText}" FontSize="15" FontWeight="Bold" Margin="0,2,0,0" />
+                            </StackPanel>
+                        </Border>
+                        <Border Background="#F5F5F5" CornerRadius="8" Padding="10">
+                            <StackPanel>
+                                <TextBlock Text="Time to first token (s)" Foreground="Gray" FontSize="11" />
+                                <TextBlock Text="{Binding TimeToFirstTokenText}" FontSize="15" FontWeight="Bold" Margin="0,2,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Text="Session" Foreground="Gray" FontSize="12" Margin="0,16,0,8" />
+                        <Border Background="#F5F5F5" CornerRadius="8" Padding="10">
+                            <StackPanel>
+                                <TextBlock Text="Tokens in/out" Foreground="Gray" FontSize="11" />
+                                <TextBlock Text="{Binding SessionTotalTokensText}" FontSize="15" FontWeight="Bold" Margin="0,2,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Text="Tool calls this turn" Foreground="Gray" FontSize="12" Margin="0,16,0,8" />
+                        <ItemsControl ItemsSource="{Binding CurrentTurnToolCalls}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <!-- A real ✓/✗ (Succeeded), not
+                                         a hardcoded checkmark shown for every
+                                         call regardless of outcome.
+                                         ToolTip carries the real
+                                         error on a failure. -->
+                                    <Border Background="#F5F5F5" CornerRadius="6" Padding="8,6" Margin="0,0,0,4"
+                                            ToolTip="{Binding ErrorMessage}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" FontSize="12">
+                                                <Run Text="&#128295; " />
+                                                <Run Text="{Binding Name, Mode=OneWay}" />
+                                            </TextBlock>
+                                            <TextBlock Grid.Column="1" FontSize="12">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Text" Value="" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Succeeded}" Value="True">
+                                                                <Setter Property="Text" Value="&#10003;" />
+                                                                <Setter Property="Foreground" Value="Green" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Succeeded}" Value="False">
+                                                                <Setter Property="Text" Value="&#10005;" />
+                                                                <Setter Property="Foreground" Value="#D32F2F" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <StackPanel Visibility="{Binding RightPanelTab, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=Modules}">
+                        <ItemsControl ItemsSource="{Binding Modules}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="#F5F5F5" CornerRadius="8" Padding="10" Margin="0,0,0,6">
+                                        <StackPanel>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="{Binding Name}" FontWeight="Bold" FontSize="13" />
+                                                <Border Grid.Column="1" CornerRadius="8" Padding="6,1">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Background" Value="#F0DADA" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsEnabled}" Value="True">
+                                                                    <Setter Property="Background" Value="#DAF0DA" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <TextBlock FontSize="10">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Text" Value="Disabled" />
+                                                                <Setter Property="Foreground" Value="#8A3A3A" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsEnabled}" Value="True">
+                                                                        <Setter Property="Text" Value="Enabled" />
+                                                                        <Setter Property="Foreground" Value="#3A7A3A" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                </Border>
+                                            </Grid>
+                                            <TextBlock Text="{Binding Description}" Foreground="Gray" FontSize="11"
+                                                       TextWrapping="Wrap" Margin="0,4,0,0" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Grid>
+            </ScrollViewer>
+
+            <!-- Anchored to the bottom of the panel, outside the
+                 ScrollViewer (Grid.Row="2" below), rather than living inside
+                 each tab's scrollable content, so it's always reachable
+                 instead of only appearing after scrolling past everything
+                 else. Each button's own Visibility (not a wrapping
+                 element) switches with the active tab, same converter/
+                 pattern the two scrollable sections above already use. -->
+            <StackPanel Grid.Row="2" Margin="0,12,0,0">
+                <Button Command="{Binding OpenLogViewerCommand}" Style="{StaticResource PillButtonStyle}"
+                        Visibility="{Binding RightPanelTab, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=Stats}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE9D9;" FontFamily="Segoe MDL2 Assets" FontSize="12" Margin="0,0,6,0" />
+                        <TextBlock Text="Open Lemonade logs" FontSize="13" />
+                    </StackPanel>
+                </Button>
+                <!-- Real visibility into what's actually being sent as the
+                     system message, not just trusting the code. -->
+                <Button Command="{Binding OpenSystemPromptCommand}" Style="{StaticResource PillButtonStyle}" Margin="0,6,0,0"
+                        Visibility="{Binding RightPanelTab, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=Stats}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE8A5;" FontFamily="Segoe MDL2 Assets" FontSize="12" Margin="0,0,6,0" />
+                        <TextBlock Text="View system prompt" FontSize="13" />
+                    </StackPanel>
+                </Button>
+                <!-- Visibility into the VOLATILE per-turn context
+                     (time/memory/knowledge) that View system prompt
+                     deliberately never shows. -->
+                <Button Command="{Binding OpenTurnContextCommand}" Style="{StaticResource PillButtonStyle}" Margin="0,6,0,0"
+                        Visibility="{Binding RightPanelTab, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=Stats}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE81C;" FontFamily="Segoe MDL2 Assets" FontSize="12" Margin="0,0,6,0" />
+                        <TextBlock Text="View turn context" FontSize="13" />
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding OpenSettingsCommand}" Style="{StaticResource PillButtonStyle}"
+                        Visibility="{Binding RightPanelTab, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=Modules}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="12" Margin="0,0,6,0" />
+                        <TextBlock Text="Manage in Settings" FontSize="13" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

@@ -1,0 +1,21 @@
+# Build output - includes the live data folder (database, settings, API
+# keys) at LemonRind\bin\Debug\net10.0-windows\data\, so this must never
+# be tracked.
+[Bb]in/
+[Oo]bj/
+
+# Visual Studio local workspace/cache
+.vs/
+
+# Local tool cache
+.cr/
+
+# Manual project backup archives (large, not source)
+Backups/
+
+# Private development notes - not part of the public project
+CLAUDE.md
+reference/
+
+# Visual Studio user-specific project settings
+*.user
