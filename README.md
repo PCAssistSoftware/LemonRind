@@ -7,53 +7,6 @@ A local-first AI assistant desktop app (WPF, .NET 10, VB.NET) backed by a locall
 
 This was built as a learning exercise and proof of concept - a way to explore agentic AI app design (tool calling, memory, context management, RAG) hands-on, not a polished commercial product.
 
-## Screenshots
-
-**Main chat window** - streaming replies, thinking panel, per-turn/session stats, context usage bar
-![Overview](<screenshots/Overview.png>)
-
-**Settings - Lemonade server**
-![Settings](<screenshots/Settings.png>)
-
-**Settings - Persona**
-![Persona](<screenshots/Persona.png>)
-
-**Settings - Web search** - swappable engine, API keys
-![Web search](<screenshots/Web Search.png>)
-
-**Settings - Modules** - enable/disable each capability independently
-![Modules](<screenshots/Modules.png>)
-
-**Settings - Memories** - review, edit, and delete what's been remembered about you
-![Memories](<screenshots/Memories.png>)
-
-**Settings - Knowledge Bases (RAG)** - ingest files, folders, websites, or pasted text
-![Knowledge Bases](<screenshots/Knowledge Base (RAG).png>)
-
-**Settings - MCP servers** - paste a server's own config JSON, or add one manually
-![MCP servers](<screenshots/MCP.png>)
-
-**Settings - Scheduler** - run a saved prompt through the assistant on a cron schedule
-![Scheduler](<screenshots/Scheduler.png>)
-
-**Settings - Image generation**
-![Image generation](<screenshots/Image Generation.png>)
-
-**System prompt viewer** - exactly what's currently sitting at the front of the model's context
-![System prompt viewer](<screenshots/System Prompt.png>)
-
-**Turn context viewer** - the volatile per-turn content that would be added if you hit Send right now
-![Turn context viewer](<screenshots/Turn Context.png>)
-
-**File write approval** - Deny / Allow once / Allow for this session, before any file is touched
-![File write confirmation](<screenshots/File Write Confirmation dialog.png>)
-
-**Live Lemonade log viewer**
-![Log viewer](<screenshots/Log Viewer.png>)
-
-**Model details** - capabilities, context window, size, backend, and real launch arguments
-![Model details](<screenshots/Model Details.png>)
-
 ## Requirements
 
 - Windows, .NET 10 runtime
@@ -130,3 +83,50 @@ A deliberate design priority throughout:
 ## AI-assisted development
 
 Not vibe coded — vibe assisted. AI helped with ideas, inspiration, and pointers, but code was reviewed, understood, tested, and validated by a human.
+
+## Screenshots
+
+**Main chat window** - streaming replies, thinking panel, per-turn/session stats, context usage bar
+![Overview](<screenshots/Overview.png>)
+
+**Settings - Lemonade server**
+![Settings](<screenshots/Settings.png>)
+
+**Settings - Persona**
+![Persona](<screenshots/Persona.png>)
+
+**Settings - Web search** - swappable engine, API keys
+![Web search](<screenshots/Web Search.png>)
+
+**Settings - Modules** - enable/disable each capability independently
+![Modules](<screenshots/Modules.png>)
+
+**Settings - Memories** - review, edit, and delete what's been remembered about you
+![Memories](<screenshots/Memories.png>)
+
+**Settings - Knowledge Bases (RAG)** - ingest files, folders, websites, or pasted text
+![Knowledge Bases](<screenshots/Knowledge Base (RAG).png>)
+
+**Settings - MCP servers** - paste a server's own config JSON, or add one manually
+![MCP servers](<screenshots/MCP.png>)
+
+**Settings - Scheduler** - run a saved prompt through the assistant on a cron schedule
+![Scheduler](<screenshots/Scheduler.png>)
+
+**Settings - Image generation**
+![Image generation](<screenshots/Image Generation.png>)
+
+**System prompt viewer** - exactly what's currently sitting at the front of the model's context
+![System prompt viewer](<screenshots/System Prompt.png>)
+
+**Turn context viewer** - the volatile per-turn content that would be added if you hit Send right now
+![Turn context viewer](<screenshots/Turn Context.png>)
+
+**File write approval** - Deny / Allow once / Allow for this session, before any file is touched
+![File write confirmation](<screenshots/File Write Confirmation dialog.png>)
+
+**Live Lemonade log viewer**
+![Log viewer](<screenshots/Log Viewer.png>)
+
+**Model details** - capabilities, context window, size, backend, and real launch arguments
+![Model details](<screenshots/Model Details.png>)
