@@ -109,9 +109,14 @@ Namespace ViewModels
         ''' embedding searches even when the message box hadn't changed at
         ''' all since the last hover, wasted work each time. Nothing
         ''' (_lastPendingPreviewInputText) forces a fresh computation on the
-        ''' very first hover.
+        ''' very first hover. Also keyed on _lastPendingPreviewKnowledgeBaseId
+        ''' - confirmed live that without this, switching the knowledge-base
+        ''' dropdown without also editing the message box returned the
+        ''' stale PendingTokens figure computed against the PREVIOUS
+        ''' knowledge base, since InputText alone hadn't changed.
         ''' </summary>
         Private _lastPendingPreviewInputText As String = Nothing
+        Private _lastPendingPreviewKnowledgeBaseId As String = Nothing
         Private _lastPendingPreviewTokens As Integer = 0
 
         Private _currentSessionId As String = ""
@@ -1158,13 +1163,14 @@ Namespace ViewModels
                 ' Lemonade, visible in its own logs as repeated tiny
                 ' embedding completions.
                 Dim pendingTokens As Integer
-                If InputText = _lastPendingPreviewInputText Then
+                If InputText = _lastPendingPreviewInputText AndAlso SelectedKnowledgeBaseId = _lastPendingPreviewKnowledgeBaseId Then
                     pendingTokens = _lastPendingPreviewTokens
                 Else
                     Dim turnContextText = Await BuildLiveTurnContextTextAsync(InputText, CancellationToken.None)
                     Dim pendingText = If(String.IsNullOrEmpty(turnContextText), "", turnContextText & Environment.NewLine) & InputText
                     pendingTokens = If(String.IsNullOrWhiteSpace(pendingText), 0, Await TryTokenizeAsync(pendingText, CancellationToken.None))
                     _lastPendingPreviewInputText = InputText
+                    _lastPendingPreviewKnowledgeBaseId = SelectedKnowledgeBaseId
                     _lastPendingPreviewTokens = pendingTokens
                 End If
 
