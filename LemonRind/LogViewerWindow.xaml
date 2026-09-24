@@ -22,7 +22,13 @@
              coloring via DataTrigger, not a converter - simpler, matches
              how IsUser-based bubble coloring already works elsewhere. -->
         <ListView Grid.Row="1" x:Name="LogListView" FontFamily="Consolas" FontSize="12"
-                  ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                  SelectionMode="Extended" PreviewKeyDown="OnLogListViewPreviewKeyDown">
+            <ListView.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="Copy" Click="OnCopySelectedLogLines" />
+                </ContextMenu>
+            </ListView.ContextMenu>
             <ListView.ItemContainerStyle>
                 <Style TargetType="ListViewItem">
                     <Setter Property="Foreground" Value="#1C1C1E" />

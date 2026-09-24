@@ -132,6 +132,30 @@ Class MainWindow
     ''' level tunnels down first and catches every click regardless of
     ''' whether its target can take focus.
     ''' </summary>
+    ''' <summary>
+    ''' Recomputes the breakdown fresh on every hover rather than caching it -
+    ''' it's a synchronous chars/4 estimate over already-in-memory data
+    ''' (MainViewModel.RefreshContextBreakdown), cheap enough that "always
+    ''' current" costs nothing worth avoiding.
+    ''' </summary>
+    ''' <summary>
+    ''' Opens the popup immediately (showing whatever ContextBreakdownInfo
+    ''' already has - Nothing on the very first-ever hover, otherwise
+    ''' whatever the previous refresh left there) rather than waiting for
+    ''' the real /v1/tokenize calls this now kicks off - RefreshContextBreakdownAsync
+    ''' fills in fresh numbers as soon as they land, matching openlumara's
+    ''' own "open now, refresh live" popup behavior instead of a blocking
+    ''' spinner on every hover.
+    ''' </summary>
+    Private Async Sub OnContextUsageMouseEnter(sender As Object, e As MouseEventArgs)
+        _viewModel.IsContextBreakdownOpen = True
+        Await _viewModel.RefreshContextBreakdownAsync()
+    End Sub
+
+    Private Sub OnContextUsageMouseLeave(sender As Object, e As MouseEventArgs)
+        _viewModel.IsContextBreakdownOpen = False
+    End Sub
+
     Private Sub OnWindowPreviewMouseDown(sender As Object, e As MouseButtonEventArgs)
         Dim editingSession = _viewModel.Sessions.FirstOrDefault(Function(s) s.IsEditing)
         If editingSession Is Nothing Then Return

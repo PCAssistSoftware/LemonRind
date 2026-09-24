@@ -89,6 +89,9 @@ Namespace ViewModels
         ' NewChat/LoadSession along with _history itself.
         Private _conversationSummaryText As String = ""
 
+        ''' <summary>How many times CompactHistoryIfNeededAsync has actually compacted this session, for the breakdown popup's "compacted N times" badge - same in-memory-only, per-session lifecycle as _conversationSummaryText, reset alongside it.</summary>
+        Private _compactionCount As Integer = 0
+
         ' Keeps the real Microsoft.Extensions.AI conversation history (what
         ' actually gets sent to the model) for the CURRENTLY OPEN session.
         ' Rebuilt from scratch whenever the user switches sessions (see
@@ -97,6 +100,19 @@ Namespace ViewModels
         ' duplicated - Qwen's chat template rejects a second system message or
         ' one that isn't at position 0.
         Private ReadOnly _history As New List(Of ChatMessage)
+
+        ''' <summary>
+        ''' Caches PendingTokens' own live turn-context preview
+        ''' (RefreshContextBreakdownAsync) keyed by the exact InputText it
+        ''' was computed for - confirmed live via Lemonade's own logs that
+        ''' without this, every single hover re-ran real memory/knowledge
+        ''' embedding searches even when the message box hadn't changed at
+        ''' all since the last hover, wasted work each time. Nothing
+        ''' (_lastPendingPreviewInputText) forces a fresh computation on the
+        ''' very first hover.
+        ''' </summary>
+        Private _lastPendingPreviewInputText As String = Nothing
+        Private _lastPendingPreviewTokens As Integer = 0
 
         Private _currentSessionId As String = ""
 
@@ -472,6 +488,42 @@ Namespace ViewModels
             End Set
         End Property
 
+        ''' <summary>Total pixel width the context-breakdown popup's bar is drawn at - fixed rather than measured, so RefreshContextBreakdown can precompute every segment's own width without a live layout pass.</summary>
+        Private Const ContextBreakdownBarWidth As Double = 260
+
+        Private _isContextBreakdownOpen As Boolean = False
+        ''' <summary>Drives the popup's IsOpen - toggled from MainWindow's MouseEnter/MouseLeave handlers on the context-usage text, not a click, since this is a glanceable hover detail, not something to navigate into.</summary>
+        Public Property IsContextBreakdownOpen As Boolean
+            Get
+                Return _isContextBreakdownOpen
+            End Get
+            Set(value As Boolean)
+                SetProperty(_isContextBreakdownOpen, value)
+            End Set
+        End Property
+
+        Private _contextBreakdownInfo As ContextBreakdown
+        ''' <summary>Nothing until RefreshContextBreakdown first runs (on hover) - the popup's own XAML only reads this while IsContextBreakdownOpen is true, by which point it's always already set.</summary>
+        Public Property ContextBreakdownInfo As ContextBreakdown
+            Get
+                Return _contextBreakdownInfo
+            End Get
+            Set(value As ContextBreakdown)
+                SetProperty(_contextBreakdownInfo, value)
+            End Set
+        End Property
+
+        Private _isContextBreakdownLoading As Boolean = False
+        ''' <summary>True while RefreshContextBreakdownAsync's real /v1/tokenize calls are in flight - guards against overlapping refreshes if the mouse re-enters quickly, same reasoning openlumara's own context popup guards its refresh for.</summary>
+        Public Property IsContextBreakdownLoading As Boolean
+            Get
+                Return _isContextBreakdownLoading
+            End Get
+            Set(value As Boolean)
+                SetProperty(_isContextBreakdownLoading, value)
+            End Set
+        End Property
+
         ' Tracks what Lemonade actually has loaded right now, separately from
         ' SelectedModel (what the ComboBox shows) - InitializeAsync sets both
         ' to the same value without triggering a reload; after that, changing
@@ -628,7 +680,7 @@ Namespace ViewModels
         Public ReadOnly Property RetryConnectionCommand As IAsyncRelayCommand
 
         ''' <summary>Stats tab button - shows the real, current _history(0) text, for visibility into what's actually being sent.</summary>
-        Public ReadOnly Property OpenSystemPromptCommand As IRelayCommand
+        Public ReadOnly Property OpenSystemPromptCommand As IAsyncRelayCommand
 
         ''' <summary>
         ''' Stats tab button - shows the VOLATILE per-turn context
@@ -638,6 +690,9 @@ Namespace ViewModels
         ''' reads _history(0)).
         ''' </summary>
         Public ReadOnly Property OpenTurnContextCommand As IAsyncRelayCommand
+
+        ''' <summary>Stats tab button - shows every enabled tool's real name/description/JSON schema, exactly as sent to Lemonade on every request - the context breakdown popup can show how many tokens tools cost, but not what's actually in them.</summary>
+        Public ReadOnly Property OpenToolsSentCommand As IAsyncRelayCommand
 
         ''' <summary>Stats/Modules tab buttons in the right panel - CommandParameter is the tab name.</summary>
         Public ReadOnly Property SelectRightPanelTabCommand As IRelayCommand(Of String)
@@ -693,8 +748,9 @@ Namespace ViewModels
             OpenLogViewerCommand = New RelayCommand(AddressOf OpenLogViewer)
             OpenModelDetailsCommand = New AsyncRelayCommand(AddressOf OpenModelDetailsAsync)
             RetryConnectionCommand = New AsyncRelayCommand(AddressOf RefreshAvailableModelsAsync)
-            OpenSystemPromptCommand = New RelayCommand(AddressOf OpenSystemPrompt)
+            OpenSystemPromptCommand = New AsyncRelayCommand(AddressOf OpenSystemPromptAsync)
             OpenTurnContextCommand = New AsyncRelayCommand(AddressOf OpenTurnContextAsync)
+            OpenToolsSentCommand = New AsyncRelayCommand(AddressOf OpenToolsSentAsync)
             SelectRightPanelTabCommand = New RelayCommand(Of String)(Sub(tab) RightPanelTab = tab)
 
             ' Keeps trying in the background while Lemonade is unreachable,
@@ -750,8 +806,19 @@ Namespace ViewModels
                 Dim health = Await _managementClient.GetHealthAsync(CancellationToken.None)
                 Dim loadedInfo = health.AllModelsLoaded?.FirstOrDefault(Function(m) m.ModelName = SelectedModel)
 
+                ' modelInfo.MaxContextWindow is the catalog's declared
+                ' maximum, not necessarily what this model is actually
+                ' loaded with right now (Lemonade allows loading at a
+                ' smaller ctx_size) - prefer the real loaded value
+                ' (loadedInfo.RecipeOptions.CtxSize) whenever it's available,
+                ' same real-vs-declared distinction ApplyRealLoadedContextWindow
+                ' exists for. Falls back to the catalog max for a model
+                ' that's downloaded but not currently loaded, since there's
+                ' nothing more real to show in that case.
+                Dim realOrMaxContextWindow = If(loadedInfo?.RecipeOptions?.CtxSize, modelInfo.MaxContextWindow)
+
                 ModelDetailsDialog.Show(
-                    modelInfo.Id, modelInfo.Labels, modelInfo.MaxContextWindow, modelInfo.SizeGb, modelInfo.Recipe,
+                    modelInfo.Id, modelInfo.Labels, realOrMaxContextWindow, modelInfo.SizeGb, modelInfo.Recipe,
                     isCurrentlyLoaded:=loadedInfo IsNot Nothing,
                     device:=loadedInfo?.Device,
                     llamacppArgs:=loadedInfo?.RecipeOptions?.LlamacppArgs)
@@ -766,43 +833,362 @@ Namespace ViewModels
         ''' show what's really in the context this instant, matching what
         ''' the last (or next) actual request would carry.
         ''' </summary>
-        Private Sub OpenSystemPrompt()
+        Private Async Function OpenSystemPromptAsync() As Task
             ' _history(0) is always the system message - the same invariant
             ' SendAsync/CompactHistoryIfNeededAsync already rely on.
             Dim promptText = If(_history.Count > 0, _history(0).Text, Nothing)
-            SystemPromptDialog.Show(If(promptText, "(no system message yet - send a message first)"))
-        End Sub
+            If promptText Is Nothing Then
+                SystemPromptDialog.Show("(no system message yet - send a message first)")
+                Return
+            End If
+            Dim tokenCount = Await TryTokenizeAsync(promptText, CancellationToken.None)
+            SystemPromptDialog.Show(promptText,
+                description:=$"Exactly what's currently sitting at the front of the model's context for this chat - the same text that gets rebuilt each turn. (~{tokenCount:N0} tokens)")
+        End Function
+
+        ''' <summary>
+        ''' Shows every enabled tool's real name/description/JSON schema,
+        ''' pretty-printed (markdown headers, indented JSON, "---"
+        ''' separators) for actual readability - the token count itself is
+        ''' still computed from BuildRawToolsText's plain, un-formatted
+        ''' version (the literal text that's tokenized everywhere else this
+        ''' figure appears), NOT from this prettified display text.
+        ''' Confirmed live that mixing those up matters: pasting this
+        ''' READABLE version into an external tokenizer to double-check
+        ''' will read noticeably higher than the number shown here, since
+        ''' formatting alone costs real tokens a tokenizer counts but this
+        ''' app's real request never actually sends - hence the note in the
+        ''' description below, so that's expected, not a bug, if anyone
+        ''' tries it.
+        ''' </summary>
+        Private Async Function OpenToolsSentAsync() As Task
+            Dim tools = _moduleRegistry.GetEnabledTools()
+            If Not tools.Any() Then
+                SystemPromptDialog.Show("(no modules with tools are currently enabled)", title:="Tools sent",
+                    description:="Every enabled tool's real name/description/JSON schema, exactly as sent to Lemonade alongside every request.")
+                Return
+            End If
+
+            Dim jsonOptions As New JsonSerializerOptions With {.WriteIndented = True}
+            Dim sections = tools.Select(Function(t)
+                                             Dim declaration = TryCast(t, AIFunctionDeclaration)
+                                             Dim schemaText = If(declaration IsNot Nothing, JsonSerializer.Serialize(declaration.JsonSchema, jsonOptions), "(no schema)")
+                                             Return $"### {t.Name}{Environment.NewLine}{t.Description}{Environment.NewLine}{Environment.NewLine}{schemaText}"
+                                         End Function)
+            Dim prettyToolsText = String.Join(Environment.NewLine & Environment.NewLine & "---" & Environment.NewLine & Environment.NewLine, sections)
+
+            ' Reuses EstimateCommittedContextTokensAsync's own Tools figure
+            ' (not a separate tokenize call) so this always matches the
+            ' breakdown popup's "tools" number exactly, including the
+            ' tool-use preamble overhead folded into it - see
+            ' ToolUsePreambleOverheadTokens' own comment for why that's not
+            ' visible in the text below (it's not real schema content, so
+            ' there's nothing to show here for it).
+            Dim toolsTokenCount = (Await EstimateCommittedContextTokensAsync(CancellationToken.None)).Tools
+            SystemPromptDialog.Show(prettyToolsText, title:="Tools sent",
+                description:=$"Every enabled tool's real name/description/JSON schema, exactly as sent to Lemonade alongside every request - this is what the context breakdown popup's ""tools"" figure is the token cost of (includes an estimated tool-use framework overhead on top of the schemas themselves - see the breakdown popup for more). Reformatted here for readability - pasting THIS text into an external tokenizer will read lower than the figure below for that same reason. (~{toolsTokenCount:N0} tokens)")
+        End Function
+
+        ''' <summary>
+        ''' The genuine volatile per-turn content (time-awareness + whatever
+        ''' memory/knowledge search surfaces) for the given draft text -
+        ''' shared by OpenTurnContextAsync (a full preview dialog) and
+        ''' RefreshContextBreakdownAsync's PendingTokens (just needs the
+        ''' token cost) so the exact same real search
+        ''' (GetRelevantMemoriesTextAsync/GetRelevantChunksTextAsync,
+        ''' matching what SendAsync itself calls) only needs writing once.
+        ''' Genuinely empty (not a placeholder note - that's each caller's
+        ''' own UI concern) when draftText is blank, since neither search
+        ''' has real text to search against.
+        ''' </summary>
+        Private Async Function BuildLiveTurnContextTextAsync(draftText As String, cancellationToken As CancellationToken) As Task(Of String)
+            Dim sections As New List(Of String) From {BuildTimeAwarenessText()}
+
+            If Not String.IsNullOrWhiteSpace(draftText) Then
+                Dim relevantMemoriesText = Await _memoryService.GetRelevantMemoriesTextAsync(draftText, cancellationToken)
+                If Not String.IsNullOrEmpty(relevantMemoriesText) Then sections.Add(relevantMemoriesText)
+
+                If IsKnowledgeModuleEnabled Then
+                    Dim relevantKnowledgeText = Await _knowledgeService.GetRelevantChunksTextAsync(SelectedKnowledgeBaseId, draftText, cancellationToken)
+                    If Not String.IsNullOrEmpty(relevantKnowledgeText) Then sections.Add(relevantKnowledgeText)
+                End If
+            End If
+
+            Return String.Join(Environment.NewLine & Environment.NewLine, sections)
+        End Function
 
         ''' <summary>
         ''' Shows the VOLATILE per-turn context - time-awareness plus
         ''' whatever memory/knowledge search would surface for the text
-        ''' currently sitting in the message box - using the exact same
-        ''' calls SendAsync itself makes (GetRelevantMemoriesTextAsync/
-        ''' GetRelevantChunksTextAsync), so this is a genuine preview, not a
-        ''' guess. Both of those need real text to search against, so with
-        ''' an empty message box only the time line is shown, with an
-        ''' explanation rather than silently omitting the other sections.
+        ''' currently sitting in the message box, via
+        ''' BuildLiveTurnContextTextAsync - a genuine preview, not a guess.
+        ''' Memory/knowledge both need real text to search against, so with
+        ''' an empty message box only the time line is real content, with an
+        ''' explanation appended for display rather than silently omitting
+        ''' the other sections.
         ''' </summary>
         Private Async Function OpenTurnContextAsync() As Task
-            Dim sections As New List(Of String) From {BuildTimeAwarenessText()}
+            Using cts As New CancellationTokenSource(TimeSpan.FromSeconds(15))
+                Dim turnContextText = Await BuildLiveTurnContextTextAsync(InputText, cts.Token)
+                Dim tokenCount = Await TryTokenizeAsync(turnContextText, cts.Token)
 
-            If String.IsNullOrWhiteSpace(InputText) Then
-                sections.Add("(Type something in the message box first to preview what relevant memories/knowledge would be included for it - both need real text to search against.)")
-            Else
-                Using cts As New CancellationTokenSource(TimeSpan.FromSeconds(15))
-                    Dim relevantMemoriesText = Await _memoryService.GetRelevantMemoriesTextAsync(InputText, cts.Token)
-                    If Not String.IsNullOrEmpty(relevantMemoriesText) Then sections.Add(relevantMemoriesText)
+                Dim displayText = turnContextText
+                If String.IsNullOrWhiteSpace(InputText) Then
+                    displayText &= Environment.NewLine & Environment.NewLine &
+                        "(Type something in the message box first to preview what relevant memories/knowledge would be included for it - both need real text to search against.)"
+                End If
 
-                    If IsKnowledgeModuleEnabled Then
-                        Dim relevantKnowledgeText = Await _knowledgeService.GetRelevantChunksTextAsync(SelectedKnowledgeBaseId, InputText, cts.Token)
-                        If Not String.IsNullOrEmpty(relevantKnowledgeText) Then sections.Add(relevantKnowledgeText)
+                SystemPromptDialog.Show(displayText, title:="Turn context (preview)",
+                    description:=$"What gets silently prepended to your NEXT message when you hit Send - never shown in the chat, never in View system prompt. Recomputed fresh every turn, so this is a live preview based on the message box's current text, not a historical record. (~{tokenCount:N0} tokens)")
+            End Using
+        End Function
+
+        ''' <summary>
+        ''' Raw chars/4 estimates (not the model's real tokenizer - see
+        ''' ContextBreakdown's own comment) for what's already committed to
+        ''' context right now: the stable system prompt, every enabled
+        ''' tool's schema, and _history. Shared by RefreshContextBreakdown
+        ''' (which further rescales these for display) and SendAsync (which
+        ''' needs their sum to keep MaxOutputTokens from ever requesting more
+        ''' total tokens than the model's context window actually has room
+        ''' for on top of them - a real cause of an always-empty reply,
+        ''' distinct from the "model got stuck mid-reasoning" empty-reply
+        ''' case the retry loop already handles).
+        ''' </summary>
+        ''' <summary>
+        ''' Real counts via Lemonade's own POST /v1/tokenize (the actual
+        ''' model tokenizer), batched to three calls total (one string per
+        ''' category) rather than one per tool/message - confirmed live
+        ''' this endpoint exists and works, and that it's dramatically more
+        ''' accurate than the chars/4 guess this app used before: that
+        ''' guess was confirmed to disagree with Lemonade's own real
+        ''' prompt_tokens by thousands of tokens, in both directions,
+        ''' depending on how JSON-heavy the content was - no fixed
+        ''' chars-per-token ratio can track that. Falls back to the old
+        ''' chars/4 approximation (UsedRealTokenizer:=False) only if the
+        ''' tokenize call itself fails - an older Lemonade version without
+        ''' this endpoint, or a transient network issue - so estimation
+        ''' still degrades gracefully rather than breaking outright.
+        ''' </summary>
+        ''' <summary>
+        ''' Even the exact wire-format tools array (BuildRawToolsText) can't
+        ''' capture the tool-use preamble/instructions Qwen's chat template
+        ''' injects once, server-side, whenever tools are present in a
+        ''' request - there's no API to render that without a real
+        ''' generation (see SendAsync's own MaxOutputTokens comment for why
+        ''' that's been checked and ruled out). Unlike the earlier,
+        ''' rightly-rejected "template overhead" figure (circularly defined
+        ''' as "whatever makes the numbers agree"), this is a genuinely
+        ''' measured, independently-confirmed constant: repeated live
+        ''' testing (three consecutive turns of a fresh conversation,
+        ''' tools-enabled vs. tools-disabled as a direct control) found a
+        ''' stable ~2,200-token gap between the real total and every other
+        ''' known component, present ONLY when tools are active and
+        ''' essentially zero with tools off - consistent with a roughly
+        ''' fixed per-request cost, not something that scales with
+        ''' conversation length. Added directly onto the tools figure
+        ''' (rather than a separate line) since that's genuinely where it
+        ''' comes from. Worth recalibrating if this app's typical active
+        ''' tool count changes drastically from what this was measured
+        ''' against (~68).
+        ''' </summary>
+        Private Const ToolUsePreambleOverheadTokens As Integer = 2200
+
+        Private Async Function EstimateCommittedContextTokensAsync(cancellationToken As CancellationToken) As Task(Of (SystemPrompt As Integer, Tools As Integer, History As Integer, UsedRealTokenizer As Boolean))
+            Dim systemPromptText = If(_history.Count > 0, _history(0).Text, "")
+
+            Dim toolsText = BuildRawToolsText()
+            Dim toolUseOverhead = If(_moduleRegistry.GetEnabledTools().Count > 0, ToolUsePreambleOverheadTokens, 0)
+
+            Dim historyTextBuilder As New Text.StringBuilder()
+            For i = 1 To _history.Count - 1
+                historyTextBuilder.AppendLine(ExtractMessageText(_history(i)))
+            Next
+            Dim historyText = historyTextBuilder.ToString()
+
+            Try
+                Dim systemPromptTokens = Await _managementClient.TokenizeAsync(systemPromptText, cancellationToken)
+                Dim toolsTokens = Await _managementClient.TokenizeAsync(toolsText, cancellationToken)
+                Dim historyTokens = Await _managementClient.TokenizeAsync(historyText, cancellationToken)
+                Return (systemPromptTokens, toolsTokens + toolUseOverhead, historyTokens, True)
+            Catch
+                Const charsPerToken = 4
+                Return (systemPromptText.Length \ charsPerToken, toolsText.Length \ charsPerToken + toolUseOverhead, historyText.Length \ charsPerToken, False)
+            End Try
+        End Function
+
+        ''' <summary>
+        ''' The literal text tokenized for the "tools" figure everywhere it
+        ''' appears (breakdown popup, "Tools sent" viewer) - one shared
+        ''' builder so what's DISPLAYED to the user and what's TOKENIZED can
+        ''' never drift apart again. Builds the actual OpenAI wire-format
+        ''' tools array - [{"type":"function","function":{"name":...,
+        ''' "description":...,"parameters":...}}, ...] - not just a bare
+        ''' concatenation of each tool's name/description/schema. Confirmed
+        ''' live via a direct side-by-side tokenize comparison that the
+        ''' wrapper syntax itself costs real tokens (~15/tool) a bare
+        ''' concatenation missed entirely - a genuine accuracy improvement,
+        ''' not the whole story: this still can't capture whatever tool-use
+        ''' preamble the chat template might inject once when tools are
+        ''' present, since no API exists to render that without a real
+        ''' generation (see SendAsync's own MaxOutputTokens comment) - the
+        ''' remaining gap against Lemonade's real total should be smaller
+        ''' now, not necessarily zero. AIFunction (every real tool in this
+        ''' app) derives from AIFunctionDeclaration, which is where
+        ''' JsonSchema lives - confirmed via reflection against the actual
+        ''' installed package, not assumed. A tool that's somehow a plain
+        ''' AITool (declared but not invokable - see
+        ''' FunctionInvokingChatClient's own docs) contributes an empty
+        ''' parameters object, matching how the OpenAI SDK itself would
+        ''' have nothing real to serialize for one either.
+        ''' </summary>
+        Private Function BuildRawToolsText() As String
+            Dim wireTools = _moduleRegistry.GetEnabledTools().Select(
+                Function(t)
+                    Dim declaration = TryCast(t, AIFunctionDeclaration)
+                    Dim parameters As Object = If(declaration IsNot Nothing, CType(declaration.JsonSchema, Object), CType(JsonDocument.Parse("{}").RootElement, Object))
+                    Return New With {
+                        .type = "function",
+                        .function = New With {
+                            .name = t.Name,
+                            .description = t.Description,
+                            .parameters = parameters
+                        }
+                    }
+                End Function).ToList()
+            Return JsonSerializer.Serialize(wireTools)
+        End Function
+
+        ''' <summary>
+        ''' ChatMessage.Text only concatenates TextContent - same behavior
+        ''' already confirmed for a streaming update's own .Text (see
+        ''' StreamOneReplyAsync's comment on reasoning). Confirmed live this
+        ''' was a real, substantial gap for the history count above: any
+        ''' message with an actual tool call in it (a FunctionCallContent
+        ''' for the call, a FunctionResultContent for its result - inserted
+        ''' into _history automatically by UseFunctionInvocation whenever a
+        ''' tool is genuinely called) contributes its arguments/result
+        ''' content to the real prompt Lemonade tokenizes, but nothing to a
+        ''' .Text-only read.
+        ''' </summary>
+        Private Shared Function ExtractMessageText(message As ChatMessage) As String
+            Dim sb As New Text.StringBuilder()
+            For Each content In message.Contents
+                Dim textContent = TryCast(content, TextContent)
+                If textContent IsNot Nothing Then
+                    sb.Append(textContent.Text)
+                    Continue For
+                End If
+
+                Dim functionCall = TryCast(content, FunctionCallContent)
+                If functionCall IsNot Nothing Then
+                    sb.Append(functionCall.Name)
+                    If functionCall.Arguments IsNot Nothing Then
+                        sb.Append(JsonSerializer.Serialize(functionCall.Arguments))
                     End If
-                End Using
-            End If
+                    Continue For
+                End If
 
-            Dim turnContextText = String.Join(Environment.NewLine & Environment.NewLine, sections)
-            SystemPromptDialog.Show(turnContextText, title:="Turn context (preview)",
-                description:="What gets silently prepended to your NEXT message when you hit Send - never shown in the chat, never in View system prompt. Recomputed fresh every turn, so this is a live preview based on the message box's current text, not a historical record.")
+                Dim functionResult = TryCast(content, FunctionResultContent)
+                If functionResult IsNot Nothing AndAlso functionResult.Result IsNot Nothing Then
+                    sb.Append(JsonSerializer.Serialize(functionResult.Result))
+                End If
+            Next
+            Return sb.ToString()
+        End Function
+
+        ''' <summary>
+        ''' Computes a fresh ContextBreakdown snapshot right now - called
+        ''' from MainWindow's context-usage-text hover handler. Async since
+        ''' EstimateCommittedContextTokensAsync calls Lemonade's real
+        ''' POST /v1/tokenize rather than guessing - IsContextBreakdownLoading
+        ''' guards against overlapping calls if the mouse re-enters before a
+        ''' previous refresh finished, same "if (loading) return" pattern
+        ''' openlumara's own context popup uses for the same reason. The
+        ''' composition (system prompt/tools/history) reflects what's
+        ''' genuinely already in context; PendingTokens is a live preview of
+        ''' what sending right now would ADD (see its own comment) - the
+        ''' live turn-context/message-box cost is cached and only
+        ''' recomputed when InputText actually changes, not on every hover,
+        ''' since it involves real memory/knowledge embedding searches that
+        ''' are wasted work when nothing's changed since the last one.
+        ''' </summary>
+        Public Async Function RefreshContextBreakdownAsync() As Task
+            If IsContextBreakdownLoading Then Return
+            IsContextBreakdownLoading = True
+            Try
+                Dim committed = Await EstimateCommittedContextTokensAsync(CancellationToken.None)
+                Dim systemPromptTokens = committed.SystemPrompt
+                Dim toolsTokens = committed.Tools
+                Dim historyTokens = committed.History
+                Dim toolsActiveCount = _moduleRegistry.GetEnabledTools().Count
+
+                Dim percentFull = If(ContextUsageMax > 0, CInt(Math.Round(100.0 * ContextUsageCurrent / ContextUsageMax)), 0)
+
+                ' Widths sized against ContextUsageMax directly (the real
+                ' window size), NOT rescaled to force these three parts to
+                ' sum exactly to ContextUsageCurrent - deliberately: even
+                ' with the real tokenizer, this can't see chat-template
+                ' rendering overhead (per-message role markers, the tool-
+                ' calling JSON wrapper) that Lemonade's own real total does
+                ' include, so a small honest gap between "sum of parts" and
+                ' "the one true total" is expected and left as unlabeled
+                ' free space rather than force-summed with another
+                ' estimated number - see this class's own comment for the
+                ' full history of why that went wrong twice already.
+                Dim widthPerToken = If(ContextUsageMax > 0, ContextBreakdownBarWidth / ContextUsageMax, 0)
+                Dim systemPromptWidth = Math.Min(systemPromptTokens * widthPerToken, ContextBreakdownBarWidth)
+                Dim toolsWidth = Math.Min(toolsTokens * widthPerToken, ContextBreakdownBarWidth - systemPromptWidth)
+                Dim historyWidth = Math.Min(historyTokens * widthPerToken, ContextBreakdownBarWidth - systemPromptWidth - toolsWidth)
+                Dim freeWidth = Math.Max(ContextBreakdownBarWidth - systemPromptWidth - toolsWidth - historyWidth, 0)
+
+                ' PendingTokens: the real, tokenized cost of what would
+                ' actually be added on top of the total above if Send were
+                ' hit right now - the live turn-context preview (time-
+                ' awareness/memory/knowledge for the message box's CURRENT
+                ' text, the exact same computation OpenTurnContextAsync's
+                ' own dialog uses, not stale leftover data from the last
+                ' send) plus the message box's own text. An addition on top
+                ' of the one real total, never a second competing total of
+                ' its own. Cached against the exact InputText it was
+                ' computed for (see _lastPendingPreviewInputText's own
+                ' comment) - re-running the real memory/knowledge embedding
+                ' searches on every hover regardless of whether anything
+                ' changed was confirmed live as real, wasted load on
+                ' Lemonade, visible in its own logs as repeated tiny
+                ' embedding completions.
+                Dim pendingTokens As Integer
+                If InputText = _lastPendingPreviewInputText Then
+                    pendingTokens = _lastPendingPreviewTokens
+                Else
+                    Dim turnContextText = Await BuildLiveTurnContextTextAsync(InputText, CancellationToken.None)
+                    Dim pendingText = If(String.IsNullOrEmpty(turnContextText), "", turnContextText & Environment.NewLine) & InputText
+                    pendingTokens = If(String.IsNullOrWhiteSpace(pendingText), 0, Await TryTokenizeAsync(pendingText, CancellationToken.None))
+                    _lastPendingPreviewInputText = InputText
+                    _lastPendingPreviewTokens = pendingTokens
+                End If
+
+                ContextBreakdownInfo = New ContextBreakdown With {
+                    .ContextNowTokens = ContextUsageCurrent,
+                    .PercentFull = percentFull,
+                    .UsedRealTokenizer = committed.UsedRealTokenizer,
+                    .SystemPromptTokens = systemPromptTokens,
+                    .SystemPromptWidth = systemPromptWidth,
+                    .ToolsActiveCount = toolsActiveCount,
+                    .ToolsTokens = toolsTokens,
+                    .ToolsWidth = toolsWidth,
+                    .HistoryTokens = historyTokens,
+                    .HistoryWidth = historyWidth,
+                    .FreeWidth = freeWidth,
+                    .CompactionThresholdLeft = ContextBreakdownBarWidth * (_memorySettings.CompactionTriggerPercent / 100.0),
+                    .CompactionCount = _compactionCount,
+                    .HasCompactions = _compactionCount > 0,
+                    .PendingTokens = pendingTokens,
+                    .WouldExceedLimit = ContextUsageMax > 0 AndAlso ContextUsageCurrent + pendingTokens >= ContextUsageMax
+                }
+            Finally
+                IsContextBreakdownLoading = False
+            End Try
         End Function
 
         ''' <summary>
@@ -1043,6 +1429,12 @@ Namespace ViewModels
                         ' SelectedModel property) so this doesn't trigger a pointless
                         ' reload of the model that's already loaded.
                         SetProperty(_selectedModel, health.ModelLoaded, NameOf(SelectedModel))
+                        ' This bypass skips SwitchModelAsync entirely (nothing
+                        ' to load, it's already loaded) - so it also skips
+                        ' SwitchModelAsync's own real-ctx_size correction. Same
+                        ' fix applied here directly (see
+                        ' ApplyRealLoadedContextWindow's own comment).
+                        ApplyRealLoadedContextWindow(health.ModelLoaded, health.AllModelsLoaded)
                         SendCommand.NotifyCanExecuteChanged()
                         OnPropertyChanged(NameOf(IsModelDetailsAvailable))
                     ElseIf AvailableModels.Any(Function(m) m.Id = _lemonadeSettings.ChatModel) Then
@@ -1133,8 +1525,24 @@ Namespace ViewModels
                 ' Dictionary throws ArgumentNullException on a null key.
                 Dim previouslySelectedModel = SelectedModel
 
+                ' Fetched BEFORE touching _modelContextWindows, and folded
+                ' into the SAME population pass below - not a separate
+                ' "reset everything to catalog defaults, then hope to fix
+                ' the current model" step. That two-step version had a real
+                ' gap, confirmed live: if this health call happened to
+                ' fail/time out (e.g. Lemonade still settling right after
+                ' generating a reply), the wrong catalog max was already in
+                ' place with nothing left to correct it until some later
+                ' refresh happened to succeed - sometimes not for a long
+                ' time. Best-effort: Nothing here just means every model
+                ' falls back to whatever it already had, below.
+                Dim health As LemonadeHealthInfo = Nothing
+                Try
+                    health = Await _managementClient.GetHealthAsync(cancellationToken)
+                Catch
+                End Try
+
                 AvailableModels.Clear()
-                _modelContextWindows.Clear()
                 _modelCategories.Clear()
                 _modelVisionSupport.Clear()
                 ' Chat models first, then Image, then Embedding, then
@@ -1147,7 +1555,25 @@ Namespace ViewModels
                     If item.Category <> ModelSelectorItem.ImageCategory OrElse imageGenEnabled Then
                         AvailableModels.Add(item)
                     End If
-                    _modelContextWindows(model.Id) = model.MaxContextWindow
+
+                    ' Prefer the real loaded ctx_size (this refresh's own
+                    ' health snapshot) over the catalog's static
+                    ' max_context_window whenever it's actually known - see
+                    ' ApplyRealLoadedContextWindow's own comment for why.
+                    ' _modelContextWindows is deliberately NOT Clear()'d
+                    ' before this loop (see above) - a model this refresh
+                    ' has no real data for this time keeps whatever it
+                    ' already had (quite possibly an already-correct real
+                    ' reading from a moment ago) rather than being blindly
+                    ' downgraded to the catalog max; only a genuinely
+                    ' never-seen-before model falls back to that.
+                    Dim realCtxSize = health?.AllModelsLoaded?.FirstOrDefault(Function(m) m.ModelName = model.Id)?.RecipeOptions?.CtxSize
+                    If realCtxSize.HasValue AndAlso realCtxSize.Value > 0 Then
+                        _modelContextWindows(model.Id) = realCtxSize.Value
+                    ElseIf Not _modelContextWindows.ContainsKey(model.Id) Then
+                        _modelContextWindows(model.Id) = model.MaxContextWindow
+                    End If
+
                     _modelCategories(model.Id) = item.Category
                     _modelVisionSupport(model.Id) = model.Labels IsNot Nothing AndAlso
                         model.Labels.Contains("vision", StringComparer.OrdinalIgnoreCase)
@@ -1164,6 +1590,13 @@ Namespace ViewModels
                     OnPropertyChanged(NameOf(AttachedImageVisionWarning))
                     OnPropertyChanged(NameOf(IsModelDetailsAvailable))
                 End If
+
+                ' Immediate feedback for the correction above, rather than
+                ' waiting for the next completed turn's stats to refresh it -
+                ' SetContextUsage isn't used here since ContextUsageCurrent
+                ' shouldn't reset just from a routine refresh.
+                ContextUsageMax = _modelContextWindows.GetValueOrDefault(SelectedModel, 0)
+                ContextUsageText = FormatContextUsageText(ContextUsageCurrent, ContextUsageMax)
             Catch ex As Exception
                 IsHealthy = False
                 LastHealthCheckError = $"Couldn't reach Lemonade: {ex.Message}"
@@ -1272,6 +1705,7 @@ Namespace ViewModels
             ' - a brand-new chat must not inherit whatever chat was open
             ' before it, since BuildSystemPromptText reads this field.
             _conversationSummaryText = ""
+            _compactionCount = 0
             RefreshStableSystemPrompt()
             Messages.Clear()
             ' Cleared here rather than only when a message finishes sending,
@@ -1335,11 +1769,25 @@ Namespace ViewModels
         Private Sub SetContextUsage(contextTokens As Integer)
             ContextUsageCurrent = contextTokens
             ContextUsageMax = _modelContextWindows.GetValueOrDefault(SelectedModel, 0)
-            ContextUsageText = $"{ContextUsageCurrent:N0} / {ContextUsageMax:N0} tokens"
+            ContextUsageText = FormatContextUsageText(ContextUsageCurrent, ContextUsageMax)
         End Sub
 
         ''' <summary>Switches the chat window to an existing session's history.</summary>
         Private Sub LoadSession(sessionId As String)
+            ' Loading the session you're ALREADY in is a no-op, not a full
+            ' reset - confirmed live this matters, not just as a
+            ' micro-optimization: LoadSession always rebuilds _history from
+            ' the full PERSISTED message record, since compaction only ever
+            ' trims the in-memory copy, never the database (see
+            ' _conversationSummaryText's own comment below). Any spurious
+            ' re-trigger of SelectedSession's setter for the session
+            ' that's already open - whatever the exact cause - would
+            ' otherwise silently discard everything compaction had just
+            ' trimmed, undoing it completely. A conversation that hit 64+
+            ' uncompacted messages despite compaction genuinely having run
+            ' was traced to exactly this.
+            If sessionId = _currentSessionId Then Return
+
             _currentSessionId = sessionId
             _history.Clear()
             ' Not persisted (see _conversationSummaryText's comment) - a
@@ -1349,6 +1797,7 @@ Namespace ViewModels
             ' compacted - the loaded transcript itself never is). Cleared
             ' BEFORE RefreshStableSystemPrompt, same reasoning as NewChat.
             _conversationSummaryText = ""
+            _compactionCount = 0
             RefreshStableSystemPrompt()
             Messages.Clear()
 
@@ -1458,8 +1907,23 @@ Namespace ViewModels
         ''' </summary>
         Private Async Function CompactHistoryIfNeededAsync(assistantBubble As ChatMessageViewModel, cancellationToken As CancellationToken) As Task
             If ContextUsageMax <= 0 Then Return
+
+            ' A FRESH, real measurement of what's actually in _history right
+            ' now - not ContextUsageCurrent, which only updates after a
+            ' SUCCESSFULLY COMPLETED turn (see its own comment). Confirmed
+            ' live this was a real, serious bug: a run of failed sends
+            ' (blank replies, context-exceeded errors) left ContextUsageCurrent
+            ' stuck at a stale, too-low reading for a long stretch, during
+            ' which this trigger kept comparing against that stale number
+            ' and never fired - _history grew unchecked to 64 messages
+            ' (~38,000 characters) before compaction finally caught up once
+            ' a turn happened to succeed again. Checking the real current
+            ' size directly, every time, closes that gap regardless of how
+            ' many previous turns failed.
+            Dim committed = Await EstimateCommittedContextTokensAsync(cancellationToken)
+            Dim currentTokens = committed.SystemPrompt + committed.Tools + committed.History
             Dim compactionTriggerFraction = _memorySettings.CompactionTriggerPercent / 100.0
-            If ContextUsageCurrent / ContextUsageMax < compactionTriggerFraction Then Return
+            If currentTokens / ContextUsageMax < compactionTriggerFraction Then Return
 
             ' _history(0) is always the system message - everything else is
             ' real conversation. Nothing to usefully compact yet if there
@@ -1479,6 +1943,7 @@ Namespace ViewModels
                 itemsToSummarize.AddRange(_history.Skip(1).Take(compactibleCount))
 
                 _conversationSummaryText = Await _compactionService.SummarizeAsync(itemsToSummarize, cancellationToken)
+                _compactionCount += 1
 
                 Dim keptTail = _history.Skip(_history.Count - MessagesToKeepAfterCompaction).ToList()
                 _history.Clear()
@@ -1496,16 +1961,26 @@ Namespace ViewModels
                 ' Lemonade-reported figure (from the reply just before this)
                 ' until the *next* turn's own stats come back, which would
                 ' read as "compaction did nothing" since the number doesn't
-                ' move. A rough local estimate (~4 characters/token, the
-                ' standard ballpark for
-                ' English text) immediately reflects the drop; it's clearly
-                ' marked with "~" rather than presented as another real
-                ' Lemonade number, and isn't persisted via
+                ' move. Re-estimated the same reliable way as everywhere
+                ' else (EstimateCommittedContextTokensAsync, real tokenizer
+                ' when available) - confirmed live that an earlier version
+                ' of this used a cruder local estimate that only summed
+                ' _history's own text and completely omitted tools
+                ' (consistently ~10,000+ real tokens on every request),
+                ' making ContextUsageCurrent wildly, systematically too low
+                ' right after every compaction. That false-small baseline
+                ' then made the very next real turn look like an alarming,
+                ' unexplained jump, when the context had actually been that
+                ' large the whole time - this was the real, unifying cause
+                ' behind several "why did this jump by thousands of tokens"
+                ' reports. Marked with "~" rather than presented as another
+                ' real Lemonade number, and isn't persisted via
                 ' UpdateLastContextTokens - the real figure from the next
-                ' actual turn overwrites it as usual.
-                Dim estimatedTokens = _history.Sum(Function(m) EstimateTokenCount(m.Text))
+                ' actual completed turn overwrites it as usual.
+                Dim recomputed = Await EstimateCommittedContextTokensAsync(cancellationToken)
+                Dim estimatedTokens = recomputed.SystemPrompt + recomputed.Tools + recomputed.History
                 ContextUsageCurrent = estimatedTokens
-                ContextUsageText = $"~{estimatedTokens:N0} / {ContextUsageMax:N0} tokens"
+                ContextUsageText = FormatContextUsageText(estimatedTokens, ContextUsageMax, isEstimate:=True)
             Catch
                 ' Best-effort, same as fact extraction - a failed compaction
                 ' attempt just means the next turn's request stays as large
@@ -1517,6 +1992,28 @@ Namespace ViewModels
         Private Shared Function EstimateTokenCount(text As String) As Integer
             If String.IsNullOrEmpty(text) Then Return 0
             Return Math.Max(1, text.Length \ 4)
+        End Function
+
+        ''' <summary>Real count via Lemonade's own tokenizer, falling back to the chars/4 guess if the call fails (older Lemonade version, transient network issue) - shared by every "view X (~N tokens)" dialog rather than duplicating the same Try/Catch three times.</summary>
+        Private Async Function TryTokenizeAsync(text As String, cancellationToken As CancellationToken) As Task(Of Integer)
+            Try
+                Return Await _managementClient.TokenizeAsync(text, cancellationToken)
+            Catch
+                Return EstimateTokenCount(text)
+            End Try
+        End Function
+
+        ''' <summary>
+        ''' Builds the bottom bar's "X / Y tokens (Z%)" text - one shared
+        ''' place so the percentage is computed/rounded the same way
+        ''' everywhere ContextUsageCurrent/Max change, whether from a real
+        ''' Lemonade stats update or one of the "~"-prefixed local estimates
+        ''' (post-compaction, post-error/blank-reply).
+        ''' </summary>
+        Private Shared Function FormatContextUsageText(current As Integer, max As Integer, Optional isEstimate As Boolean = False) As String
+            Dim prefix = If(isEstimate, "~", "")
+            Dim percentText = If(max > 0, $" ({Math.Round(100.0 * current / max):0}%)", "")
+            Return $"{prefix}{current:N0} / {max:N0} tokens{percentText}"
         End Function
 
         ''' <summary>
@@ -1623,6 +2120,30 @@ Namespace ViewModels
             End If
         End Sub
 
+        ''' <summary>
+        ''' _modelContextWindows is seeded from /v1/models' static
+        ''' max_context_window (RefreshAvailableModelsAsync) - the model's
+        ''' declared MAXIMUM, not necessarily what it's actually loaded with
+        ''' right now. Lemonade lets a model be loaded at a smaller ctx_size
+        ''' than its max (e.g. deliberately, to test compaction sooner), and
+        ''' when that happens, everything reading _modelContextWindows (the
+        ''' context-usage bar, ModelDetailsDialog, and MaxOutputTokens' own
+        ''' remaining-room calculation in SendAsync) silently used the wrong,
+        ''' far larger number - confirmed live as the real root cause of an
+        ''' always-empty reply: requesting a MaxOutputTokens sized against a
+        ''' 262144 window when the model was actually loaded at 10752 asks
+        ''' for more total tokens than the real window holds. Called right
+        ''' after Lemonade confirms what's actually loaded, overwriting the
+        ''' catalog guess with the real ctx_size whenever Lemonade reports
+        ''' one for this model.
+        ''' </summary>
+        Private Sub ApplyRealLoadedContextWindow(modelName As String, allModelsLoaded As IEnumerable(Of LemonadeLoadedModelInfo))
+            Dim realCtxSize = allModelsLoaded?.FirstOrDefault(Function(m) m.ModelName = modelName)?.RecipeOptions?.CtxSize
+            If realCtxSize.HasValue AndAlso realCtxSize.Value > 0 Then
+                _modelContextWindows(modelName) = realCtxSize.Value
+            End If
+        End Sub
+
         Private Async Function SwitchModelAsync(modelName As String, cancellationToken As CancellationToken) As Task
             IsBusy = True
             IsModelLoading = True
@@ -1630,6 +2151,24 @@ Namespace ViewModels
             Try
                 Await _managementClient.LoadModelAsync(modelName, cancellationToken)
                 _currentlyLoadedModel = modelName
+
+                ' Best-effort - if this particular health check fails, the
+                ' context window just stays at the catalog's static max
+                ' until the next successful one (RefreshAvailableModelsAsync,
+                ' InitializeAsync), same as before this fix existed.
+                Try
+                    Dim health = Await _managementClient.GetHealthAsync(cancellationToken)
+                    ApplyRealLoadedContextWindow(modelName, health.AllModelsLoaded)
+                    ' Immediate feedback in the context-usage bar rather than
+                    ' waiting for the next completed turn's stats to refresh
+                    ' it - SetContextUsage isn't used here since
+                    ' ContextUsageCurrent shouldn't reset just from switching
+                    ' models mid-chat.
+                    ContextUsageMax = _modelContextWindows.GetValueOrDefault(SelectedModel, 0)
+                    ContextUsageText = FormatContextUsageText(ContextUsageCurrent, ContextUsageMax)
+                Catch
+                End Try
+
                 StatusText = ""
             Catch ex As Exception
                 StatusText = $"Failed to load {modelName}: {ex.Message}"
@@ -1804,13 +2343,37 @@ Namespace ViewModels
                 ' a reasoning-heavy model exhausts it mid-<think> block and
                 ' never reaches real answer text - indistinguishable, from
                 ' this app's side, from the model genuinely getting stuck
-                ' (see the retry loop below). Sized off the selected model's
-                ' own context window (already known from
-                ' _modelContextWindows) so a small-context model isn't asked
-                ' for more output than it could ever produce; falls back to a
-                ' flat generous default when the context window isn't known.
+                ' (see the retry loop below).
                 Dim contextWindow = _modelContextWindows.GetValueOrDefault(SelectedModel, 0)
-                options.MaxOutputTokens = If(contextWindow > 0, Math.Min(contextWindow \ 2, 16384), 8192)
+                ' Half the model's own context window, capped at 16384 -
+                ' generous, but sized off the selected model so a
+                ' small-context model isn't asked for more output than it
+                ' could ever produce.
+                Dim generousCap = If(contextWindow > 0, Math.Min(contextWindow \ 2, 16384), 8192)
+                ' That cap alone isn't enough on its own: it's sized against
+                ' the model's TOTAL window, not what's actually left once the
+                ' system prompt/tools/history already committed to this
+                ' request are accounted for. A large tool list in particular
+                ' (every enabled module's schema, sent on every request) can
+                ' already eat a real chunk of a small-to-mid context window
+                ' before the conversation even starts - requesting a
+                ' generous MaxOutputTokens on top of that can ask for more
+                ' total tokens (prompt + max_tokens) than the window holds,
+                ' which some llama.cpp-server versions handle by returning
+                ' immediately with zero tokens generated rather than an
+                ' error - an always-empty reply that looks identical to the
+                ' "model got stuck" case above but has nothing to do with it
+                ' and isn't fixed by retrying. EstimateCommittedContextTokensAsync
+                ' uses Lemonade's own real tokenizer when available (see its
+                ' own comment) - still not perfect (doesn't count the
+                ' volatile end-prompt content appended below, or chat-
+                ' template wrapper tokens), so a safety margin is subtracted
+                ' on top of it rather than trusting it to the exact token.
+                Const safetyMarginTokens = 512
+                Dim committed = Await EstimateCommittedContextTokensAsync(cts.Token)
+                Dim estimatedPromptTokens = committed.SystemPrompt + committed.Tools + committed.History
+                Dim remainingRoom = If(contextWindow > 0, Math.Max(contextWindow - estimatedPromptTokens - safetyMarginTokens, 256), generousCap)
+                options.MaxOutputTokens = Math.Min(generousCap, remainingRoom)
 
                 ' After a tool call, Qwen sometimes never properly closes its
                 ' reasoning and puts its whole real answer inside
@@ -1860,24 +2423,54 @@ Namespace ViewModels
                 If wasCancelled Then
                     assistantBubble.Text &= If(assistantBubble.Text.Length > 0, Environment.NewLine, "") & "[Stopped]"
                 ElseIf errorMessage IsNot Nothing Then
-                    ' Selecting a non-chat model (e.g. the embedding model)
-                    ' in the model dropdown and sending a message would
-                    ' otherwise crash the whole app - see StreamOneReplyAsync's
-                    ' Catch for the full story.
-                    assistantBubble.Text = $"⚠️ Something went wrong generating a reply: {errorMessage}" &
-                        Environment.NewLine & "If you've selected a non-chat model (e.g. an embedding model) in the model dropdown above, switch back to a real chat model and try again."
+                    ' Two real causes share this branch: selecting a non-chat
+                    ' model (e.g. the embedding model), which would otherwise
+                    ' crash the whole app (see StreamOneReplyAsync's Catch),
+                    ' and Lemonade rejecting the request outright because the
+                    ' prompt itself already exceeds the model's context size
+                    ' (see StreamOneReplyAsync's "$.error" handling) - the
+                    ' generic "switch models" hint doesn't apply to the
+                    ' second one, so it gets its own, more useful hint.
+                    Dim hint = If(errorMessage.Contains("exceeds the available context size", StringComparison.OrdinalIgnoreCase),
+                        "Try loading this model with a larger context size, disabling modules/tools you don't need for this chat, or starting a new chat.",
+                        "If you've selected a non-chat model (e.g. an embedding model) in the model dropdown above, switch back to a real chat model and try again.")
+                    ' A single newline reads as a real line break while
+                    ' IsStreaming is still true (plain TextBox), but the
+                    ' bubble switches to MarkdownViewer once streaming ends -
+                    ' CommonMark collapses a single "\n" into just a space,
+                    ' not a line break, so this needs a real blank line
+                    ' (double newline) to render as two separate lines.
+                    ' Lemonade's own error text also has no trailing
+                    ' punctuation, so one's added here for a clean sentence
+                    ' break rather than running straight into the hint.
+                    assistantBubble.Text = $"⚠️ Something went wrong generating a reply: {errorMessage.TrimEnd("."c, " "c)}." &
+                        Environment.NewLine & Environment.NewLine & hint
                 ElseIf String.IsNullOrWhiteSpace(fullReplyText) Then
                     ' A Length finish reason means the reply was cut off by
-                    ' MaxOutputTokens before any real answer text arrived -
-                    ' most often a reasoning-heavy model still inside its
-                    ' <think> block when the budget ran out. Worth telling
-                    ' apart from the model genuinely never producing an
-                    ' answer, since the fix for each is different (raise the
-                    ' token budget vs. just try again).
-                    assistantBubble.Text = If(finishReason = ChatFinishReason.Length,
-                        "(No response - the model's reply was cut off before it reached an answer, most likely still mid-reasoning when it ran out of output tokens. Try asking again or simplifying the request.)",
-                        "(No response - the model's reasoning didn't lead to an answer. Try asking again.)")
+                    ' MaxOutputTokens before any real answer text arrived.
+                    ' Two different real causes look identical from here: the
+                    ' model still being genuinely mid-reasoning when a
+                    ' generous budget ran out, or - much more diagnosable,
+                    ' and worth naming specifically when it's true - the
+                    ' system prompt/tools/history already filling most of
+                    ' the context window before generation even started
+                    ' (confirmed live: a large active tool list can eat most
+                    ' of a small/reduced context window on its own).
+                    ' contextWindow/estimatedPromptTokens are the exact
+                    ' numbers MaxOutputTokens was already computed from
+                    ' above, reused here rather than guessed again.
+                    Dim contextLikelyTooSmall = finishReason = ChatFinishReason.Length AndAlso
+                        contextWindow > 0 AndAlso estimatedPromptTokens >= contextWindow * 0.9
+
+                    If contextLikelyTooSmall Then
+                        assistantBubble.Text = $"(No response - your system prompt, tools, and conversation history already use an estimated ~{estimatedPromptTokens:N0} of this model's {contextWindow:N0}-token context window, leaving little or no room for a reply. Try loading this model with a larger context size, or disable modules/tools you don't need for this chat.)"
+                    ElseIf finishReason = ChatFinishReason.Length Then
+                        assistantBubble.Text = "(No response - the model's reply was cut off before it reached an answer, most likely still mid-reasoning when it ran out of output tokens. Try asking again or simplifying the request.)"
+                    Else
+                        assistantBubble.Text = "(No response - the model's reasoning didn't lead to an answer. Try asking again.)"
+                    End If
                 End If
+
 
                 ' What actually goes into history/the DB: the model's real
                 ' text when there is any (even a cancelled-partial reply),
@@ -1953,9 +2546,23 @@ Namespace ViewModels
                         _sessionTotalOutputTokens += stats.OutputTokens
                         SessionTotalTokensText = $"{_sessionTotalInputTokens} / {_sessionTotalOutputTokens}"
 
-                        ContextUsageCurrent = stats.InputTokens + stats.OutputTokens
+                        ' PromptTokens alone, not + OutputTokens - see
+                        ' PromptTokens' own comment for why InputTokens was
+                        ' wrong here. Output is deliberately excluded too:
+                        ' this needs to be directly comparable with the
+                        ' breakdown popup's "Next turn" estimate (also a
+                        ' prompt-only figure), and a reply heavy on reasoning
+                        ' can generate a lot of OUTPUT tokens that then never
+                        ' get persisted into history at all (see
+                        ' StreamOneReplyAsync's ReasoningText handling) -
+                        ' including them here made "Last reported" bigger
+                        ' than the very next prompt would actually be,
+                        ' reading as context somehow shrinking. The Stats
+                        ' tab's "Tokens in/out" already shows OutputTokens
+                        ' separately for anyone who wants that figure.
+                        ContextUsageCurrent = stats.PromptTokens
                         ContextUsageMax = _modelContextWindows.GetValueOrDefault(SelectedModel, 0)
-                        ContextUsageText = $"{ContextUsageCurrent:N0} / {ContextUsageMax:N0} tokens"
+                        ContextUsageText = FormatContextUsageText(ContextUsageCurrent, ContextUsageMax)
 
                         ' Persisted per-session so switching back to this chat
                         ' later can restore the real number instead of
@@ -1965,8 +2572,27 @@ Namespace ViewModels
                         ' Leave the previous stats/context-usage numbers showing rather than blanking them on a transient failure.
                     End Try
 
+                    ' Fire-and-forget, not Await - extraction is a second full
+                    ' model round-trip, and there's no reason to make the user
+                    ' wait for it before they can send their next message.
+                    ' Skipped on cancellation since a "[Stopped]"/partial reply
+                    ' isn't a real exchange worth mining for facts.
+                    ExtractFactsFireAndForget(userText, textToPersist)
+                End If
+
+                ' Deliberately its OWN condition, not folded into the stats
+                ' block above - that one is gated on errorMessage Is Nothing,
+                ' but a genuine rejection (most notably Lemonade's own
+                ' "exceeds the available context size" error) is exactly the
+                ' moment compaction is needed most. Confirmed live this was
+                ' a real, serious bug: once a conversation hit that error,
+                ' the one path that could shrink it back down never ran,
+                ' leaving the conversation permanently stuck failing every
+                ' subsequent send. Still skipped on wasCancelled - a
+                ' user-stopped generation isn't a reason to react.
+                If Not wasCancelled Then
                     ' Awaited, not fire-and-forget (unlike fact extraction
-                    ' below) - this mutates _history directly, and IsBusy
+                    ' above) - this mutates _history directly, and IsBusy
                     ' stays True (blocking a second SendAsync) only until
                     ' this Finally block, so a background mutation here could
                     ' still be running when the user's next message starts
@@ -1980,13 +2606,6 @@ Namespace ViewModels
                     Using compactionTimeoutCts As New CancellationTokenSource(TimeSpan.FromSeconds(BackgroundModelCallTimeout))
                         Await CompactHistoryIfNeededAsync(assistantBubble, compactionTimeoutCts.Token)
                     End Using
-
-                    ' Fire-and-forget, not Await - extraction is a second full
-                    ' model round-trip, and there's no reason to make the user
-                    ' wait for it before they can send their next message.
-                    ' Skipped on cancellation since a "[Stopped]"/partial reply
-                    ' isn't a real exchange worth mining for facts.
-                    ExtractFactsFireAndForget(userText, textToPersist)
                 End If
 
                 ' Mirrors this turn's tool calls into a MainViewModel-level
@@ -2171,6 +2790,39 @@ Namespace ViewModels
                     Dim update = enumerator.Current
                     fullReply.Append(update.Text)
                     If update.FinishReason IsNot Nothing Then finishReason = update.FinishReason
+
+                    ' A request Lemonade rejects outright (e.g. the prompt
+                    ' itself already exceeds the model's context size) comes
+                    ' back as HTTP 200 with Content-Type text/event-stream -
+                    ' a genuinely successful-looking stream - whose one and
+                    ' only SSE payload is {"error": {...}} instead of a real
+                    ' completion chunk. Confirmed live (via a raw repro
+                    ' against this exact failure) that neither the OpenAI SDK
+                    ' nor Microsoft.Extensions.AI treats this as an error at
+                    ' all - no exception is thrown, and update.Text/
+                    ' FinishReason both come back empty, indistinguishable
+                    ' from the model just producing nothing. The one place
+                    ' the real error message survives is this same
+                    ' RawRepresentation/JsonPatch mechanism prompt_progress
+                    ' already uses below, at its own top-level "$.error" path
+                    ' - checked unconditionally (not gated on
+                    ' hasStartedAnswering) since an error chunk is always the
+                    ' one and only chunk in the stream.
+                    Dim errorNativeUpdate = TryCast(update.RawRepresentation, OpenAI.Chat.StreamingChatCompletionUpdate)
+                    If errorNativeUpdate IsNot Nothing Then
+                        Dim errorPath = Encoding.UTF8.GetBytes("$.error")
+#Disable Warning SCME0001
+                        If errorNativeUpdate.Patch.Contains(errorPath) Then
+                            Dim errorJson = errorNativeUpdate.Patch.GetJson(errorPath)
+#Enable Warning SCME0001
+                            Using doc = JsonDocument.Parse(errorJson)
+                                Dim root = doc.RootElement
+                                Dim messageProp As JsonElement = Nothing
+                                errorMessage = If(root.TryGetProperty("message", messageProp), messageProp.GetString(), "Lemonade rejected the request.")
+                            End Using
+                            Exit While
+                        End If
+                    End If
 
                     ' Prompt-processing progress ("62% (ETA: 8s)") - only
                     ' meaningful before any real generation has started;

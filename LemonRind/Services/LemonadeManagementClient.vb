@@ -106,6 +106,17 @@ Namespace Services
         Public Property Message As String
     End Class
 
+    Friend Class LemonadeTokenizeRequest
+        <JsonPropertyName("content")>
+        Public Property Content As String
+    End Class
+
+    ''' <summary>Only the token COUNT is ever needed here, never the actual IDs/pieces, so nothing maps "with_pieces" output.</summary>
+    Friend Class LemonadeTokenizeResponse
+        <JsonPropertyName("tokens")>
+        Public Property Tokens As List(Of Integer)
+    End Class
+
     ''' <summary>
     ''' GET /v1/stats - performance figures for the last request, measured
     ''' server-side by Lemonade itself (not timed client-side), which is more
@@ -120,11 +131,36 @@ Namespace Services
         <JsonPropertyName("tokens_per_second")>
         Public Property TokensPerSecond As Double
 
+        ''' <summary>
+        ''' Tokens actually PROCESSED this request - excludes anything
+        ''' served from the backend's prefix cache (see PromptTokens' own
+        ''' comment). Legitimate for the Stats tab's per-turn "tokens in"
+        ''' figure (it's genuinely what cost time/compute this turn), but
+        ''' NOT what the context-usage bar should use - confirmed via
+        ''' Lemonade's own docs (lemonade-server.ai/docs/api/lemonade)
+        ''' this is "number of tokens processed", a different thing from
+        ''' the full prompt size.
+        ''' </summary>
         <JsonPropertyName("input_tokens")>
         Public Property InputTokens As Integer
 
         <JsonPropertyName("output_tokens")>
         Public Property OutputTokens As Integer
+
+        ''' <summary>
+        ''' "Total prompt tokens including cached tokens" (Lemonade's own
+        ''' docs) - the real full prompt size for the last request,
+        ''' unlike InputTokens which excludes whatever was served from the
+        ''' prefix cache. This is what ContextUsageCurrent needs: confirmed
+        ''' live that InputTokens alone can badly UNDER-report real context
+        ''' usage on any turn that benefits from cache reuse (the system
+        ''' prompt/tools/earlier history staying unchanged turn to turn is
+        ''' exactly the common case, not an edge case) - a real drop from
+        ''' 18% to 1% "used" between two turns in the same growing
+        ''' conversation, which should never happen, was traced to this.
+        ''' </summary>
+        <JsonPropertyName("prompt_tokens")>
+        Public Property PromptTokens As Integer
     End Class
 
     ''' <summary>
@@ -190,6 +226,27 @@ Namespace Services
             If result.Status <> "success" Then
                 Throw New InvalidOperationException($"Lemonade failed to load model '{modelName}': {result.Message}")
             End If
+        End Function
+
+        ''' <summary>
+        ''' Real tokenization via the currently-loaded model's own
+        ''' tokenizer (llama.cpp-compatible POST /v1/tokenize) - an exact
+        ''' count, not the chars/4 approximation used elsewhere in this app
+        ''' before this existed. Docs note this call doesn't count toward
+        ''' the model's own context window (a stateless utility, not a
+        ''' real generation request), so it's safe to call as often as
+        ''' estimation needs. Returns just the count (Tokens.Count), never
+        ''' the actual token IDs - nothing here needs the pieces themselves.
+        ''' </summary>
+        Public Async Function TokenizeAsync(content As String, cancellationToken As CancellationToken) As Task(Of Integer)
+            If String.IsNullOrEmpty(content) Then Return 0
+
+            Dim request As New LemonadeTokenizeRequest With {.Content = content}
+            Dim httpResponse = Await _httpClient.PostAsJsonAsync("tokenize", request, cancellationToken)
+            httpResponse.EnsureSuccessStatusCode()
+
+            Dim result = Await httpResponse.Content.ReadFromJsonAsync(Of LemonadeTokenizeResponse)(cancellationToken)
+            Return If(result?.Tokens?.Count, 0)
         End Function
 
     End Class

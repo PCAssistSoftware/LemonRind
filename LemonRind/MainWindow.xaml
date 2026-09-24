@@ -989,7 +989,9 @@
 
         <!-- Context-usage bar - tokens used vs. the selected model's max
              context window (MainViewModel.ContextUsageCurrent/Max, updated
-             after each completed reply from Lemonade's own GET /v1/stats). -->
+             after each completed reply from Lemonade's own GET /v1/stats).
+             Hovering the token text shows a per-part breakdown popup - see
+             MainViewModel.RefreshContextBreakdown/ContextBreakdown. -->
         <Grid Grid.Row="2" Margin="0,8,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
@@ -998,8 +1000,149 @@
             <ProgressBar Grid.Column="0" Height="4" Minimum="0"
                          Maximum="{Binding ContextUsageMax}" Value="{Binding ContextUsageCurrent, Mode=OneWay}"
                          VerticalAlignment="Center" />
-            <TextBlock Grid.Column="1" Text="{Binding ContextUsageText}" Foreground="Gray" FontSize="11"
-                       Margin="8,0,0,0" VerticalAlignment="Center" />
+
+            <Border x:Name="ContextUsageAnchor" Grid.Column="1" Background="Transparent"
+                    Margin="8,0,0,0" MouseEnter="OnContextUsageMouseEnter" MouseLeave="OnContextUsageMouseLeave">
+                <TextBlock Text="{Binding ContextUsageText}" Foreground="Gray" FontSize="11"
+                           VerticalAlignment="Center" />
+            </Border>
+
+            <!-- StaysOpen="True" so the Popup doesn't fight the manual
+                 MouseEnter/MouseLeave-driven IsOpen - with StaysOpen="False"
+                 WPF also closes it the instant focus/activation shifts
+                 anywhere, which fires constantly in a chat window. -->
+            <Popup Grid.Column="1" PlacementTarget="{Binding ElementName=ContextUsageAnchor}" Placement="Top"
+                   HorizontalOffset="-268" VerticalOffset="-8" AllowsTransparency="True" StaysOpen="True"
+                   PopupAnimation="Fade" IsOpen="{Binding IsContextBreakdownOpen, Mode=OneWay}">
+                <Border Background="White" BorderBrush="#D0D0D0" BorderThickness="1" CornerRadius="8" Padding="12" Width="284">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="12" ShadowDepth="2" Opacity="0.2" />
+                    </Border.Effect>
+                    <StackPanel>
+                        <!-- The ONE total in this whole popup - genuinely
+                             reported by Lemonade (GET /v1/stats after the
+                             last completed turn), the exact same
+                             ContextUsageCurrent/Max/Text the bottom bar
+                             shows. Nothing below is a second competing
+                             total - "if you send now" is deliberately an
+                             ADDITION on top of this, never its own total,
+                             after an earlier version showed a second,
+                             independently-estimated total here that could
+                             (and did) visibly disagree with this one. -->
+                        <Grid Margin="0,0,0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Context now" FontWeight="Bold" FontSize="12" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="1" FontWeight="Bold" FontSize="12" Foreground="#007AFF" VerticalAlignment="Center"
+                                       Text="{Binding ContextBreakdownInfo.PercentFull, StringFormat='{}{0}%'}" />
+                        </Grid>
+                        <TextBlock Text="{Binding ContextUsageText}" FontSize="11" Foreground="Gray" Margin="0,0,0,4" />
+
+                        <TextBlock Visibility="{Binding ContextBreakdownInfo.HasCompactions, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                   FontSize="10" Foreground="#8A5A00" Margin="0,0,0,6"
+                                   ToolTip="Older messages were summarized away to save context space - the full conversation is still saved and visible, only what's sent to the model was trimmed.">
+                            <Run Text="compacted " />
+                            <Run Text="{Binding ContextBreakdownInfo.CompactionCount, Mode=OneWay}" />
+                            <Run Text=" time(s)" />
+                        </TextBlock>
+
+                        <!-- Composition breakdown - widths sized against
+                             the real max context window, NOT rescaled to
+                             force these three parts to sum exactly to the
+                             total above (see ContextBreakdown's own
+                             comment for why that kept going wrong) - a
+                             small gap between "sum of these three" and the
+                             real total above is expected (chat-template
+                             rendering overhead this can't see) and just
+                             shows as extra free space, never as a
+                             contradiction. -->
+                        <Grid Height="10" Margin="0,0,0,4">
+                            <StackPanel Orientation="Horizontal">
+                                <Border Width="{Binding ContextBreakdownInfo.SystemPromptWidth}" Background="#007AFF" CornerRadius="4,0,0,4" />
+                                <Border Width="{Binding ContextBreakdownInfo.ToolsWidth}" Background="#34C759" />
+                                <Border Width="{Binding ContextBreakdownInfo.HistoryWidth}" Background="#AF52DE" />
+                                <Border Width="{Binding ContextBreakdownInfo.FreeWidth}" Background="#E5E5EA" CornerRadius="0,4,4,0" />
+                            </StackPanel>
+                            <!-- Canvas overlay just for the threshold line -
+                                 Canvas.Left takes a plain Double directly, no
+                                 Thickness/converter needed the way a Margin
+                                 binding would. -->
+                            <Canvas>
+                                <Rectangle Canvas.Left="{Binding ContextBreakdownInfo.CompactionThresholdLeft}"
+                                           Width="2" Height="10" Fill="#FF3B30"
+                                           ToolTip="Where auto-compaction (summarizing older history) kicks in" />
+                            </Canvas>
+                        </Grid>
+                        <TextBlock Text="composition via Lemonade's real tokenizer" FontSize="9" FontStyle="Italic" Foreground="Gray" Margin="0,0,0,8"
+                                   Visibility="{Binding ContextBreakdownInfo.UsedRealTokenizer, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        <TextBlock Text="composition estimated - Lemonade's tokenizer wasn't reachable" FontSize="9" FontStyle="Italic" Foreground="Gray" Margin="0,0,0,8"
+                                   Visibility="{Binding ContextBreakdownInfo.UsedRealTokenizer, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
+
+                        <!-- Legend rows - one per segment, skipping "free"
+                             (it's only there to fill the bar, nothing to
+                             label). -->
+                        <Grid Margin="0,0,0,3">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="10" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Border Grid.Column="0" Width="8" Height="8" Background="#007AFF" CornerRadius="4" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="1" Text="system prompt" FontSize="11" Margin="6,0,0,0" />
+                            <TextBlock Grid.Column="2" FontSize="11" Foreground="Gray"
+                                       Text="{Binding ContextBreakdownInfo.SystemPromptTokens, StringFormat='{}{0:N0} tokens'}" />
+                        </Grid>
+                        <Grid Margin="0,0,0,3">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="10" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Border Grid.Column="0" Width="8" Height="8" Background="#34C759" CornerRadius="4" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="1" Text="tools" FontSize="11" Margin="6,0,0,0"
+                                       ToolTip="Includes an estimated ~2,200-token tool-use framework overhead on top of the tool schemas themselves - a cost Qwen's chat template adds whenever tools are present that can't be measured directly, only estimated from repeated testing." />
+                            <TextBlock Grid.Column="2" FontSize="11" Foreground="Gray">
+                                <Run Text="{Binding ContextBreakdownInfo.ToolsActiveCount, Mode=OneWay}" />
+                                <Run Text="active | " />
+                                <Run Text="{Binding ContextBreakdownInfo.ToolsTokens, StringFormat={}{0:N0}, Mode=OneWay}" />
+                                <Run Text=" tokens" />
+                            </TextBlock>
+                        </Grid>
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="10" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Border Grid.Column="0" Width="8" Height="8" Background="#AF52DE" CornerRadius="4" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="1" Text="message history" FontSize="11" Margin="6,0,0,0" />
+                            <TextBlock Grid.Column="2" FontSize="11" Foreground="Gray"
+                                       Text="{Binding ContextBreakdownInfo.HistoryTokens, StringFormat='{}{0:N0} tokens'}" />
+                        </Grid>
+
+                        <!-- Not a second total - an ADDITION on top of
+                             "Context now" above, so it can never visually
+                             contradict it: the real, tokenized cost of the
+                             live turn-context preview (time-awareness/
+                             memory/knowledge for the message box's CURRENT
+                             text) plus the message box's own text. -->
+                        <Border BorderThickness="0,1,0,0" BorderBrush="#E5E5EA" Padding="0,8,0,0">
+                            <StackPanel>
+                                <TextBlock Text="If you send now" FontWeight="Bold" FontSize="12" Margin="0,0,0,2" />
+                                <TextBlock FontSize="11" Foreground="Gray">
+                                    <Run Text="+" />
+                                    <Run Text="{Binding ContextBreakdownInfo.PendingTokens, StringFormat={}{0:N0}, Mode=OneWay}" />
+                                    <Run Text=" tokens (your message + turn context)" />
+                                </TextBlock>
+                                <TextBlock Text="⚠️ This likely won't fit in the current context window" FontSize="11" FontWeight="Bold" Foreground="#FF3B30" Margin="0,4,0,0"
+                                           Visibility="{Binding ContextBreakdownInfo.WouldExceedLimit, Converter={StaticResource BooleanToVisibilityConverter}}" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Border>
+            </Popup>
         </Grid>
 
         <Grid Grid.Row="3" Margin="0,8,0,0">
@@ -1367,6 +1510,17 @@
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE81C;" FontFamily="Segoe MDL2 Assets" FontSize="12" Margin="0,0,6,0" />
                         <TextBlock Text="View turn context" FontSize="13" />
+                    </StackPanel>
+                </Button>
+                <!-- Real visibility into the tool definitions sent alongside
+                     every request - the context breakdown popup can show
+                     how many tokens tools cost, but not what's actually in
+                     them. -->
+                <Button Command="{Binding OpenToolsSentCommand}" Style="{StaticResource PillButtonStyle}" Margin="0,6,0,0"
+                        Visibility="{Binding RightPanelTab, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=Stats}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE90F;" FontFamily="Segoe MDL2 Assets" FontSize="12" Margin="0,0,6,0" />
+                        <TextBlock Text="View tools sent" FontSize="13" />
                     </StackPanel>
                 </Button>
                 <Button Command="{Binding OpenSettingsCommand}" Style="{StaticResource PillButtonStyle}"

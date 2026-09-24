@@ -88,6 +88,36 @@ Class LogViewerWindow
         _streamCts?.Cancel()
     End Sub
 
+    ''' <summary>Ctrl+C, matching the standard Windows shortcut - ListView has no built-in "copy selected rows as text" behavior the way a TextBox does, so this is handled by hand.</summary>
+    Private Sub OnLogListViewPreviewKeyDown(sender As Object, e As KeyEventArgs)
+        If e.Key = Key.C AndAlso Keyboard.Modifiers = ModifierKeys.Control Then
+            CopySelectedLogLines()
+        End If
+    End Sub
+
+    Private Sub OnCopySelectedLogLines(sender As Object, e As RoutedEventArgs)
+        CopySelectedLogLines()
+    End Sub
+
+    ''' <summary>
+    ''' Tab-separated, matching the GridView's own column order (Time/
+    ''' Severity/Tag/Line) - pastes cleanly into a spreadsheet as real
+    ''' columns, and reads fine as plain text too. SelectedItems preserves
+    ''' the order entries were selected in, not necessarily their on-screen
+    ''' order - re-sorting against _entries first so a multi-select copy
+    ''' reads top-to-bottom like the visible log, not selection order.
+    ''' </summary>
+    Private Sub CopySelectedLogLines()
+        If LogListView.SelectedItems.Count = 0 Then Return
+
+        Dim selected = LogListView.SelectedItems.Cast(Of LemonadeLogEntry)().ToHashSet()
+        Dim orderedLines = _entries.
+            Where(Function(entry) selected.Contains(entry)).
+            Select(Function(entry) $"{entry.Timestamp}{vbTab}{entry.Severity}{vbTab}{entry.Tag}{vbTab}{entry.Line}")
+
+        Clipboard.SetText(String.Join(Environment.NewLine, orderedLines))
+    End Sub
+
     Private Shared Function FindVisualChild(Of T As DependencyObject)(root As DependencyObject) As T
         For i = 0 To VisualTreeHelper.GetChildrenCount(root) - 1
             Dim child = VisualTreeHelper.GetChild(root, i)

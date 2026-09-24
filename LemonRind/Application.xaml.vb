@@ -1,4 +1,6 @@
+Imports System.Globalization
 Imports System.Threading
+Imports System.Windows.Markup
 Imports Microsoft.Extensions.AI
 Imports Microsoft.Extensions.DependencyInjection
 Imports Microsoft.Extensions.Hosting
@@ -33,6 +35,19 @@ Class Application
 
     Protected Overrides Async Sub OnStartup(e As StartupEventArgs)
         MyBase.OnStartup(e)
+
+        ' FrameworkElement's default Language metadata is hardcoded to
+        ' en-US regardless of the OS locale - a long-standing, deliberate
+        ' WPF design choice, not a bug in this app - and that Language is
+        ' what governs culture-sensitive XAML binding formatting (e.g. a
+        ' bound DateTime's StringFormat) app-wide. Without this override, a
+        ' UK-formatted date string in XAML (dd/MM/yyyy) can still render
+        ' using en-US conventions regardless of the real system culture.
+        ' Overriding the default metadata here, once, at startup, fixes
+        ' every binding in the app, not just one XAML element at a time.
+        FrameworkElement.LanguageProperty.OverrideMetadata(
+            GetType(FrameworkElement),
+            New FrameworkPropertyMetadata(XmlLanguage.GetLanguage(CultureInfo.CurrentCulture.IetfLanguageTag)))
 
         ' Logs any unhandled UI-thread exception (message + full stack trace)
         ' to a file next to the exe before WPF's default unhandled-exception
