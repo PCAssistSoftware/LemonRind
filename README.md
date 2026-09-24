@@ -86,7 +86,7 @@ Not vibe coded — vibe assisted. AI helped with ideas, inspiration, and pointer
 
 ## Screenshots
 
-**Main chat window** - streaming replies, thinking panel, per-turn/session stats, context usage bar
+**Main chat window** - streaming replies, thinking panel, per-turn/session stats, context usage bar with a detailed breakdown popup
 ![Overview](<screenshots/Overview.png>)
 
 **Settings - Lemonade server**
