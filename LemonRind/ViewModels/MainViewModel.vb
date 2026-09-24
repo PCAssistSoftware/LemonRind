@@ -1931,6 +1931,17 @@ Namespace ViewModels
             Dim compactibleCount = _history.Count - 1 - MessagesToKeepAfterCompaction
             If compactibleCount <= 0 Then Return
 
+            ' Shown BEFORE the summarization call below, which is itself a
+            ' full model round-trip and can take a while - confirmed live
+            ' this was a real gap: with no note yet (the "Compacted..." one
+            ' only gets added once it's done) and streaming already finished,
+            ' the user was left looking at just the red stop button with no
+            ' sign anything was happening. Removed again in both the success
+            ' and failure paths below, never left showing once this
+            ' function returns.
+            Dim compactingNote = "Compacting older messages to save context space..."
+            assistantBubble.SystemNotes.Add(compactingNote)
+
             Try
                 Dim itemsToSummarize As New List(Of ChatMessage)
                 If Not String.IsNullOrEmpty(_conversationSummaryText) Then
@@ -1949,13 +1960,6 @@ Namespace ViewModels
                 _history.Clear()
                 RefreshStableSystemPrompt() ' _conversationSummaryText was already updated above, so this correctly includes the new summary
                 _history.AddRange(keptTail)
-
-                ' Visible in the chat itself (see SystemNotes) rather than
-                ' the header's StatusText - that slot is too narrow for a
-                ' sentence like this (it sits between the model dropdown and
-                ' health dot), and doing this with no visible indicator at
-                ' all would leave no way to tell it had happened.
-                assistantBubble.SystemNotes.Add("Compacted older messages to save context space")
 
                 ' ContextUsageCurrent otherwise stays at its last REAL
                 ' Lemonade-reported figure (from the reply just before this)
@@ -1981,10 +1985,26 @@ Namespace ViewModels
                 Dim estimatedTokens = recomputed.SystemPrompt + recomputed.Tools + recomputed.History
                 ContextUsageCurrent = estimatedTokens
                 ContextUsageText = FormatContextUsageText(estimatedTokens, ContextUsageMax, isEstimate:=True)
+
+                ' Visible in the chat itself (see SystemNotes) rather than
+                ' the header's StatusText - that slot is too narrow for a
+                ' sentence like this (it sits between the model dropdown and
+                ' health dot), and doing this with no visible indicator at
+                ' all would leave no way to tell it had happened. The saved
+                ' figure is currentTokens (the fresh, real pre-compaction
+                ' measurement taken above, before the trigger check) minus
+                ' this same post-compaction estimate - both computed the
+                ' same way (EstimateCommittedContextTokensAsync), so the
+                ' difference is a real, comparable saving rather than two
+                ' numbers from different methods.
+                Dim tokensSaved = Math.Max(0, currentTokens - estimatedTokens)
+                assistantBubble.SystemNotes.Remove(compactingNote)
+                assistantBubble.SystemNotes.Add($"Compacted older messages to save context space · saved ~{tokensSaved:N0} tokens")
             Catch
                 ' Best-effort, same as fact extraction - a failed compaction
                 ' attempt just means the next turn's request stays as large
                 ' as it already was, not a crash or a lost reply.
+                assistantBubble.SystemNotes.Remove(compactingNote)
             End Try
         End Function
 
