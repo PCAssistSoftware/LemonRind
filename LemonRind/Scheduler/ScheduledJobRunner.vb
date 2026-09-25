@@ -6,6 +6,7 @@ Imports LemonRind.Data
 Imports LemonRind.Memories
 Imports LemonRind.Modules
 Imports LemonRind.Modules.FileSystem
+Imports LemonRind.Services
 
 Namespace Scheduler
 
@@ -98,7 +99,13 @@ Namespace Scheduler
             ' "learned about the user" context a live chat would.
             Dim relevantMemoriesText = Await _memoryService.GetRelevantMemoriesTextAsync(job.Prompt, cancellationToken)
             Dim pinnedFactsText = _memoryService.GetPinnedFactsText()
-            Dim systemSections As New List(Of String) From {SystemPrompt}
+            ' TimeAwareness - confirmed live this was missing here (unlike
+            ' every live chat turn, see MainViewModel.BuildLiveTurnContextTextAsync)
+            ' and directly caused a real, wrong report: with no real date to
+            ' anchor to, the model invented a plausible-sounding but
+            ' incorrect one for anything date-relative ("this week", "later
+            ' this month") instead of reasoning from today's actual date.
+            Dim systemSections As New List(Of String) From {SystemPrompt, TimeAwareness.BuildTimeAwarenessText()}
             If Not String.IsNullOrEmpty(pinnedFactsText) Then systemSections.Add(pinnedFactsText)
             If Not String.IsNullOrEmpty(relevantMemoriesText) Then systemSections.Add(relevantMemoriesText)
 
@@ -107,8 +114,22 @@ Namespace Scheduler
                 New ChatMessage(ChatRole.User, job.Prompt)
             }
 
+            ' Without this, a single completion has nothing stopping it from
+            ' running to Lemonade's own server-side default n_predict -
+            ' confirmed live this was a real, serious gap (the same one
+            ' already fixed for the live chat path, see MainViewModel.
+            ' SendAsync's own MaxOutputTokens comment, just never carried
+            ' over here): a single stuck/looping generation produced over
+            ' 12,000 output tokens on its own, eating most of
+            ' JobRunTimeoutSeconds and getting the whole job cancelled.
+            ' 16384 matches SendAsync's own generous cap ceiling - plenty
+            ' for a real report, but bounded so one runaway completion can't
+            ' consume the entire job.
+            Const MaxOutputTokensPerReply As Integer = 16384
+
             Dim options As New ChatOptions With {
-                .Tools = _moduleRegistry().GetEnabledTools().ToList()
+                .Tools = _moduleRegistry().GetEnabledTools().ToList(),
+                .MaxOutputTokens = MaxOutputTokensPerReply
             }
             ' Same override mechanism as a live chat turn's SelectedModel
             ' (MainViewModel.SendAsync) - Nothing/empty ModelId just means
@@ -146,6 +167,25 @@ Namespace Scheduler
                         If Not String.IsNullOrWhiteSpace(replyText) Then Exit While
                         attempt += 1
                     End While
+                Catch ex As OperationCanceledException When cancellationToken.IsCancellationRequested
+                    ' Distinguished from a generic Exception below by the
+                    ' When filter - cancellationToken here IS
+                    ' SchedulerModule's own JobRunTimeoutSeconds-bound token,
+                    ' so this only matches when THIS job's own overall time
+                    ' limit was reached, not a per-request SDK timeout (a
+                    ' separate, internal token - that case still throws a
+                    ' ClientResultException/TimeoutException with
+                    ' cancellationToken.IsCancellationRequested still False,
+                    ' and falls through to the generic Catch's own timeout
+                    ' detection instead). Confirmed live the generic Catch
+                    ' below previously caught this too and showed the
+                    ' unhelpful "Check Lemonade is running a real chat
+                    ' model..." hint, which has nothing to do with a job
+                    ' simply running out of time.
+                    replyText = "⚠️ This scheduled job didn't finish before its own time limit and was cancelled." &
+                        Environment.NewLine & Environment.NewLine &
+                        "This usually means the model got stuck reasoning in a loop, or the job's prompt/tools made it take unusually long. Try simplifying the prompt, disabling tools it doesn't need, or asking it to keep its answer shorter."
+                    jobFailed = True
                 Catch ex As Exception
                     ' Without this, a real failure (most notably Lemonade
                     ' rejecting the request outright because the prompt/tool

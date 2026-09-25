@@ -34,7 +34,13 @@ Namespace Scheduler
         ' loop) would otherwise run forever with no visible chat turn to
         ' even notice it's happening, same risk as fact extraction/
         ' compaction (see MainViewModel's BackgroundModelCallTimeout).
-        Private Const JobRunTimeoutSeconds = 600
+        ' Raised from 600 - confirmed live that a genuinely legitimate job
+        ' (research, then writing out an ~11,000-token HTML report TWICE -
+        ' once to save it, once again as an email body, per that job's own
+        ' prompt) routinely needs more than 10 minutes on local hardware,
+        ' with no single step actually stuck - it just didn't fit the old
+        ' budget.
+        Private Const JobRunTimeoutSeconds = 1500
 
         Private ReadOnly _repository As SchedulerRepository
         Private ReadOnly _runner As ScheduledJobRunner

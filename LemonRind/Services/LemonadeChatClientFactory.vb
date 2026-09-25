@@ -24,9 +24,36 @@ Namespace Services
             _settings = settings.Lemonade
         End Sub
 
+        ' A single completion against a local model can legitimately take
+        ' several minutes (confirmed live: a large tool-augmented prompt
+        ' took over 300 seconds of prompt processing alone) - the SDK's own
+        ' default NetworkTimeout (100 seconds) is tuned for a cloud API, not
+        ' this. Generous but still bounded by ScheduledJobRunner/SendAsync's
+        ' own outer cancellation, which stays the real backstop for a
+        ' genuinely stuck request.
+        Private Shared ReadOnly RequestNetworkTimeout As TimeSpan = TimeSpan.FromMinutes(5)
+
         Public Function CreateChatClient() As IChatClient
+            ' RetryPolicy(maxRetries:=0) - confirmed live this was actively
+            ' harmful, not just unnecessary: when the default 100s
+            ' NetworkTimeout fired on a genuinely slow (not stuck)
+            ' completion, the SDK's default retry policy silently
+            ' resubmitted the SAME large request to Lemonade up to 4 more
+            ' times rather than waiting - each one landed in its own
+            ' llama.cpp slot and kept running alongside the others, and
+            ' their combined KV cache usage collectively exceeded capacity
+            ' ("Context size has been exceeded", all 4 slots killed at once -
+            ' the exact "Retry failed after 4 tries" wall of repeated
+            ' identical timeout text seen earlier was this same behaviour,
+            ' just without a cache collision that time). The app already has
+            ' its own deliberate, informed retry-on-empty-reply logic
+            ' (SendAsync/RunJobAsync) - a blind SDK-level retry underneath
+            ' that just resubmits a slow-but-working request against a
+            ' server that has no spare capacity to run it twice.
             Dim options As New OpenAIClientOptions With {
-                .Endpoint = New Uri(_settings.BaseUrl)
+                .Endpoint = New Uri(_settings.BaseUrl),
+                .NetworkTimeout = RequestNetworkTimeout,
+                .RetryPolicy = New System.ClientModel.Primitives.ClientRetryPolicy(maxRetries:=0)
             }
             Dim credential As New ApiKeyCredential(If(String.IsNullOrWhiteSpace(_settings.ApiKey), "lemonade", _settings.ApiKey))
             Dim openAiClient As New OpenAIClient(credential, options)

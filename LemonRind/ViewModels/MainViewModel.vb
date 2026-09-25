@@ -916,7 +916,7 @@ Namespace ViewModels
         ''' has real text to search against.
         ''' </summary>
         Private Async Function BuildLiveTurnContextTextAsync(draftText As String, cancellationToken As CancellationToken) As Task(Of String)
-            Dim sections As New List(Of String) From {BuildTimeAwarenessText()}
+            Dim sections As New List(Of String) From {TimeAwareness.BuildTimeAwarenessText()}
 
             If Not String.IsNullOrWhiteSpace(draftText) Then
                 Dim relevantMemoriesText = Await _memoryService.GetRelevantMemoriesTextAsync(draftText, cancellationToken)
@@ -2154,11 +2154,6 @@ Namespace ViewModels
         ''' unlike Identity/AboutUser there's no meaningful "unset" state for
         ''' the current time.
         ''' </summary>
-        Private Shared Function BuildTimeAwarenessText() As String
-            Dim now = DateTimeOffset.Now
-            Return $"Current date/time: {now:dddd, d MMMM yyyy HH:mm} ({TimeZoneInfo.Local.DisplayName})"
-        End Function
-
         ''' <summary>
         ''' Sets _history(0) to the current stable system prompt - safe to
         ''' call whenever _history is empty (NewChat/LoadSession/right after
@@ -2341,7 +2336,7 @@ Namespace ViewModels
                 If IsKnowledgeModuleEnabled Then
                     relevantKnowledgeText = Await _knowledgeService.GetRelevantChunksTextAsync(SelectedKnowledgeBaseId, userText, cts.Token)
                 End If
-                Dim volatileContextSections As New List(Of String) From {BuildTimeAwarenessText()}
+                Dim volatileContextSections As New List(Of String) From {TimeAwareness.BuildTimeAwarenessText()}
                 If Not String.IsNullOrEmpty(relevantMemoriesText) Then volatileContextSections.Add(relevantMemoriesText)
                 If Not String.IsNullOrEmpty(relevantKnowledgeText) Then volatileContextSections.Add(relevantKnowledgeText)
                 Dim volatileContextText = String.Join(Environment.NewLine & Environment.NewLine, volatileContextSections)
