@@ -735,8 +735,17 @@ Namespace ViewModels
             ' must be marshaled onto the Dispatcher. Window.Activated
             ' (MainWindow.xaml.vb) only refreshes on focus change, which
             ' would miss a job completing while the window is already
-            ' focused.
-            AddHandler _schedulerNotifier.JobCompleted, Sub(sender, args) Application.Current.Dispatcher.Invoke(AddressOf RefreshSessions)
+            ' focused. ReloadCurrentSessionIfMatching alongside it - a job's
+            ' own updates (its prompt appearing, a "running in background"
+            ' note, its eventual reply/error) would otherwise only become
+            ' visible in an already-open chat the next time the user
+            ' navigated away and back, since LoadSession's own same-session
+            ' guard (see its comment) deliberately no-ops a spurious
+            ' reselect of the currently-open chat.
+            AddHandler _schedulerNotifier.SessionUpdated, Sub(sender, sessionId) Application.Current.Dispatcher.Invoke(Sub()
+                RefreshSessions()
+                ReloadCurrentSessionIfMatching(sessionId)
+            End Sub)
             SendCommand = New AsyncRelayCommand(AddressOf SendAsync, AddressOf CanSend)
             NewChatCommand = New RelayCommand(AddressOf NewChat)
             AttachFileCommand = New RelayCommand(AddressOf AttachFile)
@@ -1778,8 +1787,13 @@ Namespace ViewModels
             ContextUsageText = FormatContextUsageText(ContextUsageCurrent, ContextUsageMax)
         End Sub
 
-        ''' <summary>Switches the chat window to an existing session's history.</summary>
-        Private Sub LoadSession(sessionId As String)
+        ''' <summary>
+        ''' Switches the chat window to an existing session's history.
+        ''' forceReload is for ReloadCurrentSessionIfMatching only - see its
+        ''' own comment for why bypassing the guard below is safe there and
+        ''' nowhere else.
+        ''' </summary>
+        Private Sub LoadSession(sessionId As String, Optional forceReload As Boolean = False)
             ' Loading the session you're ALREADY in is a no-op, not a full
             ' reset - confirmed live this matters, not just as a
             ' micro-optimization: LoadSession always rebuilds _history from
@@ -1792,7 +1806,7 @@ Namespace ViewModels
             ' trimmed, undoing it completely. A conversation that hit 64+
             ' uncompacted messages despite compaction genuinely having run
             ' was traced to exactly this.
-            If sessionId = _currentSessionId Then Return
+            If sessionId = _currentSessionId AndAlso Not forceReload Then Return
 
             _currentSessionId = sessionId
             _history.Clear()
@@ -1867,6 +1881,26 @@ Namespace ViewModels
             SelectedKnowledgeBase = If(
                 AvailableKnowledgeBases.FirstOrDefault(Function(kb) kb.Id = attachedKnowledgeBaseId),
                 AvailableKnowledgeBases.FirstOrDefault(Function(kb) kb.Id Is Nothing))
+        End Sub
+
+        ''' <summary>
+        ''' Called from the SchedulerNotifier.SessionUpdated handler - forces
+        ''' LoadSession to actually re-read from disk despite its own
+        ''' same-session guard (which exists specifically to stop a spurious
+        ''' reselect from discarding compaction's in-memory trim - see
+        ''' LoadSession's comment). Safe here because sessionId only ever
+        ''' equals _currentSessionId in this call chain if the user has
+        ''' navigated into that specific scheduled job's own fresh session
+        ''' (ScheduledJobRunner always creates a brand-new session per run,
+        ''' never writes into an existing open chat) and is watching it live -
+        ''' there's no in-memory compaction state on a session that young to
+        ''' lose. A no-op for every other session (the overwhelmingly common
+        ''' case - most job runs happen with a different chat, or no chat,
+        ''' open).
+        ''' </summary>
+        Public Sub ReloadCurrentSessionIfMatching(sessionId As String)
+            If sessionId <> _currentSessionId Then Return
+            LoadSession(sessionId, forceReload:=True)
         End Sub
 
         ' Generous - a genuinely large local model can legitimately take
