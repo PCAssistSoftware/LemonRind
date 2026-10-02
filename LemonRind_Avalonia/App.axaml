@@ -104,6 +104,11 @@
         <Style Selector="ScrollViewer">
             <Setter Property="AllowAutoHide" Value="False" />
         </Style>
+        <!-- ...but not inside chat bubbles: a Markdown code block there has its own horizontal ScrollViewer, which
+             should stay a thin auto-hiding bar instead of a permanent grey bar in the middle of the message. -->
+        <Style Selector="Border.bubble ScrollViewer">
+            <Setter Property="AllowAutoHide" Value="True" />
+        </Style>
 
         <Style Selector="Button.primary">
             <Setter Property="Background" Value="{DynamicResource Accent}" />
