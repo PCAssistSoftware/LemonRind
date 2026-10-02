@@ -35,7 +35,13 @@ Namespace Services
         ' 16,000-token reply that needed almost 6 minutes.)
         Private Shared ReadOnly RequestNetworkTimeout As TimeSpan = TimeSpan.FromMinutes(30)
 
-        Public Function CreateChatClient() As IChatClient
+        ' Microsoft.Extensions.AI's tool-calling loop stops after this many model
+        ' round-trips per request (its own default is 40). Plenty for a live chat,
+        ' where the Stop button and the per-reply output cap are the backstops;
+        ' scheduled jobs ask for more (see ScheduledJobRunner).
+        Public Const DefaultMaxToolRounds As Integer = 40
+        
+        Public Function CreateChatClient(Optional maxToolRounds As Integer = DefaultMaxToolRounds) As IChatClient
             ' RetryPolicy(maxRetries:=0) - the default retry is actively
             ' harmful, not just unnecessary: when the default 100s
             ' NetworkTimeout fired on a genuinely slow (not stuck)
@@ -81,7 +87,10 @@ Namespace Services
             ' SsrfSafeHttpFetcher's/PathSandbox's, already written "safe to
             ' show the model directly" per WebReaderModule's own comment).
             Return New ChatClientBuilder(openAiClient.GetChatClient(chatModel).AsIChatClient()).
-                UseFunctionInvocation(configure:=Sub(client) client.IncludeDetailedErrors = True).
+                UseFunctionInvocation(configure:=Sub(client)
+                    client.IncludeDetailedErrors = True
+                    client.MaximumIterationsPerRequest = maxToolRounds
+                End Sub).
                 Build()
         End Function
 

@@ -23,13 +23,22 @@ namespace LemonRindBlazor.Scheduler;
 /// writes) - all found through live testing.
 /// </summary>
 public class ScheduledJobRunner(
-    IChatClient chatClient,
+    LemonadeChatClientFactory chatClientFactory,
     Func<ModuleRegistry> moduleRegistry,
     ChatSessionRepository sessionRepository,
     MemoryService memoryService,
     SchedulerNotifier notifier,
     FileWriteApprovalStore approvalStore)
 {
+    // How many tool-call rounds (model round-trips) one job may use. A research
+    // job that searches and reads many pages needs far more than the library's
+    // default of 40, and an unattended job has nobody to say "keep going".
+    private const int MaxToolRounds = 100;
+
+    // This runner's own chat client, identical to the app's shared one except
+    // for the higher tool-round limit above.
+    private readonly IChatClient chatClient = chatClientFactory.CreateChatClient(MaxToolRounds);
+
     // A fixed fallback prompt, independent of AssistantSettings.SystemPrompt -
     // a scheduled job's system prompt doesn't currently track a user-edited
     // System Prompt from Settings.
@@ -107,6 +116,19 @@ public class ScheduledJobRunner(
                 {
                     var response = await chatClient.GetResponseAsync(history, options, cancellationToken);
                     replyText = response.Text;
+
+                    // The tool-calling loop stops quietly once it reaches its round
+                    // limit, so say so in the job's output rather than leaving a blank or
+                    // truncated-looking reply (and don't retry: a second attempt would
+                    // just burn through the same number of rounds again).
+                    var toolRounds = response.Messages.Count(m => m.Role == ChatRole.Assistant && m.Contents.OfType<FunctionCallContent>().Any());
+                    if (toolRounds >= MaxToolRounds - 1)
+                    {
+                        replyText = (replyText + Environment.NewLine + Environment.NewLine +
+                            $"⚠️ This job used its maximum of {MaxToolRounds} tool-call rounds, so it may have stopped before finishing. Try splitting it into smaller jobs, or ask it to search and read less.").Trim();
+                        break;
+                    }
+
                     if (!string.IsNullOrWhiteSpace(replyText)) break;
                     attempt++;
                 }

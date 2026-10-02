@@ -25,6 +25,11 @@ Namespace Scheduler
         ' user-edited System Prompt from Settings.
         Private Const SystemPrompt As String = "You are a helpful local AI assistant running on the user's own machine."
 
+        ' How many tool-call rounds (model round-trips) one job may use. A research
+        ' job that searches and reads many pages needs far more than the library's
+        ' default of 40, and an unattended job has nobody to say "keep going".
+        Private Const MaxToolRounds As Integer = 100
+
         Private ReadOnly _chatClient As IChatClient
 
         ' Func(Of ModuleRegistry), not ModuleRegistry directly -
@@ -45,8 +50,10 @@ Namespace Scheduler
         Private ReadOnly _notifier As SchedulerNotifier
         Private ReadOnly _approvalStore As FileWriteApprovalStore
 
-        Public Sub New(chatClient As IChatClient, moduleRegistry As Func(Of ModuleRegistry), sessionRepository As ChatSessionRepository, memoryService As MemoryService, notifier As SchedulerNotifier, approvalStore As FileWriteApprovalStore)
-            _chatClient = chatClient
+        Public Sub New(chatClientFactory As LemonadeChatClientFactory, moduleRegistry As Func(Of ModuleRegistry), sessionRepository As ChatSessionRepository, memoryService As MemoryService, notifier As SchedulerNotifier, approvalStore As FileWriteApprovalStore)
+            ' This runner's own chat client, identical to the app's shared one except
+            ' for the higher tool-round limit above.
+            _chatClient = chatClientFactory.CreateChatClient(MaxToolRounds)
             _moduleRegistry = moduleRegistry
             _sessionRepository = sessionRepository
             _memoryService = memoryService
@@ -160,6 +167,18 @@ Namespace Scheduler
                     While attempt <= maxAttempts
                         Dim response = Await _chatClient.GetResponseAsync(history, options, cancellationToken)
                         replyText = response.Text
+                        
+                        ' The tool-calling loop stops quietly once it reaches its round
+                        ' limit, so say so in the job's output rather than leaving a blank or
+                        ' truncated-looking reply (and don't retry: a second attempt would
+                        ' just burn through the same number of rounds again).
+                        Dim toolRounds = response.Messages.Where(Function(m) m.Role = ChatRole.Assistant AndAlso m.Contents.OfType(Of FunctionCallContent)().Any()).Count()
+                        If toolRounds >= MaxToolRounds - 1 Then
+                            replyText = (replyText & Environment.NewLine & Environment.NewLine &
+                                $"⚠️ This job used its maximum of {MaxToolRounds} tool-call rounds, so it may have stopped before finishing. Try splitting it into smaller jobs, or ask it to search and read less.").Trim()
+                            Exit While
+                        End If
+                        
                         If Not String.IsNullOrWhiteSpace(replyText) Then Exit While
                         attempt += 1
                     End While

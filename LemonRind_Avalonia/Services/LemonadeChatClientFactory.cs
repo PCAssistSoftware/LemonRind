@@ -36,7 +36,13 @@ public class LemonadeChatClientFactory(AppSettings settings)
     // 16,000-token reply that needed almost 6 minutes.)
     private static readonly TimeSpan RequestNetworkTimeout = TimeSpan.FromMinutes(30);
 
-    public IChatClient CreateChatClient()
+    // Microsoft.Extensions.AI's tool-calling loop stops after this many model
+    // round-trips per request (its own default is 40). Plenty for a live chat,
+    // where the Stop button and the per-reply output cap are the backstops;
+    // scheduled jobs ask for more (see ScheduledJobRunner).
+    public const int DefaultMaxToolRounds = 40;
+
+    public IChatClient CreateChatClient(int maxToolRounds = DefaultMaxToolRounds)
     {
         var options = new OpenAIClientOptions
         {
@@ -56,7 +62,11 @@ public class LemonadeChatClientFactory(AppSettings settings)
         var chatModel = string.IsNullOrWhiteSpace(_settings.ChatModel) ? "unset" : _settings.ChatModel;
 
         return new ChatClientBuilder(openAiClient.GetChatClient(chatModel).AsIChatClient())
-            .UseFunctionInvocation(configure: client => client.IncludeDetailedErrors = true)
+            .UseFunctionInvocation(configure: client =>
+            {
+                client.IncludeDetailedErrors = true;
+                client.MaximumIterationsPerRequest = maxToolRounds;
+            })
             .Build();
     }
 }
