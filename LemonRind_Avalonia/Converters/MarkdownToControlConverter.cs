@@ -1,6 +1,7 @@
 using System.Globalization;
 using Avalonia.Controls;
 using Avalonia.Data.Converters;
+using Avalonia.LogicalTree;
 using Avalonia.Media;
 using MdAvalonia = Markdown.Avalonia;
 
@@ -39,7 +40,9 @@ public class MarkdownToControlConverter : IMultiValueConverter
 
         try
         {
-            return _engine.Transform(text);
+            var rendered = _engine.Transform(text);
+            WrapCodeBlocks(rendered);
+            return rendered;
         }
         catch
         {
@@ -47,6 +50,27 @@ public class MarkdownToControlConverter : IMultiValueConverter
             // back to the same plain wrapped text the streaming TextBox
             // already shows.
             return new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap };
+        }
+    }
+
+    /// <summary>
+    /// The library renders a code block as a non-wrapping TextBlock inside a horizontal ScrollViewer. In a chat bubble that
+    /// means a long line (e.g. CSS in a prompt) shows a scrollbar in the middle of the message. Set locally, because the
+    /// library's own styles take precedence over app-level styles: wrap the text to the bubble's width instead.
+    /// </summary>
+    private static void WrapCodeBlocks(Control root)
+    {
+        foreach (var element in root.GetLogicalDescendants())
+        {
+            switch (element)
+            {
+                case ScrollViewer scroller when scroller.Classes.Contains("CodeBlock"):
+                    scroller.HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled;
+                    break;
+                case TextBlock block when block.Classes.Contains("CodeBlock"):
+                    block.TextWrapping = TextWrapping.Wrap;
+                    break;
+            }
         }
     }
 }
