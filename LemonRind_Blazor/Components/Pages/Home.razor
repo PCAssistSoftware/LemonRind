@@ -1,0 +1,2517 @@
+@page "/"
+@rendermode InteractiveServer
+@using Markdig
+@using Microsoft.Extensions.AI
+@using LemonRindBlazor.Configuration
+@using LemonRindBlazor.Data
+@using LemonRindBlazor.Knowledge
+@using LemonRindBlazor.Memories
+@using LemonRindBlazor.Modules
+@using LemonRindBlazor.Modules.FileSystem
+@using LemonRindBlazor.Modules.ImageGen
+@using LemonRindBlazor.Scheduler
+@using LemonRindBlazor.Services
+@inject IChatClient ChatClient
+@inject LemonadeManagementClient ManagementClient
+@inject ChatSessionRepository SessionRepository
+@inject MemoryService MemoryService
+@inject ConversationCompactionService CompactionService
+@inject ModuleRegistry ModuleRegistry
+@inject FileWriteApprovalGate ApprovalGate
+@inject KnowledgeRepository KnowledgeRepository
+@inject KnowledgeService KnowledgeService
+@inject SchedulerNotifier SchedulerNotifier
+@inject ImageSizeGate ImageSizeGate
+@inject ImageAttachmentService ImageAttachmentService
+@inject AppSettings Settings
+@inject ImageGenerationService ImageGenerationService
+@inject IJSRuntime JS
+@implements IDisposable
+
+<PageTitle>Lemon Rind (Blazor test)</PageTitle>
+
+<div class="app-shell">
+    <div class="sidebar">
+        <button class="new-chat-btn" @onclick="NewChat"><Icon Name="plus" Size="15" /> New chat</button>
+        <input class="search-box" placeholder="Search chats" @bind="_searchText" @bind:event="oninput" @bind:after="OnSearchChanged" />
+        <div class="session-list">
+            @foreach (var group in _sidebarGroups)
+            {
+                @if (group.Folder is not null)
+                {
+                    <div class="folder-header" @onclick="() => ToggleFolderCollapsedAsync(group.Folder)">
+                        <span class="folder-chevron"><Icon Name="@(group.Folder.IsCollapsed ? "chevron-right" : "chevron-down")" Size="12" /></span>
+                        <span class="folder-name">@group.Folder.Name</span>
+                    </div>
+                }
+                else if (_folders.Count > 0)
+                {
+                    // Only shown once at least one real folder exists -
+                    // otherwise everything is unfiled and the label would
+                    // just be noise. Not collapsible (no FolderSummary to
+                    // persist a collapsed state against) - plain label.
+                    <div class="folder-header unfiled-header">
+                        <span class="folder-name">Unfiled</span>
+                    </div>
+                }
+                @if (group.Folder is null || !group.Folder.IsCollapsed)
+                {
+                    @foreach (var session in group.Sessions)
+                    {
+                        <div class="session-row @(session.Id == _currentSessionId ? "selected" : "")" @onclick="() => LoadSession(session.Id)">
+                            <div class="session-main">
+                                @if (_renamingSessionId == session.Id)
+                                {
+                                    <input class="session-rename-input" @ref="_renameInput" @bind="_renameText" @bind:event="oninput"
+                                           @onclick:stopPropagation="true"
+                                           @onkeydown="e => OnRenameKeyDownAsync(e, session.Id)"
+                                           @onblur="() => CommitRenameAsync(session.Id)" />
+                                }
+                                else
+                                {
+                                    <div class="session-title-row">
+                                        <span class="session-title">@session.Title</span>
+                                        <span class="session-time" title="@session.UpdatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")">@RelativeTime(session.UpdatedAt)</span>
+                                    </div>
+                                }
+                                @if (session.HasTags && _editingTagsSessionId != session.Id)
+                                {
+                                    <div class="session-tags">
+                                        @foreach (var tag in session.Tags)
+                                        {
+                                            <span class="session-tag">@tag</span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            <div class="session-actions" @onclick:stopPropagation="true">
+                                <button class="session-menu-btn" title="More actions" @onclick="() => ToggleSessionMenu(session.Id)"><Icon Name="more" Size="16" /></button>
+                                @if (_openMenuSessionId == session.Id)
+                                {
+                                    <div class="session-menu">
+                                        <button @onclick="() => BeginRename(session)"><Icon Name="pencil" Size="14" /> Rename</button>
+                                        <button @onclick="() => { ToggleFolderEditor(session.Id); _openMenuSessionId = null; }"><Icon Name="folder" Size="14" /> Move to folder</button>
+                                        <button @onclick="() => { ToggleTagEditor(session.Id); _openMenuSessionId = null; }"><Icon Name="tag" Size="14" /> Tags</button>
+                                        <a href="@($"/export/{session.Id}")" download @onclick="() => _openMenuSessionId = null"><Icon Name="download" Size="14" /> Export to Markdown</a>
+                                        <button class="session-menu-delete" @onclick="() => { DeleteSession(session.Id); _openMenuSessionId = null; }"><Icon Name="trash" Size="14" /> Delete</button>
+                                    </div>
+                                }
+                            </div>
+                            @if (_editingFolderSessionId == session.Id)
+                            {
+                                <div class="inline-editor" @onclick:stopPropagation="true">
+                                    <select @bind="_folderSelectValue">
+                                        <option value="">(no folder)</option>
+                                        @foreach (var f in _folders)
+                                        {
+                                            <option value="@f.Id">@f.Name</option>
+                                        }
+                                        <option value="__new__">+ New folder...</option>
+                                    </select>
+                                    @if (_folderSelectValue == "__new__")
+                                    {
+                                        <input @bind="_newFolderName" placeholder="Folder name" />
+                                    }
+                                    <button @onclick="() => ApplyFolderChangeAsync(session.Id)">Move</button>
+                                    <button class="inline-editor-close" title="Close" @onclick="CloseFolderEditor"><Icon Name="x" Size="13" /></button>
+                                </div>
+                            }
+                            @if (_editingTagsSessionId == session.Id)
+                            {
+                                <div class="inline-editor" @onclick:stopPropagation="true">
+                                    @foreach (var tag in session.Tags.ToList())
+                                    {
+                                        <span class="session-tag editable">
+                                            @tag
+                                            <button class="tag-remove" @onclick="() => RemoveTagAsync(session.Id, tag)">&times;</button>
+                                        </span>
+                                    }
+                                    <input @bind="_newTagText" @bind:event="oninput" @onkeydown="e => OnTagKeyDownAsync(e, session.Id)" placeholder="Add tag + Enter" />
+                                    <button @onclick="() => AddTagAsync(session.Id)" disabled="@string.IsNullOrWhiteSpace(_newTagText)">Add</button>
+                                    <button class="inline-editor-close" title="Done" @onclick="CloseTagEditor">Done</button>
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+            }
+        </div>
+        <a href="/settings" class="sidebar-settings-link"><Icon Name="settings" Size="15" /> Settings</a>
+    </div>
+
+    <div class="resize-handle" data-var="--sidebar-w" data-side="left" title="Drag to resize - double-click to reset"></div>
+
+    <div class="chat-container">
+        <div class="header-row">
+            <select @bind="_selectedModel" @bind:after="OnModelChanged" disabled="@(_isLoadingModel || _isBusy)">
+                @foreach (var group in GroupedModels)
+                {
+                    <optgroup label="@group.Header">
+                        @foreach (var model in group.Models)
+                        {
+                            <option value="@model">@model</option>
+                        }
+                    </optgroup>
+                }
+            </select>
+            <button class="model-info-btn" title="Model details" disabled="@_isLoadingModel" @onclick="ShowModelDetailsAsync"><Icon Name="info" Size="17" /></button>
+            @if (_isLoadingModel)
+            {
+                // Lemonade reports no real load progress (POST /v1/load just
+                // blocks until the model is ready), so this is an
+                // indeterminate bar plus an honest elapsed-seconds counter -
+                // proof the app is working, not a predicted percentage.
+                <span class="model-loading">
+                    <span class="model-loading-bar"></span>
+                    <span class="status-text">Loading @_selectedModel... @(_modelLoadSeconds)s - this can take a while for a large model</span>
+                </span>
+            }
+            else if (!string.IsNullOrEmpty(_modelLoadError))
+            {
+                <span class="model-load-error">@_modelLoadError</span>
+            }
+            <span class="spacer"></span>
+            @if (_contextUsageCurrent is not null && _contextUsageMax > 0)
+            {
+                <button class="status-text context-usage-btn" title="View context breakdown" @onclick="ShowContextBreakdownAsync">
+                    @_contextUsageCurrent.Value.ToString("N0") / @_contextUsageMax.ToString("N0") tokens (@((int)Math.Round(100.0 * _contextUsageCurrent.Value / _contextUsageMax))%)
+                </button>
+            }
+            <button class="health-indicator" @onclick="RetryConnectionAsync"
+                    title="@(_isHealthy ? "Lemonade healthy" : _lastHealthCheckError ?? "Lemonade unreachable - click to retry")">
+                <span class="health-dot @(_isHealthy ? "healthy" : "unhealthy")"></span>
+                <span class="health-label">@(_isHealthy ? "Lemonade healthy" : "Lemonade unreachable")</span>
+            </button>
+        </div>
+
+        <div class="messages">
+            @foreach (var message in _messages)
+            {
+                @if (!string.IsNullOrEmpty(message.DateDividerText))
+                {
+                    <div class="date-divider"><span>@message.DateDividerText</span></div>
+                }
+                <div class="message-row @(message.IsUser ? "user" : "assistant")">
+                @if (!message.IsUser)
+                {
+                    @* Assistant avatar (the WPF app shows a robot here too) - an inline SVG (Lucide "bot", MIT) rather than the emoji, so it renders the same everywhere. *@
+                    <span class="avatar" aria-hidden="true">
+                        <Icon Name="bot" Size="16" />
+                    </span>
+                }
+                <div class="bubble @(message.IsUser ? "user" : "assistant")" title="@message.CreatedAt.ToString("dd/MM/yyyy HH:mm")">
+                    @if (message.IsUser && !string.IsNullOrEmpty(message.AttachedFileName))
+                    {
+                        @if (!string.IsNullOrEmpty(message.AttachedImageUrl))
+                        {
+                            <img class="attached-image" src="@message.AttachedImageUrl" alt="@message.AttachedFileName" />
+                        }
+                        else
+                        {
+                            <div class="attached-file-chip">📎 @message.AttachedFileName</div>
+                        }
+                    }
+                    @if (!message.IsUser && !string.IsNullOrEmpty(message.PromptProgressText))
+                    {
+                        <div class="prompt-progress-text">@message.PromptProgressText</div>
+                    }
+                    @if (!message.IsUser && !string.IsNullOrEmpty(message.ReasoningText))
+                    {
+                        <details class="thinking" open="@Settings.Ui.ThinkingPanelOpenByDefault">
+                            <summary>Thinking</summary>
+                            <div class="thinking-text">@message.ReasoningText</div>
+                        </details>
+                    }
+                    @if (!message.IsUser && message.SystemNotes.Count > 0)
+                    {
+                        <div class="system-note-chips">
+                            @foreach (var note in message.SystemNotes)
+                            {
+                                <span class="system-note-chip">@note</span>
+                            }
+                        </div>
+                    }
+                    @if (!message.IsUser && message.ToolCalls.Count > 0)
+                    {
+                        <div class="tool-chips">
+                            @foreach (var toolCall in message.ToolCalls)
+                            {
+                                <span class="tool-chip" title="@(toolCall.ErrorMessage ?? (toolCall.Succeeded == true ? "Succeeded" : toolCall.Succeeded == false ? "Failed" : "Pending"))">
+                                    <span class="tool-chip-dot @(toolCall.Succeeded == true ? "succeeded" : toolCall.Succeeded == false ? "failed" : "pending")"></span>
+                                    @toolCall.Name
+                                </span>
+                            }
+                        </div>
+                    }
+                    <div class="bubble-text">@RenderMarkdown(message.Text)</div>
+                    @if (!string.IsNullOrEmpty(message.GeneratedImageUrl))
+                    {
+                        <img class="generated-image" src="@message.GeneratedImageUrl" alt="Generated image" />
+                        <div class="bubble-actions">
+                            <a class="bubble-action-btn always-visible" href="@message.GeneratedImageUrl" download><Icon Name="download" Size="12" /> Save image</a>
+                            <button class="bubble-action-btn always-visible" @onclick="() => CopyImageAsync(message.GeneratedImageUrl!)"><Icon Name="copy" Size="12" /> Copy image</button>
+                        </div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(message.Text))
+                    {
+                        <div class="bubble-actions copy-actions">
+                            <button class="bubble-action-btn" title="Copy message" @onclick="() => CopyTextAsync(message.Text)"><Icon Name="copy" Size="12" /> Copy</button>
+                        </div>
+                    }
+                </div>
+                </div>
+            }
+        </div>
+
+        @if (!string.IsNullOrEmpty(_pendingAttachedFileName))
+        {
+            <div class="pending-attachment">
+                @if (_pendingAttachedImagePath is not null)
+                {
+                    <img class="pending-attachment-thumb" src="@ToAttachedImageUrl(_pendingAttachedImagePath)" alt="Attached image preview" />
+                }
+                else
+                {
+                    <text>📎</text>
+                }
+                @_pendingAttachedFileName
+                <button class="remove-attachment" title="Remove attachment" @onclick="RemovePendingAttachment"><Icon Name="x" Size="13" /></button>
+            </div>
+        }
+        @if (!string.IsNullOrEmpty(_attachError))
+        {
+            <div class="attach-error">@_attachError</div>
+        }
+        @if (AttachedImageVisionWarningText is not null)
+        {
+            <div class="attach-error">@AttachedImageVisionWarningText</div>
+        }
+
+        <div class="input-row">
+            <label class="icon-btn attach-btn" title="Attach a file or image"><Icon Name="paperclip" Size="18" /><InputFile OnChange="OnAttachFile" class="attach-input" /></label>
+            @if (IsKnowledgeModuleEnabled)
+            {
+                @* Which knowledge base (if any) this chat uses - down here beside the input like the Avalonia/WPF apps; hidden when the Knowledge Bases module is off. *@
+                <select class="kb-select" title="Knowledge base for this chat" @bind="_attachedKnowledgeBaseId" @bind:after="OnKnowledgeBaseChanged">
+                    <option value="">(none)</option>
+                    @foreach (var kb in _knowledgeBases)
+                    {
+                        <option value="@kb.Id">@kb.Name</option>
+                    }
+                </select>
+            }
+            <textarea @ref="_inputBox" @bind="_inputText" @bind:event="oninput" rows="1"
+                      placeholder="Type a message..." disabled="@_isBusy" class="input-box"></textarea>
+            @if (_isBusy)
+            {
+                <button class="stop-button icon-only" title="Stop" aria-label="Stop" @onclick="StopGeneration"><Icon Name="stop" Size="16" /></button>
+            }
+            else
+            {
+                <button class="send-button icon-only" @onclick="SendAsync" disabled="@(string.IsNullOrWhiteSpace(_inputText) || _isLoadingModel || AttachedImageVisionWarningText is not null)" title="Send (Enter)" aria-label="Send"><Icon Name="send" Size="18" /></button>
+            }
+        </div>
+    </div>
+
+    <div class="resize-handle" data-var="--rpanel-w" data-side="right" title="Drag to resize - double-click to reset"></div>
+
+    <div class="right-panel">
+        <div class="right-panel-tabs">
+            <button class="right-panel-tab @(_rightPanelTab == "Stats" ? "active" : "")" @onclick='() => _rightPanelTab = "Stats"'>Stats</button>
+            <button class="right-panel-tab @(_rightPanelTab == "Modules" ? "active" : "")" @onclick='() => _rightPanelTab = "Modules"'>Modules</button>
+        </div>
+
+        <div class="right-panel-content">
+            @if (_rightPanelTab == "Stats")
+            {
+                <div class="panel-card">
+                    <h4>Last reply</h4>
+                    <div class="stat-grid">
+                        <div class="stat-tile"><span class="stat-number accent">@_lastInputTokens.ToString("N0")</span><span class="stat-caption">Input tokens</span></div>
+                        <div class="stat-tile"><span class="stat-number accent">@_lastOutputTokens.ToString("N0")</span><span class="stat-caption">Output tokens</span></div>
+                        <div class="stat-tile"><span class="stat-number accent">@_lastTokensPerSecond.ToString("0.0")</span><span class="stat-caption">Tokens / sec</span></div>
+                        <div class="stat-tile"><span class="stat-number accent">@_lastTimeToFirstToken.ToString("0.00")s</span><span class="stat-caption">Time to first token</span></div>
+                    </div>
+                </div>
+
+                <div class="panel-card">
+                    <h4>Session</h4>
+                    <div class="stat-grid">
+                        <div class="stat-tile"><span class="stat-number success">@_sessionTotalInputTokens.ToString("N0")</span><span class="stat-caption">Total input</span></div>
+                        <div class="stat-tile"><span class="stat-number success">@_sessionTotalOutputTokens.ToString("N0")</span><span class="stat-caption">Total output</span></div>
+                    </div>
+                </div>
+
+                <div class="panel-card">
+                <h4>Tool calls this turn</h4>
+                @if (LastAssistantMessage is { ToolCalls.Count: > 0 } lastMessage)
+                {
+                    <div class="tool-chips">
+                        @foreach (var toolCall in lastMessage.ToolCalls)
+                        {
+                            <span class="tool-chip" title="@(toolCall.ErrorMessage ?? (toolCall.Succeeded == true ? "Succeeded" : toolCall.Succeeded == false ? "Failed" : "Pending"))">
+                                <span class="tool-chip-dot @(toolCall.Succeeded == true ? "succeeded" : toolCall.Succeeded == false ? "failed" : "pending")"></span>
+                                @toolCall.Name
+                            </span>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <p class="right-panel-empty">No tool calls yet.</p>
+                }
+                </div>
+            }
+            else
+            {
+                @foreach (var module in ModuleRegistry.AllModules)
+                {
+                    <div class="module-card">
+                        <div class="module-card-header">
+                            <span class="module-name">@module.Name</span>
+                            <span class="module-status-pill @(module.IsEnabled ? "enabled" : "disabled")">@(module.IsEnabled ? "Enabled" : "Disabled")</span>
+                        </div>
+                        <div class="module-description">@module.Description</div>
+                    </div>
+                }
+            }
+        </div>
+
+        <div class="right-panel-actions">
+            @if (_rightPanelTab == "Stats")
+            {
+                <button class="pill-button" @onclick="ShowSystemPrompt"><Icon Name="file-text" Size="14" /> View system prompt</button>
+                <button class="pill-button" @onclick="ShowTurnContextAsync"><Icon Name="layers" Size="14" /> View turn context</button>
+                <button class="pill-button" @onclick="ShowToolsSent"><Icon Name="wrench" Size="14" /> View tools sent</button>
+                <a href="/logs" class="pill-button"><Icon Name="terminal" Size="14" /> View logs</a>
+            }
+            else
+            {
+                <a href="/settings" class="pill-button"><Icon Name="settings" Size="14" /> Manage in Settings</a>
+            }
+        </div>
+    </div>
+</div>
+
+@if (_isToolsSentOpen)
+{
+    // "View tools sent", same read-only overlay shape as the
+    // System prompt/Model details ones. Reuses
+    // BuildRawToolsText - the exact same real wire-format JSON actually
+    // sent to the model, not a reconstruction.
+    <div class="approval-overlay">
+        <div class="approval-dialog">
+            <h3>Tools sent</h3>
+            <p class="model-details-status">
+                Every enabled tool's real name/description/JSON schema, exactly as sent to Lemonade alongside every
+                request - this is what the context breakdown's "tools" figure is the token cost of. Reformatted here
+                for readability, so pasting THIS text into an external tokenizer will read differently from the
+                figure here.
+                @if (_toolsSentTokens is int toolsTokens)
+                {
+                    <text>(~@toolsTokens.ToString("N0") tokens)</text>
+                }
+            </p>
+            <div class="approval-preview system-prompt-text">@BuildPrettyToolsText(ModuleRegistry.GetEnabledTools())</div>
+            <div class="approval-buttons">
+                <button @onclick="CloseToolsSent">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_pendingApproval is not null)
+{
+    // Blazor-native replacement for the desktop apps' modal
+    // FileWriteApprovalDialog. See FileWriteApprovalGate's own doc comment
+    // for the async "ask and wait" design this overlay resolves.
+    <div class="approval-overlay">
+        <div class="approval-dialog">
+            <h3>The assistant wants to @_pendingApproval.ActionLabel</h3>
+            <div class="approval-path">@_pendingApproval.FilePath</div>
+            <div class="approval-preview">@_pendingApproval.Preview</div>
+            <div class="approval-buttons">
+                <button class="approval-deny" @onclick="() => ResolveApproval(ApprovalResult.Deny)">Deny</button>
+                <button class="btn-primary" @onclick="() => ResolveApproval(ApprovalResult.AllowOnce)">Allow once</button>
+                <button @onclick="() => ResolveApproval(ApprovalResult.AllowForSession)">Allow for this session</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_pendingImageSize is not null)
+{
+    // Blazor-native replacement for the desktop apps' modal
+    // ImageSizeDialog. Same async "ask and wait" design as the approval
+    // overlay above, via ImageSizeGate.
+    <div class="approval-overlay">
+        <div class="approval-dialog">
+            <h3>Generate an image?</h3>
+            <div class="approval-preview">@_pendingImageSize.Prompt</div>
+            <div class="image-size-fields">
+                <label>Width <input type="number" @bind="_imageSizeWidth" /></label>
+                <label>Height <input type="number" @bind="_imageSizeHeight" /></label>
+            </div>
+            <div class="approval-buttons">
+                <button class="approval-deny" @onclick="CancelImageGeneration">Cancel</button>
+                <button class="btn-primary" @onclick="ConfirmImageGeneration">Generate</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_isModelDetailsOpen)
+{
+    // Plain read-only overlay, same visual shape as the
+    // approval/image-size ones above but with no "ask and wait" gate behind
+    // it (nothing to resolve, just a Close button) - a dialog in spirit, not
+    // in the TaskCompletionSource sense.
+    <div class="approval-overlay">
+        <div class="approval-dialog model-details-dialog">
+            <h3>@_selectedModel</h3>
+            @if (_modelCatalog.TryGetValue(_selectedModel, out var catalogEntry))
+            {
+                <dl class="model-details-list">
+                    <dt>Capabilities</dt>
+                    <dd>@(catalogEntry.Labels.Count > 0 ? string.Join(", ", catalogEntry.Labels) : "(none listed)")</dd>
+                    <dt>Max context window</dt>
+                    <dd>@catalogEntry.MaxContextWindow.ToString("N0") tokens</dd>
+                    <dt>Size on disk</dt>
+                    <dd>@catalogEntry.SizeGb.ToString("0.##") GB</dd>
+                    <dt>Backend</dt>
+                    <dd>@(catalogEntry.Recipe ?? "(unknown)")</dd>
+                </dl>
+            }
+            else
+            {
+                <p class="model-details-status">No catalog details available for this model.</p>
+            }
+
+            @if (_isLoadingModelDetails)
+            {
+                <p class="model-details-status">Checking whether it's currently loaded...</p>
+            }
+            else if (_loadedModelDetails is not null)
+            {
+                <h4>Currently loaded (live)</h4>
+                <dl class="model-details-list">
+                    <dt>Device</dt>
+                    <dd>@(_loadedModelDetails.Device ?? "(unknown)")</dd>
+                    @if (_loadedModelDetails.RecipeOptions?.CtxSize is int ctxSize)
+                    {
+                        <dt>Active context size</dt>
+                        <dd>@ctxSize.ToString("N0") tokens</dd>
+                    }
+                    @if (!string.IsNullOrEmpty(_loadedModelDetails.RecipeOptions?.LlamacppArgs))
+                    {
+                        <dt>Runtime arguments (llama.cpp)</dt>
+                        <dd class="model-details-args">@_loadedModelDetails.RecipeOptions!.LlamacppArgs</dd>
+                    }
+                </dl>
+            }
+            else
+            {
+                <p class="model-details-status">Not currently loaded.</p>
+            }
+
+            <div class="approval-buttons">
+                <button @onclick="CloseModelDetails">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_isSystemPromptOpen)
+{
+    // Plain read-only overlay, same shape as the model-details
+    // one above. Shows the REAL, LIVE _history[0] text verbatim (not a
+    // reconstruction) - doubles as a direct way to confirm the stable/
+    // volatile split (see RefreshStableSystemPrompt's own comment) is
+    // actually working: this text should read identically across multiple
+    // turns in the same chat unless the compaction summary or pinned facts
+    // actually change.
+    <div class="approval-overlay">
+        <div class="approval-dialog">
+            <h3>System prompt (live)</h3>
+            <p class="model-details-status">
+                Exactly what's currently sitting at the front of the model's context for this chat - the same text
+                that gets rebuilt each turn.
+                @if (_systemPromptTokens is int systemTokens)
+                {
+                    <text>(~@systemTokens.ToString("N0") tokens)</text>
+                }
+            </p>
+            <div class="approval-preview system-prompt-text">@(_history.Count > 0 ? _history[0].Text : "(no system message yet)")</div>
+            <div class="approval-buttons">
+                <button @onclick="CloseSystemPrompt">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_isTurnContextOpen)
+{
+    // "View turn context" - what gets silently added to the NEXT message
+    // when Send is pressed (time-awareness + relevant memories/knowledge for
+    // the text currently in the message box). Same read-only overlay shape
+    // as the System prompt one; matches the Avalonia/WPF button of the same
+    // name. The header's token-usage click remains the place for the
+    // context-usage breakdown.
+    <div class="approval-overlay">
+        <div class="approval-dialog">
+            <h3>Turn context (preview)</h3>
+            <p class="model-details-status">
+                What gets silently added to your NEXT message when you hit Send - never shown in the chat, never in
+                View system prompt. Recomputed fresh every turn, so this is a live preview based on the message
+                box's current text, not a historical record.
+                @if (_turnContextTokens is int tokenCount)
+                {
+                    <text>(~@tokenCount.ToString("N0") tokens)</text>
+                }
+            </p>
+            @if (_isTurnContextLoading)
+            {
+                <p class="model-details-status">Searching memories and knowledge...</p>
+            }
+            else
+            {
+                <div class="approval-preview system-prompt-text">@_turnContextText</div>
+            }
+            <div class="approval-buttons">
+                <button @onclick="CloseTurnContext">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_isContextBreakdownOpen)
+{
+    // Context-usage breakdown popup. A plain read-only overlay,
+    // same shape as the System prompt/Model details ones above - click-
+    // triggered rather than Avalonia's own hover-triggered popup, since a
+    // Blazor Server hover event would mean a real server round-trip (and a
+    // real Lemonade tokenize call) firing on every mouse movement, not a
+    // free in-process lookup the way a desktop app's hover is.
+    <div class="approval-overlay">
+        <div class="approval-dialog">
+            <h3>Context usage breakdown</h3>
+            @if (_isContextBreakdownLoading)
+            {
+                <p class="model-details-status">Computing real token counts...</p>
+            }
+            else if (_contextBreakdownInfo is { } info)
+            {
+                <p class="context-breakdown-total">
+                    <strong>@info.ContextNowTokens.ToString("N0") / @info.ContextMaxTokens.ToString("N0") tokens</strong>
+                    (@((int)Math.Round(info.PercentFull))% full)
+                    @if (!info.UsedRealTokenizer)
+                    {
+                        <span class="context-breakdown-approx">- approximate, Lemonade's own tokenizer was unreachable</span>
+                    }
+                </p>
+                <div class="context-breakdown-bar">
+                    <div class="context-breakdown-segment system-prompt" style="width: @(info.SystemPromptPercent)%" title="System prompt: @info.SystemPromptTokens.ToString("N0") tokens"></div>
+                    <div class="context-breakdown-segment tools" style="width: @(info.ToolsPercent)%" title="Tools: @info.ToolsTokens.ToString("N0") tokens"></div>
+                    <div class="context-breakdown-segment history" style="width: @(info.HistoryPercent)%" title="History: @info.HistoryTokens.ToString("N0") tokens"></div>
+                    <div class="context-breakdown-marker" style="left: @(info.CompactionThresholdPercent)%" title="Compaction triggers here"></div>
+                </div>
+                <dl class="model-details-list context-breakdown-legend">
+                    <dt><span class="context-breakdown-swatch system-prompt"></span> System prompt</dt>
+                    <dd>@info.SystemPromptTokens.ToString("N0") tokens</dd>
+                    <dt><span class="context-breakdown-swatch tools"></span> Tools</dt>
+                    <dd>@info.ToolsTokens.ToString("N0") tokens</dd>
+                    <dt><span class="context-breakdown-swatch history"></span> History (summary + pinned facts + messages)</dt>
+                    <dd>@info.HistoryTokens.ToString("N0") tokens</dd>
+                    <dt>Free</dt>
+                    <dd>@Math.Max(0, info.FreeTokens).ToString("N0") tokens</dd>
+                    @if (info.HasCompactions)
+                    {
+                        <dt>Compacted</dt>
+                        <dd>@info.CompactionCount time@(info.CompactionCount == 1 ? "" : "s") this chat</dd>
+                    }
+                </dl>
+                @if (!string.IsNullOrWhiteSpace(_inputText))
+                {
+                    <p class="context-breakdown-pending@(info.WouldExceedLimit ? " context-breakdown-warning" : "")">
+                        If you send now: +@info.PendingTokens.ToString("N0") tokens
+                        @if (info.WouldExceedLimit)
+                        {
+                            <text> - this would exceed the model's context window</text>
+                        }
+                    </p>
+                }
+            }
+            <div class="approval-buttons">
+                <button @onclick="CloseContextBreakdown">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // Model selector, health/stats polling, a collapsible
+    // reasoning ("Thinking") panel per reply, and a sessions sidebar
+    // (search/rename-on-first-message/delete) backed by
+    // ChatSessionRepository. Health is checked once at load and refreshed
+    // after every reply, with a background retry timer for reconnecting
+    // to Lemonade.
+    private readonly List<ChatMessage> _history = [];
+    private readonly List<DisplayMessage> _messages = [];
+    private List<ChatSessionSummary> _sessions = [];
+
+    // Folder/tag grouping in the sidebar. _sessions stays the
+    // authoritative, unchanged list every other method reads/mutates (the same
+    // split the desktop editions use); _sidebarGroups is purely a rebuilt-on-
+    // demand display projection of it, grouped by FolderId with each
+    // group's real FolderSummary (for IsCollapsed) attached. The session
+    // list's own SQL query already clusters rows by folder (folders first,
+    // "Unfiled" last) so a plain GroupBy preserves that ordering correctly.
+    private List<FolderSummary> _folders = [];
+    private List<FolderGroup> _sidebarGroups = [];
+    private string? _editingFolderSessionId;
+    private string _folderSelectValue = "";
+    private string _newFolderName = "";
+    private string? _editingTagsSessionId;
+    private string _newTagText = "";
+
+    // Replaces the four always-visible inline icon buttons
+    // (📁🏷⬇×) with a single "⋮" menu, since four plain-text Unicode glyphs
+    // sitting in a row "looks messy". No document-wide click-outside-closes
+    // detection (would need JS interop this project otherwise avoids for
+    // something this small) - the menu closes when an item is picked,
+    // another session's own menu is opened, or a chat is switched/started,
+    // which covers every normal interaction.
+    private string? _openMenuSessionId;
+    private void ToggleSessionMenu(string sessionId) => _openMenuSessionId = _openMenuSessionId == sessionId ? null : sessionId;
+
+    private class FolderGroup
+    {
+        public FolderSummary? Folder { get; set; }
+        public List<ChatSessionSummary> Sessions { get; set; } = [];
+    }
+
+    private List<string> _availableModels = [];
+
+    // Which capability category each downloaded model belongs to, from
+    // Lemonade's own /v1/models "labels" ("chat"/"image"/"embeddings") -
+    // drives the grouped dropdown and routes an image-labeled selection
+    // straight to image generation instead of a chat request Lemonade would
+    // reject with HTTP 400. Same definitions as the Avalonia app.
+    private readonly Dictionary<string, string> _modelCategories = new(StringComparer.OrdinalIgnoreCase);
+    private const string ModelCategoryChat = "Chat";
+    private const string ModelCategoryImage = "Image";
+    private const string ModelCategoryEmbedding = "Embedding";
+    private const string ModelCategoryOther = "Other";
+
+    private static string DetermineModelCategory(IEnumerable<string> labels)
+    {
+        var labelSet = new HashSet<string>(labels, StringComparer.OrdinalIgnoreCase);
+        if (labelSet.Contains("chat")) return ModelCategoryChat;
+        if (labelSet.Contains("image")) return ModelCategoryImage;
+        if (labelSet.Contains("embeddings")) return ModelCategoryEmbedding;
+        return ModelCategoryOther;
+    }
+
+    private static int ModelCategorySortOrder(string category) => category switch
+    {
+        ModelCategoryChat => 0,
+        ModelCategoryImage => 1,
+        ModelCategoryEmbedding => 2,
+        _ => 3,
+    };
+
+    private static string ModelCategoryHeaderText(string category) => category switch
+    {
+        ModelCategoryChat => "Chat models",
+        ModelCategoryImage => "Image models",
+        ModelCategoryEmbedding => "Embedding models",
+        _ => "Other models",
+    };
+
+    /// <summary>One group per category actually present (never an empty "Embedding models" header), in Chat/Image/Embedding/Other order.</summary>
+    private IEnumerable<(string Header, List<string> Models)> GroupedModels =>
+        _availableModels
+            .GroupBy(m => _modelCategories.GetValueOrDefault(m, ModelCategoryOther))
+            .OrderBy(g => ModelCategorySortOrder(g.Key))
+            .Select(g => (ModelCategoryHeaderText(g.Key), g.ToList()));
+
+    private string? _modelLoadError;
+    private int _modelLoadSeconds;
+
+    // Session rename (sidebar menu -> inline title edit). Enter or losing
+    // focus commits, Escape cancels.
+    private string? _renamingSessionId;
+    private string _renameText = "";
+    private ElementReference _renameInput;
+    private bool _focusRenameInput;
+
+    private ElementReference _inputBox;
+    private DotNetObjectReference<Home>? _selfReference;
+
+    private readonly Dictionary<string, int> _modelContextWindows = new(StringComparer.OrdinalIgnoreCase);
+    private string _selectedModel = "";
+    private string _currentSessionId = "";
+    private string _inputText = "";
+    private string _searchText = "";
+    private bool _isBusy;
+    private bool _isHealthy;
+    private bool _isLoadingModel;
+    private CancellationTokenSource? _searchDebounceCts;
+
+    // Lemonade reconnect. null while healthy - the detailed
+    // connection-failure message lives here (shown via the health button's
+    // own title tooltip) rather than crowding the header with a long
+    // connection-refused message that would push everything else out.
+    private string? _lastHealthCheckError;
+    private Timer? _connectionRetryTimer;
+
+    // A real Stop button, threaded through GetStreamingResponseAsync's
+    // own CancellationToken, so a runaway/stuck generation (e.g. Lemonade
+    // looping past 80,000+ output tokens) can always be cancelled.
+    private CancellationTokenSource? _sendCts;
+
+    // Short-term memory / compaction. Deliberately in-memory only,
+    // not persisted (unlike MemoryService's own durable facts) - a fresh
+    // reload of a session doesn't need its compaction summary restored,
+    // just the real transcript.
+    private string _conversationSummaryText = "";
+    private const int MessagesToKeepAfterCompaction = 6;
+
+    // null (not 0) means "no real turn has happened in this
+    // chat yet", distinct from a genuine 0-token reading. Otherwise a
+    // brand-new empty chat would show a misleading "0 / 262,144 tokens (0%)"
+    // the instant _contextUsageMax got populated (at init or a reconnect
+    // retry), regardless of whether this specific chat had ever sent
+    // anything (there would be no third "not started" state, just
+    // "blank" or "a real number"). _contextUsageMax itself still always
+    // reflects the selected model's real ceiling, independent of any one
+    // chat's state.
+    private int? _contextUsageCurrent;
+    private int _contextUsageMax;
+
+    // Right-hand Stats/Modules panel, matching the pane both
+    // WPF and Avalonia already have. "Last reply" fields come straight off
+    // Lemonade's own /v1/stats response (replacing the old inline header
+    // _statsText line, now redundant); "Session" totals are this app's own
+    // running accumulation, in-memory only (never persisted), reset
+    // alongside everything else in NewChat/LoadSession.
+    private string _rightPanelTab = "Stats";
+    private int _lastInputTokens;
+    private int _lastOutputTokens;
+    private double _lastTokensPerSecond;
+    private double _lastTimeToFirstToken;
+    private int _sessionTotalInputTokens;
+    private int _sessionTotalOutputTokens;
+    private bool _isToolsSentOpen;
+
+    /// <summary>The Stats tab's "Tool calls this turn" doesn't duplicate state - it's just whichever assistant bubble is currently last, same non-duplicating approach Avalonia's own RightPanelToolCalls uses.</summary>
+    private DisplayMessage? LastAssistantMessage => _messages.LastOrDefault(m => !m.IsUser);
+
+    private int? _toolsSentTokens;
+
+    private async Task ShowToolsSent()
+    {
+        _toolsSentTokens = null;
+        _isToolsSentOpen = true;
+        StateHasChanged();
+
+        // The same figure the context breakdown shows for "tools" - counted
+        // from the compact wire-format JSON, not the reformatted display text.
+        _toolsSentTokens = await TryTokenizeAsync(BuildRawToolsText(ModuleRegistry.GetEnabledTools()));
+    }
+
+    /// <summary>
+    /// Real count via Lemonade's own tokenizer, falling back to a rough
+    /// ~4-characters-per-token guess if it can't be reached (or the
+    /// endpoint is missing) - shared by every "view X (~N tokens)" overlay
+    /// so each one always shows a number, same as the WPF/Avalonia apps.
+    /// </summary>
+    private async Task<int> TryTokenizeAsync(string text)
+    {
+        try { return await ManagementClient.TokenizeAsync(text, CancellationToken.None); }
+        catch { return string.IsNullOrEmpty(text) ? 0 : Math.Max(1, text.Length / 4); }
+    }
+
+    /// <summary>
+    /// Every enabled tool laid out readably - "### name", description,
+    /// indented schema JSON, "---" separators (as the WPF app shows it) -
+    /// instead of one unbroken line of compact JSON.
+    /// </summary>
+    private static string BuildPrettyToolsText(IEnumerable<AITool> tools)
+    {
+        var indented = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+        var sections = tools.Select(t =>
+        {
+            var schemaText = t is AIFunction function ? System.Text.Json.JsonSerializer.Serialize(function.JsonSchema, indented) : "(no schema)";
+            return $"### {t.Name}\n{t.Description}\n\n{schemaText}";
+        }).ToList();
+        return sections.Count == 0 ? "(no modules with tools are currently enabled)" : string.Join("\n\n---\n\n", sections);
+    }
+    private void CloseToolsSent() => _isToolsSentOpen = false;
+
+    // Real tool-call success/failure tracking, replacing Stage
+    // 4's plain tool-name strings. Succeeded is a nullable bool, starting
+    // null ("call made, no result yet") - never defaulted to true, since
+    // that would be misleading before a real result exists.
+    private class ToolCallResult
+    {
+        public required string Name { get; init; }
+        public required string CallId { get; init; }
+        public bool? Succeeded { get; set; }
+        public string? ErrorMessage { get; set; }
+
+        // "name:1" (success) / "name:0" (failure) / "name:?" (still
+        // pending, shouldn't normally persist in this state but handled for
+        // symmetry) in the Messages.ToolCalls column. ParseFromStorage also
+        // accepts a bare name with no colon at all - the original
+        // pre-tracking format, parsed as Succeeded = null (backward
+        // compatibility with rows saved before success tracking).
+        public string SerializeForStorage() => Succeeded switch
+        {
+            true => $"{Name}:1",
+            false => $"{Name}:0",
+            null => $"{Name}:?",
+        };
+
+        public static ToolCallResult ParseFromStorage(string stored)
+        {
+            var colonIndex = stored.LastIndexOf(':');
+            if (colonIndex < 0) return new ToolCallResult { Name = stored, CallId = "" };
+
+            var name = stored[..colonIndex];
+            bool? succeeded = stored[(colonIndex + 1)..] switch { "1" => true, "0" => false, _ => null };
+            return new ToolCallResult { Name = name, CallId = "", Succeeded = succeeded };
+        }
+    }
+
+    private class DisplayMessage
+    {
+        public required bool IsUser { get; init; }
+        public string Text { get; set; } = "";
+        public string ReasoningText { get; set; } = "";
+
+        // A call is added once (on its FunctionCallContent), then the
+        // matching FunctionResultContent (correlated by CallId) resolves
+        // its own Succeeded/ErrorMessage in place - no separate dedup set
+        // needed now, a CallId already in the list just gets looked up.
+        public List<ToolCallResult> ToolCalls { get; } = [];
+
+        // Set only on a user bubble that had a one-off file
+        // attached that turn; shown as a small filename chip rather than
+        // dumping the full extracted text into the visible transcript (that
+        // goes to the model only, via SendAsync's own textForModel).
+        public string? AttachedFileName { get; set; }
+
+        // Set on a USER bubble that attached an image for vision
+        // input (never both this and AttachedFileName at once - one
+        // attachment slot, routed to either path by file extension). Already
+        // the small downscaled copy ImageAttachmentService saved, served
+        // over /attached-images the same way GeneratedImageUrl is.
+        public string? AttachedImageUrl { get; set; }
+
+        // Set when this reply's text contains generate_image's own
+        // ready-made Markdown image link (![alt](file:///...)) - extracted via
+        // regex rather than a full Markdown renderer.
+        // Holds the already-converted web-relative URL (/generated-images/...),
+        // not the raw file:// URI, since that's what the <img> tag needs.
+        public string? GeneratedImageUrl { get; set; }
+
+        // Date dividers + hover timestamps. CreatedAt is set once
+        // at construction (DateTime.Now for a live message, the real
+        // persisted StoredChatMessage.CreatedAt for a reloaded one).
+        // DateDividerText is only ever non-null on whichever message starts
+        // a new calendar day - set by SetDateDividerIfNeeded, called right
+        // after every _messages.Add(...) call site.
+        public DateTime CreatedAt { get; init; } = DateTime.Now;
+        public string? DateDividerText { get; set; }
+
+        // Prompt-processing progress indicator. Only ever
+        // meaningful before any real answer/reasoning text has arrived (see
+        // SendAsync's own streaming-loop comment) - cleared the instant
+        // either one starts, plus a final safety-net clear after the
+        // streaming try/catch so a stuck percentage can never linger on a
+        // cancelled or errored reply.
+        public string? PromptProgressText { get; set; }
+
+        // Compaction visibility. A second, visually-distinct chip
+        // collection alongside ToolCalls (amber, no status dot, since these
+        // aren't something the model did) that makes compaction visible.
+        public List<string> SystemNotes { get; } = [];
+    }
+
+    // RAG (Knowledge Bases) + one-off file analysis.
+    private List<KnowledgeBaseSummary> _knowledgeBases = [];
+    private string _attachedKnowledgeBaseId = "";
+    private string? _pendingAttachedFileText;
+    private string? _pendingAttachedFileName;
+    private string? _attachError;
+
+    // Knowledge Bases as a toggleable module. KnowledgeModule
+    // itself gates this feature: the KB dropdown shows and SendAsync
+    // fetches knowledge-base text only when its IsEnabled flag is set. This
+    // property is that check, read fresh on every render (never cached) so a live
+    // Settings toggle takes effect immediately, same as every other module.
+    private bool IsKnowledgeModuleEnabled => ModuleRegistry.IsModuleEnabled("Knowledge");
+
+    // Image attachment (vision input). _pendingAttachedImagePath
+    // is the already-downscaled local copy's path, mutually exclusive with
+    // _pendingAttachedFileText (one attachment slot, routed by extension).
+    // _modelVisionSupport mirrors _modelContextWindows's own shape/lifetime -
+    // populated once alongside it from /v1/models' real "labels" field.
+    private string? _pendingAttachedImagePath;
+    private readonly Dictionary<string, bool> _modelVisionSupport = new(StringComparer.OrdinalIgnoreCase);
+
+    // Model details overlay. _modelCatalog is a third parallel
+    // per-model lookup (same shape/lifetime as _modelContextWindows/
+    // _modelVisionSupport, populated alongside them) holding the full
+    // /v1/models catalog entry, not just the one field each of those already
+    // extracted. Whether a model is actually loaded RIGHT NOW is queried
+    // fresh from /v1/health on each open rather than cached - a low-
+    // frequency user action doesn't need that complexity, and a model can
+    // load/unload between clicks.
+    private readonly Dictionary<string, LemonadeModelInfo> _modelCatalog = new(StringComparer.OrdinalIgnoreCase);
+    private bool _isModelDetailsOpen;
+    private bool _isLoadingModelDetails;
+    private LemonadeLoadedModelInfo? _loadedModelDetails;
+
+    private async Task ShowModelDetailsAsync()
+    {
+        _isModelDetailsOpen = true;
+        _isLoadingModelDetails = true;
+        _loadedModelDetails = null;
+        StateHasChanged();
+
+        try
+        {
+            var health = await ManagementClient.GetHealthAsync(CancellationToken.None);
+            _loadedModelDetails = health?.AllModelsLoaded.FirstOrDefault(m => string.Equals(m.ModelName, _selectedModel, StringComparison.OrdinalIgnoreCase));
+        }
+        catch
+        {
+            // Best-effort - the catalog section above still shows whatever's cached, even if this live check fails.
+        }
+        finally
+        {
+            _isLoadingModelDetails = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CloseModelDetails() => _isModelDetailsOpen = false;
+
+    // "View system prompt". No "ask and wait" gate behind it
+    // (same as the model-details overlay above) - just shows _history[0]
+    // live, nothing to resolve.
+    private bool _isSystemPromptOpen;
+    private int? _systemPromptTokens;
+
+    private async Task ShowSystemPrompt()
+    {
+        _systemPromptTokens = null;
+        _isSystemPromptOpen = true;
+        StateHasChanged();
+        _systemPromptTokens = await TryTokenizeAsync(_history.Count > 0 ? _history[0].Text ?? "" : "");
+    }
+    private void CloseSystemPrompt() => _isSystemPromptOpen = false;
+
+    // Context-usage breakdown popup. A plain POCO snapshot (not
+    // an observable ViewModel - Blazor's own render model doesn't need one),
+    // computed fresh every time the popup opens via real Lemonade
+    // /v1/tokenize calls (an exact count, not the rough ~4-chars-per-token
+    // guess used elsewhere for a cheap "did compaction help" comparison) -
+    // falls back to that same chars/4 estimate only if the real tokenizer
+    // call fails (Lemonade unreachable), UsedRealTokenizer records which
+    // happened so the UI can say so honestly rather than presenting an
+    // estimate as exact. Segment widths are sized against the real max
+    // context window, never rescaled to force-sum to 100% - a small honest
+    // gap versus chat-template rendering overhead the real tokenizer calls
+    // don't capture (message wrapper tokens, role markers, etc.) shows up
+    // as visible free space rather than being papered over.
+    private class ContextBreakdown
+    {
+        public int ContextNowTokens { get; set; }
+        public int ContextMaxTokens { get; set; }
+        public double PercentFull { get; set; }
+        public bool UsedRealTokenizer { get; set; }
+        public int SystemPromptTokens { get; set; }
+        public int ToolsTokens { get; set; }
+        public int HistoryTokens { get; set; }
+        public int FreeTokens { get; set; }
+        public int CompactionThresholdTokens { get; set; }
+        public int CompactionCount { get; set; }
+        public bool HasCompactions => CompactionCount > 0;
+        public int PendingTokens { get; set; }
+        public bool WouldExceedLimit { get; set; }
+
+        private double Pct(int tokens) => ContextMaxTokens > 0 ? Math.Clamp(100.0 * tokens / ContextMaxTokens, 0, 100) : 0;
+        public double SystemPromptPercent => Pct(SystemPromptTokens);
+        public double ToolsPercent => Pct(ToolsTokens);
+        public double HistoryPercent => Pct(HistoryTokens);
+        public double CompactionThresholdPercent => Pct(CompactionThresholdTokens);
+    }
+
+    private bool _isContextBreakdownOpen;
+    private bool _isContextBreakdownLoading;
+    private ContextBreakdown? _contextBreakdownInfo;
+
+    // Incremented in CompactHistoryIfNeededAsync's own success path, reset
+    // alongside _conversationSummaryText in both NewChat/LoadSession -
+    // in-memory only, same scope as every other short-term-memory field.
+    private int _compactionCount;
+
+    private async Task ShowContextBreakdownAsync()
+    {
+        _isContextBreakdownOpen = true;
+        _isContextBreakdownLoading = true;
+        _contextBreakdownInfo = null;
+        StateHasChanged();
+
+        try
+        {
+            var systemPromptText = _history.Count > 0 ? (_history[0].Text ?? "") : "";
+            var toolsText = BuildRawToolsText(ModuleRegistry.GetEnabledTools());
+            var historyText = string.Join(" ", _history.Skip(1).Select(ExtractMessageText));
+
+            var systemPromptTokens = await ManagementClient.TokenizeAsync(systemPromptText, CancellationToken.None);
+            var toolsTokens = await ManagementClient.TokenizeAsync(toolsText, CancellationToken.None);
+            var historyTokens = await ManagementClient.TokenizeAsync(historyText, CancellationToken.None);
+
+            var contextMax = _contextUsageMax;
+            var contextNow = _contextUsageCurrent ?? (systemPromptTokens + toolsTokens + historyTokens);
+            var compactionThreshold = (int)Math.Round(contextMax * Settings.Memory.CompactionTriggerPercent / 100.0);
+
+            var pendingTokens = 0;
+            if (!string.IsNullOrWhiteSpace(_inputText))
+            {
+                // The same "what would actually be sent" preview SendAsync's
+                // own AppendVolatileContext builds for a real turn - time-
+                // awareness + memory/knowledge search against whatever's
+                // currently typed, not yet committed to _history.
+                var volatileText = await BuildLiveTurnContextTextAsync(_inputText) + "\n\n" + _inputText;
+                pendingTokens = await ManagementClient.TokenizeAsync(volatileText, CancellationToken.None);
+            }
+
+            _contextBreakdownInfo = new ContextBreakdown
+            {
+                ContextNowTokens = contextNow,
+                ContextMaxTokens = contextMax,
+                PercentFull = contextMax > 0 ? 100.0 * contextNow / contextMax : 0,
+                UsedRealTokenizer = true,
+                SystemPromptTokens = systemPromptTokens,
+                ToolsTokens = toolsTokens,
+                HistoryTokens = historyTokens,
+                FreeTokens = contextMax - systemPromptTokens - toolsTokens - historyTokens,
+                CompactionThresholdTokens = compactionThreshold,
+                CompactionCount = _compactionCount,
+                PendingTokens = pendingTokens,
+                WouldExceedLimit = contextNow + pendingTokens >= contextMax,
+            };
+        }
+        catch
+        {
+            // Best-effort - Lemonade's own tokenizer endpoint might be
+            // unreachable (reconnect in progress, etc.); fall back to the
+            // same rough ~4-chars-per-token estimate
+            // CompactHistoryIfNeededAsync already uses elsewhere rather than
+            // showing nothing at all.
+            var estimatedChars = _history.Sum(m => (m.Text ?? "").Length);
+            var estimatedTokens = Math.Max(1, estimatedChars / 4);
+            _contextBreakdownInfo = new ContextBreakdown
+            {
+                ContextNowTokens = _contextUsageCurrent ?? estimatedTokens,
+                ContextMaxTokens = _contextUsageMax,
+                PercentFull = _contextUsageMax > 0 ? 100.0 * (_contextUsageCurrent ?? estimatedTokens) / _contextUsageMax : 0,
+                UsedRealTokenizer = false,
+                HistoryTokens = estimatedTokens,
+                FreeTokens = _contextUsageMax - estimatedTokens,
+                CompactionCount = _compactionCount,
+            };
+        }
+        finally
+        {
+            _isContextBreakdownLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CloseContextBreakdown() => _isContextBreakdownOpen = false;
+
+    /// <summary>
+    /// The genuine volatile per-turn content (time-awareness + whatever
+    /// memory/knowledge search surfaces) for the given draft text - shared by
+    /// SendAsync, the "View turn context" preview and the context breakdown's
+    /// pending-token estimate so the real search is only written once. Memory
+    /// and knowledge both need real text to search against, so a blank draft
+    /// yields just the time line.
+    /// </summary>
+    private async Task<string> BuildLiveTurnContextTextAsync(string draftText)
+    {
+        var sections = new List<string> { TimeAwareness.BuildTimeAwarenessText() };
+
+        if (!string.IsNullOrWhiteSpace(draftText))
+        {
+            var relevantMemoriesText = await MemoryService.GetRelevantMemoriesTextAsync(draftText, CancellationToken.None);
+            if (!string.IsNullOrEmpty(relevantMemoriesText)) sections.Add(relevantMemoriesText);
+
+            // Fetched unconditionally when the module is on (not gated on a KB
+            // being attached) - the "no knowledge base is attached" text
+            // matters as much as real chunks; see SendAsync.
+            if (IsKnowledgeModuleEnabled)
+            {
+                var knowledgeText = await KnowledgeService.GetRelevantChunksTextAsync(string.IsNullOrEmpty(_attachedKnowledgeBaseId) ? null : _attachedKnowledgeBaseId, draftText, CancellationToken.None);
+                if (!string.IsNullOrEmpty(knowledgeText)) sections.Add(knowledgeText);
+            }
+        }
+
+        return string.Join("\n\n", sections);
+    }
+
+    private bool _isTurnContextOpen;
+    private bool _isTurnContextLoading;
+    private string _turnContextText = "";
+    private int? _turnContextTokens;
+
+    private async Task ShowTurnContextAsync()
+    {
+        _isTurnContextOpen = true;
+        _isTurnContextLoading = true;
+        _turnContextTokens = null;
+        StateHasChanged();
+
+        try
+        {
+            var text = await BuildLiveTurnContextTextAsync(_inputText);
+            _turnContextTokens = await TryTokenizeAsync(text);
+
+            _turnContextText = string.IsNullOrWhiteSpace(_inputText)
+                ? text + "\n\n(Type something in the message box first to preview what relevant memories/knowledge would be included for it - both need real text to search against.)"
+                : text;
+        }
+        catch (Exception ex)
+        {
+            _turnContextText = $"Couldn't build the turn context: {ex.Message}";
+        }
+        finally
+        {
+            _isTurnContextLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CloseTurnContext() => _isTurnContextOpen = false;
+
+    /// <summary>
+    /// The real OpenAI wire-format tools array (type/function/name/
+    /// description/parameters), not a bare schema dump - the wrapper syntax
+    /// itself costs real tokens a plain concatenation of descriptions would
+    /// miss entirely.
+    /// </summary>
+    private static string BuildRawToolsText(IEnumerable<AITool> tools)
+    {
+        var toolsArray = tools.OfType<AIFunction>().Select(f => new
+        {
+            type = "function",
+            function = new { name = f.Name, description = f.Description, parameters = f.JsonSchema },
+        });
+        return System.Text.Json.JsonSerializer.Serialize(toolsArray);
+    }
+
+    /// <summary>
+    /// Walks a ChatMessage's Contents directly rather than its .Text-only
+    /// shortcut, since a tool call's arguments/a tool result's own output
+    /// contribute real tokens .Text alone never sees.
+    /// </summary>
+    private static string ExtractMessageText(ChatMessage message)
+    {
+        var parts = new List<string>();
+        foreach (var content in message.Contents)
+        {
+            if (content is TextContent text) parts.Add(text.Text);
+            else if (content is TextReasoningContent reasoning) parts.Add(reasoning.Text);
+            else if (content is FunctionCallContent call) parts.Add($"{call.Name}({System.Text.Json.JsonSerializer.Serialize(call.Arguments)})");
+            else if (content is FunctionResultContent result) parts.Add(result.Result?.ToString() ?? "");
+        }
+        return string.Join(" ", parts);
+    }
+
+    // Date dividers + hover timestamps, as in the desktop editions'
+    // ComputeDateDividerText/SetDateDividerIfNeeded.
+    private static string? ComputeDateDividerText(DateTime? previousDate, DateTime currentCreatedAt)
+    {
+        var currentDate = currentCreatedAt.Date;
+        if (previousDate.HasValue && previousDate.Value == currentDate) return null;
+
+        if (currentDate == DateTime.Today) return "Today";
+        if (currentDate == DateTime.Today.AddDays(-1)) return "Yesterday";
+        return currentCreatedAt.ToString("dddd, d MMMM yyyy");
+    }
+
+    /// <summary>Call right after _messages.Add(message) - compares against whatever is now the second-to-last entry.</summary>
+    private void SetDateDividerIfNeeded(DisplayMessage message)
+    {
+        DateTime? previousDate = _messages.Count > 1 ? _messages[^2].CreatedAt.Date : null;
+        message.DateDividerText = ComputeDateDividerText(previousDate, message.CreatedAt);
+    }
+
+    // Blazor-native file-write approval overlay. Subscribed once
+    // at init, unsubscribed on Dispose - see FileWriteApprovalGate's own
+    // doc comment for the full design.
+    private FileWriteApprovalRequest? _pendingApproval;
+
+    private void OnPendingApprovalChanged(FileWriteApprovalRequest? request)
+    {
+        _pendingApproval = request;
+        InvokeAsync(StateHasChanged);
+    }
+
+    // Blazor-native image-size confirmation overlay, same
+    // subscribe-at-init/unsubscribe-on-Dispose pattern as the approval
+    // overlay above, via ImageSizeGate.
+    private ImageSizeRequest? _pendingImageSize;
+    private int _imageSizeWidth;
+    private int _imageSizeHeight;
+
+    private void OnPendingImageSizeChanged(ImageSizeRequest? request)
+    {
+        _pendingImageSize = request;
+        if (request is not null)
+        {
+            _imageSizeWidth = request.DefaultWidth;
+            _imageSizeHeight = request.DefaultHeight;
+        }
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void ConfirmImageGeneration()
+    {
+        var width = _imageSizeWidth > 0 ? _imageSizeWidth : 512;
+        var height = _imageSizeHeight > 0 ? _imageSizeHeight : 512;
+        _pendingImageSize?.Completion.TrySetResult(new ImageSizeResult(true, width, height));
+    }
+
+    private void CancelImageGeneration()
+    {
+        _pendingImageSize?.Completion.TrySetResult(new ImageSizeResult(false, 0, 0));
+    }
+
+    // Scheduler. Raised from ScheduledJobRunner running on the poll
+    // Timer's own thread pool thread, never this circuit's own synchronization
+    // context - InvokeAsync marshals both the sidebar refresh and (if it's the
+    // session currently open) the visible transcript reload onto the circuit,
+    // the same reason the Avalonia app's own Dispatcher.UIThread.Post was
+    // needed there. Fires more than once per job - when the prompt is first
+    // saved, when the "running in background" note is saved, and when the
+    // final reply/error lands.
+    private void OnSchedulerSessionUpdated(object? sender, string sessionId)
+    {
+        InvokeAsync(() =>
+        {
+            RefreshSessions();
+            if (sessionId == _currentSessionId) LoadSession(sessionId, forceReload: true);
+            StateHasChanged();
+        });
+    }
+
+    private void ResolveApproval(ApprovalResult result)
+    {
+        _pendingApproval?.Completion.TrySetResult(result);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        ApprovalGate.OnPendingRequestChanged += OnPendingApprovalChanged;
+        SchedulerNotifier.SessionUpdated += OnSchedulerSessionUpdated;
+        ImageSizeGate.OnPendingRequestChanged += OnPendingImageSizeChanged;
+
+        _knowledgeBases = KnowledgeRepository.ListKnowledgeBases();
+
+        var health = await RefreshAvailableModelsAsync(CancellationToken.None);
+
+        // One-time initial-selection logic - RefreshAvailableModelsAsync
+        // itself just refreshes the catalog/health and preserves whatever
+        // was already selected; only this first call (with _selectedModel
+        // still empty) needs to actually pick one.
+        //
+        // A background embedding call (memory retrieval, KB
+        // ingestion/retrieval) can legitimately be the last thing to
+        // touch Lemonade's single model slot before this page loads -
+        // /v1/health's own ModelLoaded then faithfully (but unhelpfully)
+        // reports the embedding model, not the real chat model. So this
+        // checks the loaded model's category too, not just the configured
+        // embedding model.
+        var isRealChatModel = !string.IsNullOrEmpty(health?.ModelLoaded)
+            && _availableModels.Contains(health.ModelLoaded)
+            && _modelCategories.GetValueOrDefault(health.ModelLoaded) == ModelCategoryChat
+            && !string.Equals(health.ModelLoaded, Settings.Lemonade.EmbeddingModel, StringComparison.OrdinalIgnoreCase);
+
+        if (isRealChatModel)
+        {
+            _selectedModel = health!.ModelLoaded!;
+        }
+        else if (_availableModels.Contains(Settings.Lemonade.ChatModel))
+        {
+            _selectedModel = Settings.Lemonade.ChatModel;
+        }
+        else if (_availableModels.Count > 0)
+        {
+            _selectedModel = _availableModels.FirstOrDefault(m => _modelCategories.GetValueOrDefault(m) == ModelCategoryChat
+                    && !string.Equals(m, Settings.Lemonade.EmbeddingModel, StringComparison.OrdinalIgnoreCase))
+                ?? _availableModels[0];
+        }
+        _contextUsageMax = _modelContextWindows.GetValueOrDefault(_selectedModel, 0);
+
+        RefreshFolders();
+        RefreshSessions();
+
+        // Resume the most recently used chat rather than always starting a
+        // brand new one - this avoids the
+        // "new empty chat piles up on every launch" problem.
+        if (_sessions.Count > 0)
+        {
+            LoadSession(_sessions[0].Id);
+        }
+        else
+        {
+            NewChat();
+        }
+
+        // Lemonade reconnect. Keeps retrying in the background
+        // while unreachable, so coming back online doesn't require a manual
+        // retry click. A no-op tick while already healthy costs nothing
+        // worth guarding against, so this just runs for the circuit's whole
+        // lifetime rather than being started/stopped around IsHealthy
+        // transitions.
+        _connectionRetryTimer = new Timer(OnConnectionRetryTimerTick, null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15));
+    }
+
+    /// <summary>
+    /// Refreshes health + the full model catalog (availability, context
+    /// windows, vision support, full details) in one pass - called once at
+    /// startup, then again by the background retry timer (only while
+    /// unhealthy) and by a manual retry click. Preserves whatever model is
+    /// currently selected rather than resetting it - nothing about the
+    /// loaded model itself changed just because the connection dropped and
+    /// came back; only _contextUsageMax gets re-read for it. Returns the
+    /// fetched health info so the one-time startup selection logic can
+    /// reuse it without a second round-trip.
+    /// </summary>
+    private async Task<LemonadeHealthInfo?> RefreshAvailableModelsAsync(CancellationToken cancellationToken)
+    {
+        LemonadeHealthInfo? health = null;
+        try
+        {
+            health = await ManagementClient.GetHealthAsync(cancellationToken);
+            _isHealthy = string.Equals(health?.Status, "ok", StringComparison.OrdinalIgnoreCase) || health is not null;
+            _lastHealthCheckError = null;
+
+            var models = await ManagementClient.ListDownloadedModelsAsync(cancellationToken);
+            // Chat models first, then Image, Embedding, other - not just
+            // alphabetical, so a real chat model is the first thing shown.
+            _modelCategories.Clear();
+            foreach (var model in models) _modelCategories[model.Id] = DetermineModelCategory(model.Labels);
+            _availableModels = models.OrderBy(m => ModelCategorySortOrder(_modelCategories[m.Id])).Select(m => m.Id).ToList();
+            foreach (var model in models)
+            {
+                _modelContextWindows[model.Id] = model.MaxContextWindow;
+                _modelVisionSupport[model.Id] = model.Labels.Any(label => string.Equals(label, "vision", StringComparison.OrdinalIgnoreCase));
+                _modelCatalog[model.Id] = model;
+            }
+
+            if (!string.IsNullOrEmpty(_selectedModel))
+            {
+                _contextUsageMax = _modelContextWindows.GetValueOrDefault(_selectedModel, 0);
+            }
+        }
+        catch (Exception ex)
+        {
+            _isHealthy = false;
+            _lastHealthCheckError = ex.Message;
+        }
+        return health;
+    }
+
+    private async void OnConnectionRetryTimerTick(object? state)
+    {
+        if (!_isHealthy)
+        {
+            await RefreshAvailableModelsAsync(CancellationToken.None);
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task RetryConnectionAsync() => await RefreshAvailableModelsAsync(CancellationToken.None);
+
+    private async Task RefreshHealthAsync()
+    {
+        try
+        {
+            var health = await ManagementClient.GetHealthAsync(CancellationToken.None);
+            _isHealthy = string.Equals(health?.Status, "ok", StringComparison.OrdinalIgnoreCase) || health is not null;
+            _lastHealthCheckError = null;
+        }
+        catch (Exception ex)
+        {
+            _isHealthy = false;
+            _lastHealthCheckError = ex.Message;
+        }
+    }
+
+    private void RefreshSessions()
+    {
+        _sessions = string.IsNullOrWhiteSpace(_searchText)
+            ? SessionRepository.ListSessions()
+            : SessionRepository.SearchSessions(_searchText);
+        RebuildSidebarGroups();
+    }
+
+    private void RefreshFolders()
+    {
+        _folders = SessionRepository.ListFolders();
+    }
+
+    private void RebuildSidebarGroups()
+    {
+        _sidebarGroups = _sessions
+            .GroupBy(s => s.FolderId)
+            .Select(g => new FolderGroup
+            {
+                Folder = g.Key is null ? null : _folders.FirstOrDefault(f => f.Id == g.Key),
+                Sessions = g.ToList(),
+            })
+            .ToList();
+    }
+
+    private async Task ToggleFolderCollapsedAsync(FolderSummary folder)
+    {
+        SessionRepository.SetFolderCollapsed(folder.Id!, !folder.IsCollapsed);
+        RefreshFolders();
+        RebuildSidebarGroups();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void ToggleFolderEditor(string sessionId)
+    {
+        _editingTagsSessionId = null;
+        _editingFolderSessionId = _editingFolderSessionId == sessionId ? null : sessionId;
+        _folderSelectValue = _sessions.FirstOrDefault(s => s.Id == sessionId)?.FolderId ?? "";
+        _newFolderName = "";
+    }
+
+    private async Task ApplyFolderChangeAsync(string sessionId)
+    {
+        string? folderId = _folderSelectValue;
+        if (_folderSelectValue == "__new__")
+        {
+            if (string.IsNullOrWhiteSpace(_newFolderName)) return;
+            folderId = SessionRepository.CreateFolder(_newFolderName.Trim());
+        }
+        else if (string.IsNullOrEmpty(_folderSelectValue))
+        {
+            folderId = null;
+        }
+
+        SessionRepository.SetSessionFolder(sessionId, folderId);
+        _editingFolderSessionId = null;
+        RefreshFolders();
+        RefreshSessions();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void ToggleTagEditor(string sessionId)
+    {
+        _editingFolderSessionId = null;
+        _editingTagsSessionId = _editingTagsSessionId == sessionId ? null : sessionId;
+        _newTagText = "";
+    }
+
+    private void CloseFolderEditor() => _editingFolderSessionId = null;
+
+    private void CloseTagEditor()
+    {
+        _editingTagsSessionId = null;
+        _newTagText = "";
+    }
+
+    private async Task OnTagKeyDownAsync(KeyboardEventArgs e, string sessionId)
+    {
+        if (e.Key != "Enter" || string.IsNullOrWhiteSpace(_newTagText)) return;
+        SessionRepository.AddTagToSession(sessionId, _newTagText.Trim());
+        _newTagText = "";
+        RefreshSessions();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RemoveTagAsync(string sessionId, string tagName)
+    {
+        SessionRepository.RemoveTagFromSession(sessionId, tagName);
+        RefreshSessions();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnSearchChanged()
+    {
+        // Debounced - a search re-query on every keystroke against real
+        // SQLite/FTS is wasted work while still typing.
+        _searchDebounceCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _searchDebounceCts = cts;
+        try
+        {
+            await Task.Delay(250, cts.Token);
+            RefreshSessions();
+            StateHasChanged();
+        }
+        catch (TaskCanceledException) { }
+    }
+
+    private void NewChat()
+    {
+        _currentSessionId = SessionRepository.CreateSession("New chat");
+        _history.Clear();
+        _messages.Clear();
+        _conversationSummaryText = "";
+        _contextUsageCurrent = null;
+        _attachedKnowledgeBaseId = "";
+        _compactionCount = 0;
+        _sessionTotalInputTokens = 0;
+        _sessionTotalOutputTokens = 0;
+        _openMenuSessionId = null;
+        RefreshStableSystemPrompt();
+        RefreshSessions();
+    }
+
+    // Scheduler. forceReload lets OnSchedulerSessionUpdated re-pull
+    // a session's messages even when it's already the one open (a job's
+    // "running in background" note, then its real reply, both land on a
+    // session that was already current before either was saved).
+    private void LoadSession(string sessionId, bool forceReload = false)
+    {
+        if (sessionId == _currentSessionId && !forceReload) return;
+
+        _currentSessionId = sessionId;
+        _history.Clear();
+        _messages.Clear();
+        _conversationSummaryText = "";
+        _contextUsageCurrent = null;
+        _attachedKnowledgeBaseId = SessionRepository.GetAttachedKnowledgeBase(sessionId) ?? "";
+        _compactionCount = 0;
+        _sessionTotalInputTokens = 0;
+        _sessionTotalOutputTokens = 0;
+        _openMenuSessionId = null;
+
+        // _history[0] is always reserved for the system message - seeded
+        // here so index 0 stays reserved before the real stored messages
+        // are appended after it. Only the stable portion is rebuilt (see
+        // RefreshStableSystemPrompt's own comment) - there's no new user
+        // input yet to derive this turn's volatile context from anyway.
+        RefreshStableSystemPrompt();
+
+        foreach (var stored in SessionRepository.LoadMessages(sessionId))
+        {
+            var isUser = string.Equals(stored.Role, ChatRole.User.Value, StringComparison.OrdinalIgnoreCase);
+            var displayMessage = new DisplayMessage { IsUser = isUser, Text = stored.Content, ReasoningText = stored.ReasoningContent ?? "", CreatedAt = stored.CreatedAt.ToLocalTime() };
+
+            if (isUser)
+            {
+                // An image-attached turn's persisted content starts
+                // with the "[Attached image: {path}]" marker (see SendAsync's
+                // own comment on why DataContent can't live in the TEXT
+                // column directly) - parsed back out here to rebuild a real
+                // multi-content message so the newest image can still be
+                // resent, and to restore the bubble's own thumbnail. Falls
+                // back to text-only if the local copy no longer exists on
+                // disk - the image is lost, but the question text isn't.
+                var (imagePath, remainingText) = ImageAttachmentService.TryParseAttachedImageMarker(stored.Content);
+                if (imagePath is not null && File.Exists(imagePath))
+                {
+                    displayMessage.Text = remainingText;
+                    displayMessage.AttachedImageUrl = ToAttachedImageUrl(imagePath);
+                    // The markup's thumbnail is gated on AttachedFileName being
+                    // non-empty (same condition a document attachment's chip
+                    // uses) - the original picked filename isn't part of the
+                    // persisted marker, so the processed copy's own filename
+                    // stands in for it. Without this, the image
+                    // reconstructs correctly but its thumbnail silently never
+                    // renders.
+                    displayMessage.AttachedFileName = Path.GetFileName(imagePath);
+                    _history.Add(new ChatMessage(ChatRole.User, [new TextContent(remainingText), ImageAttachmentService.BuildDataContent(imagePath)]));
+                }
+                else if (imagePath is not null)
+                {
+                    displayMessage.Text = remainingText;
+                    _history.Add(new ChatMessage(ChatRole.User, remainingText));
+                }
+                else
+                {
+                    _history.Add(new ChatMessage(ChatRole.User, stored.Content));
+                }
+            }
+            else
+            {
+                _history.Add(new ChatMessage(ChatRole.Assistant, stored.Content));
+            }
+
+            if (!string.IsNullOrEmpty(stored.ToolCalls))
+            {
+                displayMessage.ToolCalls.AddRange(stored.ToolCalls.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(ToolCallResult.ParseFromStorage));
+            }
+            if (!isUser)
+            {
+                displayMessage.GeneratedImageUrl = TryExtractGeneratedImageUrl(stored.Content);
+                if (displayMessage.GeneratedImageUrl is not null)
+                {
+                    displayMessage.Text = StripGeneratedImageMarkdown(stored.Content);
+                }
+            }
+            _messages.Add(displayMessage);
+            SetDateDividerIfNeeded(displayMessage);
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds _history[0] from the STABLE portions only: base
+    /// system prompt + running compaction summary (if any) + pinned facts.
+    /// Deliberately excludes this turn's relevant-memories/knowledge-base
+    /// text and the current date/time (see AppendVolatileContext below) -
+    /// those change on every single turn, so mixing them into _history[0]
+    /// would rewrite that system message (position 0) on every single turn. That
+    /// defeats llama.cpp's KV-cache prefix reuse: nothing in the whole
+    /// request can be cached once position 0 itself changes, even when the
+    /// rest of the conversation is unchanged. Called from NewChat/
+    /// LoadSession/SendAsync/CompactHistoryIfNeededAsync so the stable
+    /// prompt is correct the moment a chat opens, not just after the first
+    /// message is sent.
+    /// </summary>
+    private void RefreshStableSystemPrompt()
+    {
+        var sections = new List<string>();
+
+        // Persona. Identity/AboutUser come before the operating
+        // instructions (SystemPrompt) - "who am I / who are you talking to"
+        // reads naturally before "how should you behave". Both are omitted
+        // entirely when unset, same as every other section here, so an
+        // unconfigured Persona costs nothing in prompt size.
+        var persona = Settings.Persona;
+        if (!string.IsNullOrWhiteSpace(persona.Identity)) sections.Add(persona.Identity);
+        if (!string.IsNullOrWhiteSpace(persona.AboutUser)) sections.Add($"About the person you're talking to:\n{persona.AboutUser}");
+
+        sections.Add(Settings.Assistant.SystemPrompt);
+
+        var writingStyleText = BuildWritingStyleText();
+        if (!string.IsNullOrEmpty(writingStyleText)) sections.Add(writingStyleText);
+
+        if (!string.IsNullOrEmpty(_conversationSummaryText)) sections.Add($"Summary of earlier conversation: {_conversationSummaryText}");
+
+        var pinnedFactsText = MemoryService.GetPinnedFactsText();
+        if (!string.IsNullOrEmpty(pinnedFactsText)) sections.Add(pinnedFactsText);
+
+        var systemMessage = new ChatMessage(ChatRole.System, string.Join("\n\n", sections));
+        if (_history.Count == 0) _history.Add(systemMessage);
+        else _history[0] = systemMessage;
+    }
+
+    /// <summary>
+    /// Compiles Persona's structured writing-style settings into
+    /// compact bullet lines - cheap (a handful of tokens) but has an
+    /// outsized effect on how the reply actually reads. Returns null (not
+    /// an empty string) when every setting is still "Default" and no custom
+    /// instructions are set, so RefreshStableSystemPrompt's IsNullOrEmpty
+    /// check correctly omits this section entirely for an unconfigured
+    /// Persona.
+    /// </summary>
+    private string? BuildWritingStyleText()
+    {
+        var persona = Settings.Persona;
+        var lines = new List<string>();
+
+        if (persona.Tone != "Default") lines.Add($"Tone: {persona.Tone}");
+        if (persona.Verbosity != "Default") lines.Add($"Verbosity: {persona.Verbosity}");
+        if (persona.EmojiUsage != "Default") lines.Add($"Emoji use: {persona.EmojiUsage}");
+        if (!string.IsNullOrWhiteSpace(persona.CustomInstructions)) lines.Add(persona.CustomInstructions);
+
+        if (lines.Count == 0) return null;
+
+        return "Writing style:\n- " + string.Join("\n- ", lines);
+    }
+
+    /// <summary>
+    /// Non-mutating. Folds this turn's volatile context (current
+    /// date/time, semantically-relevant memories, knowledge-base chunks)
+    /// into a COPY of just the newest outgoing message, as its own leading
+    /// TextContent alongside whatever that message already carries (an
+    /// attached image's real DataContent is untouched). Never written into
+    /// _history itself and never persisted - a reload re-derives it fresh
+    /// from whatever's actually relevant at reload time rather than reusing
+    /// stale text baked into an old turn.
+    /// </summary>
+    private static List<ChatMessage> AppendVolatileContext(List<ChatMessage> messages, string volatileContextText)
+    {
+        if (messages.Count == 0 || string.IsNullOrEmpty(volatileContextText)) return messages;
+
+        var result = new List<ChatMessage>(messages);
+        var lastIndex = result.Count - 1;
+        var last = result[lastIndex];
+        var newContents = new List<AIContent> { new TextContent(volatileContextText) };
+        newContents.AddRange(last.Contents);
+        result[lastIndex] = new ChatMessage(last.Role, newContents);
+        return result;
+    }
+
+    private void DeleteSession(string sessionId)
+    {
+        SessionRepository.DeleteSession(sessionId);
+        if (sessionId == _currentSessionId)
+        {
+            RefreshSessions();
+            if (_sessions.Count > 0) LoadSession(_sessions[0].Id);
+            else NewChat();
+        }
+        else
+        {
+            RefreshSessions();
+        }
+    }
+
+    private async Task OnModelChanged()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedModel)) return;
+        _isLoadingModel = true;
+        _modelLoadError = null;
+        _modelLoadSeconds = 0;
+        StateHasChanged();
+
+        var loadStopwatch = System.Diagnostics.Stopwatch.StartNew();
+        using var loadTimer = new Timer(_ =>
+        {
+            _modelLoadSeconds = (int)loadStopwatch.Elapsed.TotalSeconds;
+            _ = InvokeAsync(StateHasChanged);
+        }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+        try
+        {
+            await ManagementClient.LoadModelAsync(_selectedModel, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _modelLoadError = $"Failed to load {_selectedModel}: {ex.Message}";
+        }
+        _contextUsageMax = _modelContextWindows.GetValueOrDefault(_selectedModel, 0);
+        _isLoadingModel = false;
+        StateHasChanged();
+    }
+
+    private void OnKnowledgeBaseChanged()
+    {
+        SessionRepository.SetAttachedKnowledgeBase(_currentSessionId, string.IsNullOrEmpty(_attachedKnowledgeBaseId) ? null : _attachedKnowledgeBaseId);
+    }
+
+    // One-off file attachment, not RAG ingestion (Knowledge.razor's
+    // own AddFileSource handles that). Extraction happens immediately on
+    // pick, not deferred to Send, so a corrupt/unsupported file fails fast
+    // with the reason visible right away rather than after the user's
+    // already typed and sent a question about it.
+    private async Task OnAttachFile(Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        _attachError = null;
+
+        // One attachment slot, routed by extension to either path - never
+        // both at once, matching the desktop apps' own design. Checked
+        // image-first since ImageAttachmentService's own supported list is
+        // short and unambiguous; FileTextExtractor handles everything else.
+        var isImage = ImageAttachmentService.IsSupported(file.Name);
+        if (!isImage && !FileTextExtractor.IsSupported(file.Name))
+        {
+            var supported = ImageAttachmentService.SupportedExtensions.Concat(FileTextExtractor.SupportedExtensions);
+            _attachError = $"'{file.Name}' isn't a supported file type ({string.Join(", ", supported)}).";
+            StateHasChanged();
+            return;
+        }
+
+        var uploadsDir = Path.Combine(AppContext.BaseDirectory, "data", "Uploads");
+        Directory.CreateDirectory(uploadsDir);
+        var savedPath = Path.Combine(uploadsDir, $"{Guid.NewGuid()}-{file.Name}");
+
+        try
+        {
+            await using (var stream = file.OpenReadStream(maxAllowedSize: 25 * 1024 * 1024))
+            await using (var fileStream = File.Create(savedPath))
+            {
+                await stream.CopyToAsync(fileStream);
+            }
+
+            if (isImage)
+            {
+                // Downscaled/re-encoded copy saved permanently now, not just
+                // before sending - a reloaded session's persisted copy is
+                // already the small version, nothing reprocesses it again.
+                _pendingAttachedImagePath = ImageAttachmentService.SaveResizedCopy(savedPath);
+                _pendingAttachedFileName = file.Name;
+            }
+            else
+            {
+                _pendingAttachedFileText = FileTextExtractor.ExtractText(savedPath);
+                _pendingAttachedFileName = file.Name;
+            }
+        }
+        catch (Exception ex)
+        {
+            _attachError = $"Couldn't read '{file.Name}': {ex.Message}";
+        }
+        finally
+        {
+            File.Delete(savedPath);
+        }
+
+        StateHasChanged();
+    }
+
+    private void RemovePendingAttachment()
+    {
+        if (_pendingAttachedImagePath is not null)
+        {
+            try { File.Delete(_pendingAttachedImagePath); } catch { /* best-effort - orphaned file cleanup only */ }
+        }
+        _pendingAttachedFileText = null;
+        _pendingAttachedImagePath = null;
+        _pendingAttachedFileName = null;
+    }
+
+    /// <summary>Non-null when an image is attached but the currently selected model isn't vision-labeled - blocks Send and shows an inline warning, matching the desktop apps' own design.</summary>
+    private string? AttachedImageVisionWarningText =>
+        _pendingAttachedImagePath is not null && !_modelVisionSupport.GetValueOrDefault(_selectedModel, false)
+            ? "The selected model doesn't support image input - pick a vision-capable model or remove the attached image."
+            : null;
+
+    // Called from wwwroot/lemon.js when Enter (without Shift) is pressed in
+    // the chat box - Shift+Enter inserts a newline instead.
+    [JSInvokable]
+    public async Task OnEnterPressed()
+    {
+        await InvokeAsync(async () =>
+        {
+            if (!string.IsNullOrWhiteSpace(_inputText) && !_isBusy && !_isLoadingModel && AttachedImageVisionWarningText is null)
+            {
+                await SendAsync();
+            }
+        });
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _selfReference = DotNetObjectReference.Create(this);
+            try { await JS.InvokeVoidAsync("lemon.initChatInput", _inputBox, _selfReference); } catch (JSException) { }
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("lemon.autoGrow", _inputBox);
+            if (_focusRenameInput)
+            {
+                _focusRenameInput = false;
+                await _renameInput.FocusAsync();
+            }
+        }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException) { /* element not on screen right now */ }
+    }
+
+    /// <summary>Compact "how long ago" for the chat list: now, 5m, 3h, Yesterday, 4d, then a short date.</summary>
+    private static string RelativeTime(DateTime utc)
+    {
+        var age = DateTime.UtcNow - utc.ToUniversalTime();
+        if (age.TotalMinutes < 1) return "now";
+        if (age.TotalHours < 1) return $"{(int)age.TotalMinutes}m";
+        if (age.TotalDays < 1) return $"{(int)age.TotalHours}h";
+        var local = utc.ToLocalTime();
+        if (local.Date == DateTime.Today.AddDays(-1)) return "Yesterday";
+        if (age.TotalDays < 7) return $"{(int)age.TotalDays}d";
+        return local.ToString("d MMM");
+    }
+
+    private void BeginRename(ChatSessionSummary session)
+    {
+        _openMenuSessionId = null;
+        _renamingSessionId = session.Id;
+        _renameText = session.Title;
+        _focusRenameInput = true;
+    }
+
+    private async Task OnRenameKeyDownAsync(KeyboardEventArgs e, string sessionId)
+    {
+        if (e.Key == "Enter") await CommitRenameAsync(sessionId);
+        else if (e.Key == "Escape") _renamingSessionId = null;
+    }
+
+    private async Task CommitRenameAsync(string sessionId)
+    {
+        // Escape (or an earlier commit) already ended the edit - the blur
+        // that follows the input disappearing must not re-save.
+        if (_renamingSessionId != sessionId) return;
+        _renamingSessionId = null;
+
+        var title = string.IsNullOrWhiteSpace(_renameText) ? "New chat" : _renameText.Trim();
+        SessionRepository.RenameSession(sessionId, title);
+        RefreshSessions();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task AddTagAsync(string sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(_newTagText)) return;
+        SessionRepository.AddTagToSession(sessionId, _newTagText.Trim());
+        _newTagText = "";
+        RefreshSessions();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CopyTextAsync(string text)
+    {
+        try { await JS.InvokeVoidAsync("lemon.copyText", text); } catch (JSException) { /* clipboard blocked (needs https or localhost) */ }
+    }
+
+    private async Task CopyImageAsync(string url)
+    {
+        try { await JS.InvokeVoidAsync("lemon.copyImage", url); } catch (JSException) { /* clipboard blocked (needs https or localhost) */ }
+    }
+
+    private async Task SendAsync()
+    {
+        var userText = _inputText.Trim();
+        if (string.IsNullOrWhiteSpace(userText) || _isBusy) return;
+
+        var isFirstMessage = _messages.Count == 0;
+
+        _inputText = "";
+        _isBusy = true;
+
+        // _history[0] only gets the STABLE refresh here (see
+        // RefreshStableSystemPrompt's own comment on why). This turn's
+        // relevant-memories/knowledge-base text, plus the current date/time
+        // (TimeAwareness - a local model has no other way to know it),
+        // never goes into _history at all - it's folded into just the
+        // outgoing copy of the newest message further below via
+        // AppendVolatileContext. When the Knowledge module IS enabled,
+        // knowledgeText is fetched unconditionally (not gated on a KB
+        // actually being attached) - GetRelevantChunksTextAsync's own
+        // explicit "no knowledge base is attached" text when none is
+        // matters just as much as the chunks themselves (silence
+        // here gets misread by the model). When the module is disabled, that call (and its boilerplate text)
+        // is skipped entirely rather than fetched and then discarded.
+        //
+        // (The volatile text and stable-prompt refresh now happen further
+        // down, after the image-model check - nothing LLM-specific should be
+        // spent on a turn that goes straight to image generation.)
+
+        // A one-off attached file's extracted text is folded into
+        // what's actually SENT to the model (textForModel), never into the
+        // visible bubble - otherwise a multi-thousand-character PDF dump
+        // would flood the transcript. The bubble shows just the typed
+        // question plus a small "📎 filename" chip. What's persisted is the
+        // combined text too (matches what was actually sent) - a reloaded
+        // session shows the full text in the bubble, less pretty but honest.
+        //
+        // An attached image is persisted differently: the real
+        // DataContent bytes can't live in a TEXT column, so the string form
+        // is a "[Attached image: {path}]" marker + blank line + the plain
+        // question (LoadSession parses this back out via
+        // ImageAttachmentService.TryParseAttachedImageMarker to rebuild a
+        // real multi-content message). The LIVE _history entry sent to the
+        // model this turn skips the marker text entirely - just the plain
+        // question plus the real image bytes, so the model never sees
+        // literal marker syntax.
+        string textForModel;
+        string? attachedImageUrl = null;
+        ChatMessage userChatMessage;
+        if (_pendingAttachedImagePath is not null)
+        {
+            textForModel = $"[Attached image: {_pendingAttachedImagePath}]\n\n{userText}";
+            attachedImageUrl = ToAttachedImageUrl(_pendingAttachedImagePath);
+            userChatMessage = new ChatMessage(ChatRole.User, [new TextContent(userText), ImageAttachmentService.BuildDataContent(_pendingAttachedImagePath)]);
+        }
+        else if (_pendingAttachedFileText is not null)
+        {
+            // The filename marker tells the model what the pasted text is -
+            // same shape as the Avalonia app's textForModel.
+            textForModel = $"[Attached file: {_pendingAttachedFileName}]\n\n{_pendingAttachedFileText}\n\n{userText}";
+            userChatMessage = new ChatMessage(ChatRole.User, textForModel);
+        }
+        else
+        {
+            textForModel = userText;
+            userChatMessage = new ChatMessage(ChatRole.User, textForModel);
+        }
+
+        var attachedFileName = _pendingAttachedFileName;
+        _pendingAttachedFileText = null;
+        _pendingAttachedImagePath = null;
+        _pendingAttachedFileName = null;
+
+        var userMessage = new DisplayMessage { IsUser = true, Text = userText, AttachedFileName = attachedFileName, AttachedImageUrl = attachedImageUrl };
+        _messages.Add(userMessage);
+        SetDateDividerIfNeeded(userMessage);
+        _history.Add(userChatMessage);
+        SessionRepository.SaveMessage(_currentSessionId, ChatRole.User.Value, textForModel, reasoningContent: null);
+
+        if (isFirstMessage)
+        {
+            var title = userText.Length > 60 ? string.Concat(userText.AsSpan(0, 60), "...") : userText;
+            SessionRepository.RenameSession(_currentSessionId, title);
+            RefreshSessions();
+        }
+
+        var assistantMessage = new DisplayMessage { IsUser = false };
+        _messages.Add(assistantMessage);
+        SetDateDividerIfNeeded(assistantMessage);
+        StateHasChanged();
+
+        // A single stuck/looping completion otherwise has nothing
+        // bounding it (Lemonade has been seen running a request past 80,000+
+        // output tokens with no end in sight), and _sendCts gives the Stop
+        // button above something real to cancel.
+        const int maxOutputTokensPerReply = 16384;
+        var cts = new CancellationTokenSource();
+        _sendCts = cts;
+
+        // Selecting an image-labeled model directly skips the LLM entirely
+        // for this turn (as Lemonade's own web UI does) - avoids a confusing
+        // HTTP 400 from using an image model as the chat model.
+        if (_modelCategories.GetValueOrDefault(_selectedModel) == ModelCategoryImage)
+        {
+            await SendImageGenerationTurnAsync(userText, assistantMessage, cts.Token);
+            _sendCts = null;
+            _isBusy = false;
+            StateHasChanged();
+            return;
+        }
+
+        // _history[0] only gets the STABLE refresh (see
+        // RefreshStableSystemPrompt); this turn's time/memory/knowledge text
+        // never goes into _history, only into the outgoing copy below.
+        var volatileContextText = await BuildLiveTurnContextTextAsync(userText);
+        RefreshStableSystemPrompt();
+
+        var fullReply = new System.Text.StringBuilder();
+        var fullReasoning = new System.Text.StringBuilder();
+        var wasCancelled = false;
+        var hadError = false;
+        var options = new ChatOptions { ModelId = _selectedModel, Tools = ModuleRegistry.GetEnabledTools(), MaxOutputTokens = maxOutputTokensPerReply };
+
+        // Prompt-processing progress indicator. llama.cpp's own
+        // server reports a "prompt_progress" field while it's still
+        // processing the (possibly huge) input context, before generating a
+        // single output token - genuinely useful on a long prompt/knowledge-
+        // base-attached turn, where several seconds of apparent silence
+        // otherwise looks identical to "stuck". return_progress isn't part
+        // of the OpenAI-compatible schema Microsoft.Extensions.AI/the OpenAI
+        // SDK know about, so it has to be patched directly into the raw
+        // outgoing request via RawRepresentationFactory - confirmed this
+        // exact mechanism (ChatCompletionOptions.Patch, UTF8-byte-keyed
+        // JSON paths) against this project's own installed SDK via
+        // PowerShell reflection before writing this, not assumed from the
+        // Avalonia port's own already-verified findings.
+#pragma warning disable SCME0001
+        options.RawRepresentationFactory = _ =>
+        {
+            var raw = new OpenAI.Chat.ChatCompletionOptions();
+            raw.Patch.Set("$.return_progress"u8, true);
+            return raw;
+        };
+#pragma warning restore SCME0001
+        var promptProgressStopwatch = new System.Diagnostics.Stopwatch();
+
+        // StripOldImageContent's result, not _history itself. The
+        // real per-message DataContent stays in _history permanently
+        // (LoadSession needs to reconstruct it later so the newest image can
+        // still be resent), but an old image costs real tokens for no
+        // benefit once it's not the current turn - only the single most
+        // recent image-bearing message keeps its real bytes in what's
+        // actually sent.
+        //
+        // AppendVolatileContext layers this turn's volatile
+        // context (see above) onto that same outgoing copy, never onto
+        // _history itself.
+        var outgoingMessages = AppendVolatileContext(StripOldImageContent(_history), volatileContextText);
+        try
+        {
+            await foreach (var update in ChatClient.GetStreamingResponseAsync(outgoingMessages, options, cts.Token))
+            {
+                fullReply.Append(update.Text);
+                assistantMessage.Text = fullReply.ToString();
+
+                foreach (var content in update.Contents)
+                {
+                    if (content is TextReasoningContent reasoning)
+                    {
+                        fullReasoning.Append(reasoning.Text);
+                        assistantMessage.ReasoningText = fullReasoning.ToString();
+                    }
+                    else if (content is FunctionCallContent functionCall && !assistantMessage.ToolCalls.Any(t => t.CallId == functionCall.CallId))
+                    {
+                        assistantMessage.ToolCalls.Add(new ToolCallResult { Name = functionCall.Name, CallId = functionCall.CallId });
+                    }
+                    else if (content is FunctionResultContent functionResult)
+                    {
+                        var matchingCall = assistantMessage.ToolCalls.FirstOrDefault(t => t.CallId == functionResult.CallId);
+                        if (matchingCall is not null)
+                        {
+                            matchingCall.Succeeded = functionResult.Exception is null;
+                            matchingCall.ErrorMessage = functionResult.Exception?.Message;
+                        }
+                    }
+                }
+
+                // Only meaningful before any real answer/reasoning
+                // text has arrived yet; cleared the instant either one
+                // starts (a real token means prompt processing is over).
+                if (fullReply.Length == 0 && fullReasoning.Length == 0)
+                {
+#pragma warning disable SCME0001
+                    if (update.RawRepresentation is OpenAI.Chat.StreamingChatCompletionUpdate rawUpdate
+                        && rawUpdate.Patch.Contains("$.prompt_progress"u8)
+                        && rawUpdate.Patch.TryGetValue("$.prompt_progress.total"u8, out int promptTotal)
+                        && rawUpdate.Patch.TryGetValue("$.prompt_progress.processed"u8, out int promptProcessed))
+                    {
+                        rawUpdate.Patch.TryGetValue("$.prompt_progress.cache"u8, out int promptCache);
+                        var effectiveTotal = promptTotal - promptCache;
+                        var effectiveProcessed = promptProcessed - promptCache;
+                        if (effectiveTotal > 0)
+                        {
+                            if (!promptProgressStopwatch.IsRunning) promptProgressStopwatch.Start();
+                            var percent = (int)Math.Round(100.0 * effectiveProcessed / effectiveTotal);
+                            var etaText = "";
+                            if (promptProgressStopwatch.ElapsedMilliseconds > 500 && effectiveProcessed > 0)
+                            {
+                                var rate = effectiveProcessed / (promptProgressStopwatch.ElapsedMilliseconds / 1000.0);
+                                var remainingSeconds = (int)Math.Round(Math.Max(0, (effectiveTotal - effectiveProcessed) / rate));
+                                etaText = $" (ETA: {remainingSeconds}s)";
+                            }
+                            assistantMessage.PromptProgressText = $"Processing prompt: {percent}%{etaText}";
+                        }
+                    }
+#pragma warning restore SCME0001
+                }
+                else if (assistantMessage.PromptProgressText is not null)
+                {
+                    assistantMessage.PromptProgressText = null;
+                }
+
+                StateHasChanged();
+            }
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            // Keeps whatever text/reasoning had already streamed in rather
+            // than discarding it - a partial answer the user watched arrive
+            // is still worth keeping.
+            wasCancelled = true;
+            if (fullReply.Length > 0) fullReply.Append(' ');
+            fullReply.Append("[Stopped]");
+            assistantMessage.Text = fullReply.ToString();
+        }
+        catch (Exception ex)
+        {
+            hadError = true;
+            fullReply.Clear();
+            fullReply.Append($"⚠️ Something went wrong generating a reply: {ex.Message}");
+            assistantMessage.Text = fullReply.ToString();
+        }
+        finally
+        {
+            _sendCts = null;
+        }
+
+        // Safety net: a cancelled or errored reply might never
+        // reach the streaming loop's own "real text/reasoning arrived"
+        // clear, so a stuck "43%" could otherwise linger forever.
+        assistantMessage.PromptProgressText = null;
+
+        var replyText = fullReply.ToString();
+        assistantMessage.GeneratedImageUrl = TryExtractGeneratedImageUrl(replyText);
+        if (assistantMessage.GeneratedImageUrl is not null)
+        {
+            // The raw ![alt](file:///...) Markdown stays in replyText (what's
+            // actually persisted/sent back to the model - LoadSession's own
+            // regex needs it there on reload), but showing that literal text
+            // in the bubble on top of the real rendered image below it is
+            // just noise - strip it from what's actually displayed.
+            assistantMessage.Text = StripGeneratedImageMarkdown(replyText);
+        }
+        // A failed turn's error text is shown but never added to the model's
+        // history or saved - it isn't a real reply (same as the Avalonia app).
+        if (!hadError)
+        {
+            _history.Add(new ChatMessage(ChatRole.Assistant, replyText));
+            SessionRepository.SaveMessage(_currentSessionId, ChatRole.Assistant.Value, replyText,
+                reasoningContent: fullReasoning.Length > 0 ? fullReasoning.ToString() : null,
+                toolCalls: assistantMessage.ToolCalls.Count > 0 ? string.Join(",", assistantMessage.ToolCalls.Select(t => t.SerializeForStorage())) : null);
+        }
+
+        // Auto-tag sidebar refresh. "scheduled" tagging is done in
+        // ScheduledJobRunner.RunJobAsync; these cases are tagged here. Each AddTagToSession call is immediately
+        // followed by its own RefreshSessions() - not batched at the end -
+        // because a live ChatSessionSummary's Tags collection is only
+        // populated once, when first loaded: adding a tag to the DB without
+        // a refresh leaves the sidebar chip invisible until some unrelated
+        // later refresh (e.g. switching chats).
+        if (assistantMessage.ToolCalls.Any(t => t.Name == "generate_image"))
+        {
+            SessionRepository.AddTagToSession(_currentSessionId, "image");
+            RefreshSessions();
+        }
+        if (assistantMessage.ToolCalls.Any(t => t.Name.StartsWith("code_", StringComparison.OrdinalIgnoreCase)))
+        {
+            SessionRepository.AddTagToSession(_currentSessionId, "coder");
+            RefreshSessions();
+        }
+        if (assistantMessage.ToolCalls.Any(t => ModuleRegistry.IsToolFromModule(t.Name, "Mcp")))
+        {
+            SessionRepository.AddTagToSession(_currentSessionId, "mcp");
+            RefreshSessions();
+        }
+
+        // Stats, fact extraction and compaction are skipped on a stopped or
+        // failed reply - nothing meaningful to measure or learn from a
+        // deliberately-interrupted/errored turn (same as the Avalonia app).
+        if (!wasCancelled && !hadError)
+        {
+            // Fire-and-forget - a separate tools-free
+            // structured-output call (Lemonade can't combine tools + structured
+            // output in one call), so it must never block the turn that's
+            // already been shown to the user.
+            _ = MemoryService.ExtractAndSaveFactsAsync(userText, replyText, CancellationToken.None);
+
+            await RefreshStatsAsync();
+            await CompactHistoryIfNeededAsync(assistantMessage);
+        }
+        await RefreshHealthAsync();
+
+        _isBusy = false;
+        StateHasChanged();
+    }
+
+    private void StopGeneration() => _sendCts?.Cancel();
+
+    /// <summary>
+    /// The direct-image-model-selection path (an image-labeled model picked in
+    /// the dropdown): asks for a size via the same ImageSizeGate overlay the
+    /// generate_image tool uses, generates with the SELECTED model, and shows
+    /// the result like any other generated image. Shares ImageGenerationService
+    /// with the tool path.
+    /// </summary>
+    private async Task SendImageGenerationTurnAsync(string prompt, DisplayMessage assistantMessage, CancellationToken cancellationToken)
+    {
+        string replyText;
+        var sizeChoice = await ImageSizeGate.RequestSizeAsync(prompt, Settings.ImageGen.DefaultWidth, Settings.ImageGen.DefaultHeight);
+        if (!sizeChoice.Confirmed)
+        {
+            replyText = "(Cancelled - no image was generated.)";
+        }
+        else
+        {
+            try
+            {
+                var imageUri = await ImageGenerationService.GenerateAsync(
+                    prompt, _selectedModel, sizeChoice.Width, sizeChoice.Height,
+                    Settings.ImageGen.Steps, Settings.ImageGen.CfgScale, Settings.ImageGen.Seed,
+                    cancellationToken);
+
+                var altText = prompt.Length > 80 ? prompt[..80] + "..." : prompt;
+                replyText = $"![{altText}]({imageUri})";
+
+                SessionRepository.AddTagToSession(_currentSessionId, "image");
+                RefreshSessions();
+            }
+            catch (OperationCanceledException)
+            {
+                replyText = "[Stopped]";
+            }
+            catch (Exception ex)
+            {
+                replyText = $"⚠️ Couldn't generate that image: {ex.Message}";
+            }
+        }
+
+        assistantMessage.GeneratedImageUrl = TryExtractGeneratedImageUrl(replyText);
+        assistantMessage.Text = assistantMessage.GeneratedImageUrl is not null ? StripGeneratedImageMarkdown(replyText) : replyText;
+        _history.Add(new ChatMessage(ChatRole.Assistant, replyText));
+        SessionRepository.SaveMessage(_currentSessionId, ChatRole.Assistant.Value, replyText, reasoningContent: null);
+    }
+
+    // generate_image's own tool result tells the model to include
+    // ready-made Markdown image syntax (![alt](file:///...)) in its reply;
+    // this extracts that path back out and converts it to the web-relative
+    // URL Program.cs's own static-file mapping serves it under, rather than
+    // pulling in a full Markdown rendering pipeline just for this one case.
+    private static readonly System.Text.RegularExpressions.Regex GeneratedImageLinkPattern =
+        new(@"!\[[^\]]*\]\((file:///?[^)\s]+)\)", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static string? TryExtractGeneratedImageUrl(string replyText)
+    {
+        var match = GeneratedImageLinkPattern.Match(replyText);
+        if (!match.Success) return null;
+
+        try
+        {
+            var localPath = new Uri(match.Groups[1].Value).LocalPath;
+            return $"/generated-images/{Uri.EscapeDataString(Path.GetFileName(localPath))}";
+        }
+        catch (UriFormatException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Removes the raw Markdown image link from displayed bubble text - the real <img> already shows it, so the literal "![alt](file:///...)" text is just clutter, not useful content.</summary>
+    private static string StripGeneratedImageMarkdown(string text) => GeneratedImageLinkPattern.Replace(text, "").Trim();
+
+    /// <summary>Converts an AttachedImages local path to the web-relative URL Program.cs's own static-file mapping serves it under - same shape as TryExtractGeneratedImageUrl's own conversion, just for a path already known rather than regex-extracted.</summary>
+    private static string ToAttachedImageUrl(string localPath) => $"/attached-images/{Uri.EscapeDataString(Path.GetFileName(localPath))}";
+
+    // Markdown rendering in the chat transcript. DisableHtml()
+    // is deliberate, not an oversight: a reply can legitimately contain
+    // text pulled from the open web (search_web/read_webpage results), and
+    // letting raw HTML in a Markdown document pass through verbatim into
+    // the page would be a real XSS vector the moment a fetched page (or a
+    // prompt-injected instruction inside one) contained a <script> tag -
+    // disabling it means any literal "<...>" in the text is escaped and
+    // shown as plain text instead of parsed as markup. UseSoftlineBreakAsHardlineBreak
+    // treats a single newline as a real line break rather than requiring a
+    // blank line between them per strict CommonMark - closer to how a chat
+    // model actually formats its own output.
+    private static readonly MarkdownPipeline ChatMarkdownPipeline = new MarkdownPipelineBuilder()
+        .UseSoftlineBreakAsHardlineBreak()
+        .DisableHtml()
+        .Build();
+
+    private static MarkupString RenderMarkdown(string? text) =>
+        (MarkupString)Markdown.ToHtml(text ?? "", ChatMarkdownPipeline);
+
+    /// <summary>Non-mutating - drops every older message's DataContent except the single most recent one, so an old image doesn't cost real tokens on every later turn once it's no longer the current question. _history itself (passed in by value, never reassigned) keeps every image's real bytes permanently.</summary>
+    private static List<ChatMessage> StripOldImageContent(List<ChatMessage> history)
+    {
+        var lastImageIndex = -1;
+        for (var i = 0; i < history.Count; i++)
+        {
+            if (history[i].Contents.Any(c => c is DataContent)) lastImageIndex = i;
+        }
+
+        if (lastImageIndex < 0) return history;
+
+        var result = new List<ChatMessage>(history.Count);
+        for (var i = 0; i < history.Count; i++)
+        {
+            if (i == lastImageIndex || !history[i].Contents.Any(c => c is DataContent))
+            {
+                result.Add(history[i]);
+            }
+            else
+            {
+                var textOnly = history[i].Contents.Where(c => c is not DataContent).ToList();
+                result.Add(new ChatMessage(history[i].Role, textOnly));
+            }
+        }
+        return result;
+    }
+
+    private async Task RefreshStatsAsync()
+    {
+        try
+        {
+            var stats = await ManagementClient.GetStatsAsync(CancellationToken.None);
+            if (stats is not null)
+            {
+                _lastInputTokens = stats.InputTokens;
+                _lastOutputTokens = stats.OutputTokens;
+                _lastTokensPerSecond = stats.TokensPerSecond;
+                _lastTimeToFirstToken = stats.TimeToFirstToken;
+                _sessionTotalInputTokens += stats.InputTokens;
+                _sessionTotalOutputTokens += stats.OutputTokens;
+                _contextUsageCurrent = stats.PromptTokens;
+            }
+        }
+        catch
+        {
+            // Best-effort - a failed stats fetch doesn't blow up a reply the user already received.
+        }
+    }
+
+    /// <summary>
+    /// Hand-rolled short-term memory / context compaction - once context
+    /// usage crosses CompactionTriggerPercent of the model's real max
+    /// context window, summarizes everything older than the most-recent
+    /// MessagesToKeepAfterCompaction messages into a running summary and
+    /// drops them from _history (the visible Messages/persisted transcript
+    /// are untouched - only what's sent to the model shrinks).
+    ///
+    /// This used to run completely silently, with no way for the
+    /// user to know their history was just summarized/trimmed - a bigger,
+    /// more basic gap than it first looked (not even an "after it's done"
+    /// note existed). Now adds an in-progress note to the turn's own
+    /// assistantMessage bubble before the summarization call starts (itself
+    /// a full model round-trip that can take a while), replacing it with a
+    /// final "saved ~N tokens" note on success, or removing it silently on
+    /// failure.
+    /// </summary>
+    private async Task CompactHistoryIfNeededAsync(DisplayMessage assistantMessage)
+    {
+        if (_contextUsageMax <= 0 || _contextUsageCurrent is null) return;
+        if ((double)_contextUsageCurrent.Value / _contextUsageMax < Settings.Memory.CompactionTriggerPercent / 100.0) return;
+
+        var compactibleCount = _history.Count - 1 - MessagesToKeepAfterCompaction;
+        if (compactibleCount <= 0) return;
+
+        const string inProgressNote = "Compacting older messages...";
+        var tokensBeforeCompaction = _contextUsageCurrent.Value;
+        assistantMessage.SystemNotes.Add(inProgressNote);
+        StateHasChanged();
+
+        try
+        {
+            var itemsToSummarize = new List<ChatMessage>();
+            if (!string.IsNullOrEmpty(_conversationSummaryText))
+            {
+                itemsToSummarize.Add(new ChatMessage(ChatRole.System, $"Summary of even earlier conversation: {_conversationSummaryText}"));
+            }
+            itemsToSummarize.AddRange(_history.Skip(1).Take(compactibleCount));
+
+            _conversationSummaryText = await CompactionService.SummarizeAsync(itemsToSummarize, CancellationToken.None);
+
+            var keptTail = _history.Skip(_history.Count - MessagesToKeepAfterCompaction).ToList();
+            _history.Clear();
+            RefreshStableSystemPrompt();
+            _history.AddRange(keptTail);
+
+            // A rough ~4-chars-per-token estimate, marked as approximate -
+            // _contextUsageCurrent otherwise stays at its last real
+            // Lemonade-reported figure until the next turn's own stats
+            // come back, which would read as "compaction did nothing"
+            // since the number wouldn't move.
+            var estimatedChars = _history.Sum(m => (m.Text ?? "").Length);
+            _contextUsageCurrent = Math.Max(1, estimatedChars / 4);
+
+            assistantMessage.SystemNotes.Remove(inProgressNote);
+            var savedTokens = Math.Max(0, tokensBeforeCompaction - _contextUsageCurrent.Value);
+            assistantMessage.SystemNotes.Add($"Compacted older messages - saved ~{savedTokens:N0} tokens");
+            _compactionCount++;
+        }
+        catch
+        {
+            // Best-effort - a failed compaction attempt just means the next
+            // turn's request stays as large as it already was. Remove the
+            // in-progress note rather than leaving it stuck forever.
+            assistantMessage.SystemNotes.Remove(inProgressNote);
+        }
+    }
+
+    public void Dispose()
+    {
+        _searchDebounceCts?.Cancel();
+        _sendCts?.Cancel();
+        _connectionRetryTimer?.Dispose();
+        ApprovalGate.OnPendingRequestChanged -= OnPendingApprovalChanged;
+        SchedulerNotifier.SessionUpdated -= OnSchedulerSessionUpdated;
+        ImageSizeGate.OnPendingRequestChanged -= OnPendingImageSizeChanged;
+        _selfReference?.Dispose();
+    }
+}

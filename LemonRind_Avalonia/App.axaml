@@ -1,0 +1,126 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="LemonRindAvalonia.App"
+             xmlns:local="using:LemonRindAvalonia"
+             RequestedThemeVariant="Default">
+             <!-- "Default" ThemeVariant follows the system theme. Settings -> Interface -> Theme (System / Light / Dark)
+                  overrides it at runtime - see ThemeService. -->
+
+    <Application.DataTemplates>
+        <local:ViewLocator />
+    </Application.DataTemplates>
+
+    <!-- UI redesign palette (same tokens as the Blazor port's app.css): every colour the app's own views use comes from
+         here, in a Light and a Dark set, via {DynamicResource ...}. Brushes that are built in C# (chat bubbles, status
+         dots) look the same keys up through ThemeService.Brush(). -->
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="ChatBg">#FFFFFF</SolidColorBrush>
+                    <SolidColorBrush x:Key="PaneBg">#F3F4F6</SolidColorBrush>
+                    <SolidColorBrush x:Key="PaneHover">#E9EBEF</SolidColorBrush>
+                    <SolidColorBrush x:Key="PaneSelected">#DFE3E9</SolidColorBrush>
+                    <SolidColorBrush x:Key="CardBg">#FFFFFF</SolidColorBrush>
+                    <SolidColorBrush x:Key="Surface2">#F2F4F7</SolidColorBrush>
+                    <SolidColorBrush x:Key="Surface3">#E7EAEF</SolidColorBrush>
+                    <SolidColorBrush x:Key="BorderSubtle">#ECEEF2</SolidColorBrush>
+                    <SolidColorBrush x:Key="BorderBrushLight">#E2E5EA</SolidColorBrush>
+                    <SolidColorBrush x:Key="BorderStrong">#C9CFD8</SolidColorBrush>
+                    <SolidColorBrush x:Key="TextPrimary">#1B1F27</SolidColorBrush>
+                    <SolidColorBrush x:Key="TextMuted">#5B6472</SolidColorBrush>
+                    <SolidColorBrush x:Key="TextFaint">#8A93A1</SolidColorBrush>
+                    <SolidColorBrush x:Key="Accent">#2F6BFF</SolidColorBrush>
+                    <SolidColorBrush x:Key="AccentHover">#1F57E0</SolidColorBrush>
+                    <SolidColorBrush x:Key="AccentSoft">#E6EEFF</SolidColorBrush>
+                    <SolidColorBrush x:Key="OnAccent">#FFFFFF</SolidColorBrush>
+                    <SolidColorBrush x:Key="UserBubbleBg">#2F6BFF</SolidColorBrush>
+                    <SolidColorBrush x:Key="UserBubbleFg">#FFFFFF</SolidColorBrush>
+                    <SolidColorBrush x:Key="AssistantBubbleBg">#ECEEF2</SolidColorBrush>
+                    <SolidColorBrush x:Key="AssistantBubbleFg">#1B1F27</SolidColorBrush>
+                    <SolidColorBrush x:Key="Danger">#DC3B41</SolidColorBrush>
+                    <SolidColorBrush x:Key="Success">#2BA766</SolidColorBrush>
+                    <SolidColorBrush x:Key="Warning">#E8890C</SolidColorBrush>
+                    <SolidColorBrush x:Key="ChartPurple">#8E4EC6</SolidColorBrush>
+                    <SolidColorBrush x:Key="ChipInfoBg">#E1ECFF</SolidColorBrush>
+                    <SolidColorBrush x:Key="ChipInfoFg">#1E4FC7</SolidColorBrush>
+                    <SolidColorBrush x:Key="ChipWarnBg">#FFF0C7</SolidColorBrush>
+                    <SolidColorBrush x:Key="ChipWarnFg">#7F5400</SolidColorBrush>
+                    <SolidColorBrush x:Key="ChipOkBg">#DCF3E5</SolidColorBrush>
+                    <SolidColorBrush x:Key="ChipOkFg">#1B7345</SolidColorBrush>
+                    <SolidColorBrush x:Key="ChipBadBg">#FDE3E3</SolidColorBrush>
+                    <SolidColorBrush x:Key="ChipBadFg">#A62A30</SolidColorBrush>
+                    <SolidColorBrush x:Key="PendingDot">#C7C7CC</SolidColorBrush>
+                </ResourceDictionary>
+
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="ChatBg">#151921</SolidColorBrush>
+                    <SolidColorBrush x:Key="PaneBg">#0F1217</SolidColorBrush>
+                    <SolidColorBrush x:Key="PaneHover">#1A1F28</SolidColorBrush>
+                    <SolidColorBrush x:Key="PaneSelected">#252C39</SolidColorBrush>
+                    <SolidColorBrush x:Key="CardBg">#1B2029</SolidColorBrush>
+                    <SolidColorBrush x:Key="Surface2">#1E232C</SolidColorBrush>
+                    <SolidColorBrush x:Key="Surface3">#283040</SolidColorBrush>
+                    <SolidColorBrush x:Key="BorderSubtle">#232935</SolidColorBrush>
+                    <SolidColorBrush x:Key="BorderBrushLight">#2B313D</SolidColorBrush>
+                    <SolidColorBrush x:Key="BorderStrong">#3B4455</SolidColorBrush>
+                    <SolidColorBrush x:Key="TextPrimary">#E7E9EE</SolidColorBrush>
+                    <SolidColorBrush x:Key="TextMuted">#A3ABB9</SolidColorBrush>
+                    <SolidColorBrush x:Key="TextFaint">#6F7889</SolidColorBrush>
+                    <SolidColorBrush x:Key="Accent">#5B8CFF</SolidColorBrush>
+                    <SolidColorBrush x:Key="AccentHover">#7AA2FF</SolidColorBrush>
+                    <SolidColorBrush x:Key="AccentSoft">#1D2A4A</SolidColorBrush>
+                    <SolidColorBrush x:Key="OnAccent">#0B1020</SolidColorBrush>
+                    <SolidColorBrush x:Key="UserBubbleBg">#3465E0</SolidColorBrush>
+                    <SolidColorBrush x:Key="UserBubbleFg">#FFFFFF</SolidColorBrush>
+                    <SolidColorBrush x:Key="AssistantBubbleBg">#242A36</SolidColorBrush>
+                    <SolidColorBrush x:Key="AssistantBubbleFg">#E7E9EE</SolidColorBrush>
+                    <SolidColorBrush x:Key="Danger">#FF6B70</SolidColorBrush>
+                    <SolidColorBrush x:Key="Success">#4CC38A</SolidColorBrush>
+                    <SolidColorBrush x:Key="Warning">#F5B544</SolidColorBrush>
+                    <SolidColorBrush x:Key="ChartPurple">#B388F0</SolidColorBrush>
+                    <SolidColorBrush x:Key="ChipInfoBg">#1C2A4A</SolidColorBrush>
+                    <SolidColorBrush x:Key="ChipInfoFg">#9DB8FF</SolidColorBrush>
+                    <SolidColorBrush x:Key="ChipWarnBg">#3A2F12</SolidColorBrush>
+                    <SolidColorBrush x:Key="ChipWarnFg">#F3C969</SolidColorBrush>
+                    <SolidColorBrush x:Key="ChipOkBg">#15301F</SolidColorBrush>
+                    <SolidColorBrush x:Key="ChipOkFg">#7EDBA0</SolidColorBrush>
+                    <SolidColorBrush x:Key="ChipBadBg">#3B1B1E</SolidColorBrush>
+                    <SolidColorBrush x:Key="ChipBadFg">#FF9EA2</SolidColorBrush>
+                    <SolidColorBrush x:Key="PendingDot">#6F7889</SolidColorBrush>
+                </ResourceDictionary>
+
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme />
+
+        <!-- Button roles (same as the Blazor port): "primary" = the main action, blue; "danger" = red outline. -->
+        <!-- Scrollbars keep their own gutter instead of auto-hiding: the default thin overlay scrollbar widens on hover and
+             then draws over the right edge of the content (e.g. a chat bubble). -->
+        <Style Selector="ScrollViewer">
+            <Setter Property="AllowAutoHide" Value="False" />
+        </Style>
+
+        <Style Selector="Button.primary">
+            <Setter Property="Background" Value="{DynamicResource Accent}" />
+            <Setter Property="Foreground" Value="{DynamicResource OnAccent}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Button.primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AccentHover}" />
+            <Setter Property="Foreground" Value="{DynamicResource OnAccent}" />
+        </Style>
+        <Style Selector="Button.primary:disabled /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Opacity" Value="0.5" />
+        </Style>
+        <Style Selector="Button.danger">
+            <Setter Property="Foreground" Value="{DynamicResource Danger}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Danger}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+    </Application.Styles>
+</Application>

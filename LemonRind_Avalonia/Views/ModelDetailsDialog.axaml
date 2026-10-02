@@ -1,0 +1,64 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="480" d:DesignHeight="420"
+        x:Class="LemonRindAvalonia.Views.ModelDetailsDialog"
+        Icon="/Assets/AppIcon.ico" Background="{DynamicResource PaneBg}" Title="Model details" Width="480" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+
+    <Window.Styles>
+        <Style Selector="TextBlock.detail-label">
+            <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Margin" Value="0,10,0,0" />
+        </Style>
+        <Style Selector="TextBlock.detail-value">
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+    </Window.Styles>
+
+    <Grid Margin="24" RowDefinitions="Auto,Auto">
+        <StackPanel Grid.Row="0">
+            <TextBlock Name="ModelIdText" FontSize="16" FontWeight="Bold" TextWrapping="Wrap" />
+
+            <TextBlock Classes="detail-label" Text="Capabilities" />
+            <TextBlock Name="LabelsText" Classes="detail-value" />
+
+            <TextBlock Classes="detail-label" Text="Context window" />
+            <TextBlock Name="ContextWindowText" Classes="detail-value" />
+
+            <TextBlock Classes="detail-label" Text="Size on disk" />
+            <TextBlock Name="SizeText" Classes="detail-value" />
+
+            <TextBlock Classes="detail-label" Text="Backend" />
+            <TextBlock Name="BackendText" Classes="detail-value" />
+
+            <!-- Only present once this model is actually loaded - see
+                 ModelDetailsDialog.axaml.cs's comment on why the richer
+                 runtime detail (llamacpp_args in particular) only exists
+                 for a running model, not the static catalog entry. -->
+            <TextBlock Name="NotLoadedNoteText" Classes="detail-value"
+                       Foreground="{DynamicResource Warning}" Margin="0,14,0,0" TextWrapping="Wrap" IsVisible="False" />
+
+            <StackPanel Name="RuntimeDetailPanel" IsVisible="False">
+                <TextBlock Classes="detail-label" Text="Device" />
+                <TextBlock Name="DeviceText" Classes="detail-value" />
+
+                <TextBlock Classes="detail-label" Text="Runtime arguments (llama.cpp)" />
+                <!-- A real, selectable TextBox (not a TextBlock) - same
+                     "reply text should be selectable" reasoning as the chat
+                     bubbles themselves, since this is exactly the kind of
+                     string a user would want to copy out. -->
+                <TextBox Name="LlamacppArgsText" IsReadOnly="True" TextWrapping="Wrap"
+                         FontFamily="Consolas" FontSize="12" Background="{DynamicResource Surface2}" BorderThickness="0"
+                         Padding="8" Margin="0,4,0,0" />
+            </StackPanel>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0">
+            <Button Content="Close" Padding="14,7" Click="OnCloseClick" />
+        </StackPanel>
+    </Grid>
+</Window>

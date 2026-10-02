@@ -1,0 +1,136 @@
+/* Full-width (no 900px cap) on the same grey page as Settings; the console panel stays dark in both themes. */
+.logs-page {
+    min-height: 100vh;
+    box-sizing: border-box;
+    padding: 1.25rem 2rem 2rem;
+    background: var(--pane-bg);
+}
+
+.logs-page > h2 {
+    font-size: 1.6rem;
+    margin: 1rem 0 0.25rem;
+}
+
+.logs-intro {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.logs-status {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin: 0.5rem 0 1rem;
+}
+
+.log-entries {
+    font-family: Consolas, monospace;
+    font-size: 0.85rem;
+    background: #1E1E1E;
+    color: #D4D4D4;
+    border-radius: var(--radius);
+    padding: 0.9rem 1rem;
+    height: calc(100vh - 20.5rem);
+    overflow-y: auto;
+}
+
+.log-entry {
+    display: flex;
+    gap: 0.6rem;
+    padding: 1px 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* Fixed column widths (monospace, so ch units) so the header row above lines up with every entry. */
+.log-timestamp {
+    color: #6A9955;
+    flex-shrink: 0;
+    width: 23ch;
+}
+
+.log-severity {
+    flex-shrink: 0;
+    width: 8ch;
+}
+
+.log-tag {
+    color: #9CDCFE;
+    flex-shrink: 0;
+    width: 16ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.log-line {
+    min-width: 0;
+}
+
+.log-header {
+    display: flex;
+    gap: 0.6rem;
+    padding: 0 1rem 0.35rem;
+    font-family: Consolas, monospace;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.log-header span {
+    color: var(--text-muted);
+}
+
+.severity-warn {
+    color: #D7A62B;
+}
+
+.severity-error, .severity-fatal {
+    color: #FF6B60;
+    font-weight: bold;
+}
+
+.no-logs {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.logs-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 0.9rem;
+}
+
+.logs-toolbar select, .logs-toolbar input {
+    padding: 0.5rem 0.7rem;
+    border: 1px solid var(--border-strong, var(--border));
+    border-radius: 8px;
+    background: var(--card-bg);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.85rem;
+}
+
+.logs-toolbar input {
+    flex: 1 1 14rem;
+    max-width: 24rem;
+}
+
+.logs-toolbar button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem 0.9rem;
+    border: 1px solid var(--border-strong, var(--border));
+    border-radius: 8px;
+    background: var(--card-bg);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.logs-toolbar button:hover {
+    background: var(--pane-hover, var(--surface-2, #eee));
+}

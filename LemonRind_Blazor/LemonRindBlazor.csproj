@@ -1,0 +1,67 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <!-- `dotnet publish -c Debug` lands in bin\Debug\publish\ - inside the project folder, beside (not
+         inside) the normal build output in bin\Debug\net10.0\. Overridable with -o. -->
+    <PublishDir>$(MSBuildProjectDirectory)\bin\$(Configuration)\publish\</PublishDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Same versions as the Avalonia port (..\LemonRind_Avalonia\LemonRindAvalonia.csproj),
+         which itself matched the original WPF/VB.NET app - all three stay on
+         identical Microsoft.Extensions.AI/OpenAI SDK behaviour, only the UI
+         framework differs. UI-framework-specific packages (Avalonia.*,
+         CommunityToolkit.Mvvm, Markdown.Avalonia.Tight) are deliberately not
+         carried over - Blazor doesn't use XAML/MVVM bindings. -->
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.10.0" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.10.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+    <PackageReference Include="OpenAI" Version="2.14.0" />
+
+    <!-- Markdown rendering in the chat transcript. HTML output
+         (MarkupString in Home.razor), arguably a more natural fit for a web
+         app than the desktop XAML renderer Avalonia uses. -->
+    <PackageReference Include="Markdig" Version="1.4.0" />
+
+    <!-- Web search/reader/file system tools. -->
+    <PackageReference Include="HtmlAgilityPack" Version="1.13.0" />
+
+    <!-- One-off file analysis (PDF/DOCX/XLSX/text attachment). -->
+    <PackageReference Include="PdfPig" Version="0.1.16" />
+    <PackageReference Include="DocumentFormat.OpenXml" Version="3.5.1" />
+    <PackageReference Include="ClosedXML" Version="0.105.1" />
+
+    <!-- MCP client support. -->
+    <PackageReference Include="ModelContextProtocol.Core" Version="2.2.0" />
+
+    <!-- Scheduler. -->
+    <PackageReference Include="Cronos" Version="0.13.0" />
+
+    <!-- Coder module. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.VisualBasic" Version="5.9.0" />
+    <!-- Microsoft.Extensions.FileSystemGlobbing - not referenced explicitly;
+         the Web SDK (Sdk.Web, used here instead of the desktop SDK) already
+         brings it in as part of its own shared framework, confirmed via a
+         real NU1510 warning when it was listed explicitly. -->
+
+    <!-- Jina/Tavily/Firecrawl alternate search/read engines - Firecrawl's
+         Crawl capability is a real async job (POST to start, poll to
+         completion); the official SDK already solves that polling/pagination
+         correctly, same version both other apps use. -->
+    <PackageReference Include="firecrawl-sdk" Version="1.14.0" />
+
+    <!-- Image attachment (downscale/re-encode for vision input).
+         The Avalonia edition uses Avalonia.Media.Imaging.Bitmap (Skia-backed,
+         no new dependency there); this app needs a real cross-platform
+         library - SixLabors.ImageSharp, not System.Drawing.Common
+         (Windows-only as of .NET 6+, explicitly wrong for a cross-platform
+         ASP.NET Core server app). -->
+    <PackageReference Include="SixLabors.ImageSharp" Version="4.1.2" />
+  </ItemGroup>
+
+  </Project>

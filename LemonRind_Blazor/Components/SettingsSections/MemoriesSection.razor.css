@@ -1,0 +1,44 @@
+.memories-review {
+    margin-top: 1.25rem;
+}
+
+.memories-intro {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.memories-review h4 {
+    margin: 1rem 0 0.4rem;
+}
+
+.memory-row {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+    padding: 0.4rem 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.memory-row textarea {
+    flex: 1;
+    padding: 0.4rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-strong);
+    font-family: inherit;
+    font-size: 0.9rem;
+}
+
+.memory-delete {
+    color: var(--danger);
+}
+
+.memories-empty {
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: 0.85rem;
+}
+
+.memories-status {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}

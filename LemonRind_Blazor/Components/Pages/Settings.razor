@@ -1,0 +1,437 @@
+@page "/settings"
+@rendermode InteractiveServer
+@using LemonRindBlazor.Configuration
+@using LemonRindBlazor.Modules
+@using LemonRindBlazor.Components.SettingsSections
+@inject AppSettingsStore SettingsStore
+@inject AppSettings LiveSettings
+@inject ModuleRegistry ModuleRegistry
+@inject IJSRuntime JS
+
+<PageTitle>Settings - Lemon Rind (Blazor test)</PageTitle>
+
+<div class="settings-page">
+<div class="settings-inner">
+    <a href="/" class="back-link"><Icon Name="arrow-left" Size="16" /> Back to chat</a>
+    <h2>Settings</h2>
+
+    @if (_restartRequired)
+    {
+        <div class="settings-restart-warning">
+            Saved - but the Lemonade connection and/or data folder changed, which are only read once at
+            startup. Restart the app for those specific changes to take effect; everything else applies
+            immediately.
+        </div>
+    }
+
+    <div class="settings-layout">
+        <nav class="settings-nav">
+            @foreach (var section in Sections)
+            {
+                <button class="settings-nav-item @(_selectedSection == section ? "active" : "")" @onclick="() => _selectedSection = section">@section</button>
+            }
+        </nav>
+
+        <div class="settings-content">
+            @if (_selectedSection == "Lemonade")
+            {
+                <section class="settings-section">
+                    <h3>Lemonade connection</h3>
+                    <label>Base URL (requires restart)<input @bind="_edited.Lemonade.BaseUrl" /></label>
+                    <label>Default chat model<input @bind="_edited.Lemonade.ChatModel" /></label>
+                    <label>Default embedding model<input @bind="_edited.Lemonade.EmbeddingModel" /></label>
+                    <label>API key (requires restart)<input @bind="_edited.Lemonade.ApiKey" type="password" /></label>
+                    <a href="/logs" class="module-manage-link">View live Lemonade logs &rarr;</a>
+                </section>
+            }
+            else if (_selectedSection == "Assistant")
+            {
+                <section class="settings-section">
+                    <h3>Assistant</h3>
+                    <label>System prompt<textarea @bind="_edited.Assistant.SystemPrompt" rows="3"></textarea></label>
+                </section>
+            }
+            else if (_selectedSection == "Persona")
+            {
+                <section class="settings-section">
+                    <h3>Persona</h3>
+                    <p class="settings-help">Gives the assistant a consistent personality and a standing sense of who you are, so it doesn't feel like a stranger at the start of every chat. Everything here is optional - leave a field blank and it's left out of the prompt entirely, at no cost. Applies to new messages immediately, no restart needed.</p>
+                    <label>
+                        Identity (who the assistant is - read before the system prompt, "who am I" before "how should you behave")
+                        <textarea @bind="_edited.Persona.Identity" rows="2" placeholder="e.g. Max, a dry-witted assistant who..."></textarea>
+                    </label>
+                    <label>
+                        About you (who the assistant is talking to)
+                        <textarea @bind="_edited.Persona.AboutUser" rows="2"></textarea>
+                    </label>
+                    <div class="settings-row">
+                        <label>
+                            Tone
+                            <select @bind="_edited.Persona.Tone">
+                                <option value="Default">Default</option>
+                                <option value="Casual">Casual</option>
+                                <option value="Formal">Formal</option>
+                                <option value="Warm">Warm</option>
+                                <option value="Concise">Concise</option>
+                                <option value="Direct">Direct</option>
+                            </select>
+                        </label>
+                        <label>
+                            Verbosity
+                            <select @bind="_edited.Persona.Verbosity">
+                                <option value="Default">Default</option>
+                                <option value="Concise">Concise</option>
+                                <option value="Detailed">Detailed</option>
+                            </select>
+                        </label>
+                        <label>
+                            Emoji use
+                            <select @bind="_edited.Persona.EmojiUsage">
+                                <option value="Default">Default</option>
+                                <option value="None">None</option>
+                                <option value="Sparing">Sparing</option>
+                                <option value="Frequent">Frequent</option>
+                            </select>
+                        </label>
+                    </div>
+                    <label>
+                        Custom writing-style instructions
+                        <textarea @bind="_edited.Persona.CustomInstructions" rows="2"></textarea>
+                    </label>
+                </section>
+            }
+            else if (_selectedSection == "Storage")
+            {
+                <section class="settings-section">
+                    <h3>Storage</h3>
+                    <label>
+                        Data folder (requires restart) - holds the database, generated/attached images, workspace files, and this settings file itself
+                        <input @bind="_edited.AppData.DataFolder" />
+                    </label>
+                </section>
+            }
+            else if (_selectedSection == "Web search")
+            {
+                <section class="settings-section">
+                    <h3>Web search</h3>
+                    @if (IsModuleDisabled("WebSearch")) { <div class="module-disabled-banner">This module is currently disabled - see Modules to enable it. This section still works either way.</div> }
+                    <label>
+                        Engine
+                        <select @bind="_edited.WebSearch.Engine">
+                            <option value="SearXNG">SearXNG</option>
+                            <option value="Jina">Jina</option>
+                            <option value="Tavily">Tavily</option>
+                            <option value="Firecrawl">Firecrawl</option>
+                        </select>
+                    </label>
+                    <label>SearXNG base URL<input @bind="_edited.WebSearch.SearXngBaseUrl" /></label>
+                    <label>Jina API key (optional - Reader works without one at a lower rate, Search requires one)<input @bind="_edited.WebSearch.JinaApiKey" type="password" /></label>
+                    <label>Tavily API key<input @bind="_edited.WebSearch.TavilyApiKey" type="password" /></label>
+                    <label>
+                        Firecrawl API key - also enables the crawl_website tool (multi-page site crawl), regardless of which Engine is selected above
+                        <input @bind="_edited.WebSearch.FirecrawlApiKey" type="password" />
+                    </label>
+                </section>
+            }
+            else if (_selectedSection == "File system access")
+            {
+                <section class="settings-section">
+                    <h3>File system access</h3>
+                    @if (IsModuleDisabled("FileSystem")) { <div class="module-disabled-banner">This module is currently disabled - see Modules to enable it. This section still works either way.</div> }
+                    <label>
+                        Allowed root folders (one per line) - also used by the Coder module
+                        <textarea @bind="_allowedRootsText" rows="2"></textarea>
+                    </label>
+                </section>
+            }
+            else if (_selectedSection == "Image generation")
+            {
+                <section class="settings-section">
+                    <h3>Image generation</h3>
+                    @if (IsModuleDisabled("ImageGen")) { <div class="module-disabled-banner">This module is currently disabled - see Modules to enable it. This section still works either way.</div> }
+                    <label>Model ID<input @bind="_edited.ImageGen.ModelId" /></label>
+                    <div class="settings-row">
+                        <label>Default width<input type="number" min="64" max="2048" step="64" @bind="_edited.ImageGen.DefaultWidth" /></label>
+                        <label>Default height<input type="number" min="64" max="2048" step="64" @bind="_edited.ImageGen.DefaultHeight" /></label>
+                        <label>Steps<input type="number" min="1" max="50" @bind="_edited.ImageGen.Steps" /></label>
+                        <label>CFG scale<input type="number" min="0" max="20" step="0.5" @bind="_edited.ImageGen.CfgScale" /></label>
+                        <label>Seed (-1 = random)<input type="number" min="-1" max="2147483647" @bind="_edited.ImageGen.Seed" /></label>
+                    </div>
+                </section>
+            }
+            else if (_selectedSection == "Interface")
+            {
+                <section class="settings-section">
+                    <h3>Interface</h3>
+                    <label>
+                        Theme (applies instantly; remembered by this browser)
+                        <select value="@_theme" @onchange="OnThemeChanged">
+                            <option value="system">Follow my system</option>
+                            <option value="light">Light</option>
+                            <option value="dark">Dark</option>
+                        </select>
+                    </label>
+                    <div class="toggle-row">
+                        <label class="switch">
+                            <input type="checkbox" id="thinking-open-by-default" checked="@_edited.Ui.ThinkingPanelOpenByDefault"
+                                   @onchange="e => _edited.Ui.ThinkingPanelOpenByDefault = (bool)e.Value!" />
+                            <span class="slider"></span>
+                        </label>
+                        <label class="toggle-text" for="thinking-open-by-default">
+                            <span class="module-name">Thinking panel open by default</span>
+                            <span class="module-description">Expand a reply's reasoning panel automatically instead of starting collapsed</span>
+                        </label>
+                    </div>
+                </section>
+            }
+            else if (_selectedSection == "Memories")
+            {
+                <section class="settings-section">
+                    <h3>Memories</h3>
+                    <label>Compact conversation at this % of context used<input type="number" min="10" max="95" step="5" @bind="_edited.Memory.CompactionTriggerPercent" /></label>
+                    <MemoriesSection />
+                </section>
+            }
+            else if (_selectedSection == "Auto-backup")
+            {
+                <section class="settings-section">
+                    <h3>Auto-backup</h3>
+                    @if (IsModuleDisabled("Backup")) { <div class="module-disabled-banner">This module is currently disabled - see Modules to enable it. This section still works either way.</div> }
+                    <p class="settings-help">Periodically zips your whole data folder (database, generated/attached images, workspace files) to a separate folder as a safety net - no AI involvement. Checked a few times a day; a new backup is made once the interval below has passed. The backup folder is kept separate from your data folder on purpose - storing backups inside the folder being backed up would make each new backup include every previous one.</p>
+                    <div class="settings-row">
+                        <label>Back up every N days<input type="number" min="1" max="365" @bind="_edited.Backup.IntervalDays" /></label>
+                        <label>Keep this many zips<input type="number" min="1" max="100" @bind="_edited.Backup.KeepCount" /></label>
+                    </div>
+                    <label>Backup folder<input @bind="_edited.Backup.BackupFolder" /></label>
+                </section>
+            }
+            else if (_selectedSection == "Modules")
+            {
+                <section class="settings-section">
+                    <h3>Modules</h3>
+                    @foreach (var module in ModuleRegistry.AllModules)
+                    {
+                        <div class="toggle-row">
+                            <label class="switch">
+                                <input type="checkbox" id="@($"module-{module.ConfigKey}")" checked="@GetModuleEnabled(module.ConfigKey)"
+                                       @onchange="e => SetModuleEnabled(module.ConfigKey, (bool)e.Value!)" />
+                                <span class="slider"></span>
+                            </label>
+                            <label class="toggle-text" for="@($"module-{module.ConfigKey}")">
+                                <span class="module-name">@module.Name</span>
+                                <span class="module-description">@module.Description</span>
+                            </label>
+                        </div>
+                    }
+                </section>
+            }
+            else if (_selectedSection == "Knowledge Bases")
+            {
+                <section class="settings-section">
+                    <h3>Knowledge Bases</h3>
+                    @if (IsModuleDisabled("Knowledge")) { <div class="module-disabled-banner">This module is currently disabled - see Modules to enable it. This section still works either way.</div> }
+                    <KnowledgeSection />
+                </section>
+            }
+            else if (_selectedSection == "MCP Servers")
+            {
+                <section class="settings-section">
+                    <h3>MCP Servers</h3>
+                    @if (IsModuleDisabled("Mcp")) { <div class="module-disabled-banner">This module is currently disabled - see Modules to enable it. This section still works either way.</div> }
+                    <McpSection />
+                </section>
+            }
+            else if (_selectedSection == "Scheduler")
+            {
+                <section class="settings-section">
+                    <h3>Scheduler</h3>
+                    @if (IsModuleDisabled("Scheduler")) { <div class="module-disabled-banner">This module is currently disabled - see Modules to enable it. This section still works either way.</div> }
+                    <SchedulerSection />
+                </section>
+            }
+        </div>
+    </div>
+
+    @* Knowledge Bases / MCP Servers / Scheduler save themselves instantly (plain DB rows), so Save only applies to the other sections. *@
+    @if (!InstantSaveSections.Contains(_selectedSection))
+    {
+        <div class="save-row">
+            <button class="settings-save" @onclick="SaveAsync" disabled="@_isSaving">@(_isSaving ? "Saving..." : "Save")</button>
+            @if (!string.IsNullOrEmpty(_statusText) && !_isSaving)
+            {
+                <span class="save-status @(_statusText == "Saved." ? "ok" : "error")">
+                    @if (_statusText == "Saved.") { <Icon Name="check" Size="16" /> }
+                    @_statusText
+                </span>
+            }
+        </div>
+    }
+</div>
+</div>
+
+@code {
+    // Settings live-reload. Works on its own AppSettings copy
+    // (LoadFresh gives a fresh, independent object graph) rather than
+    // editing LiveSettings directly - so a half-finished edit never leaks
+    // into the singleton every already-constructed service holds a
+    // reference to; only Save pushes it across, via AppSettings.CopyInto.
+    private AppSettings _edited = new();
+    private string _allowedRootsText = "";
+    private string _statusText = "";
+    private bool _restartRequired;
+    private bool _isSaving;
+
+    // Left-nav + content layout, matching the WPF app's Settings window
+    // (SettingsViewModel.vb's Sections collection). "Storage" exposes
+    // AppData.DataFolder, which is part of the restart-required check below.
+    private static readonly string[] Sections =
+    [
+        "Lemonade", "Assistant", "Persona", "Interface", "Storage", "Web search", "File system access",
+        "Image generation", "Memories", "Auto-backup", "Modules",
+        "Knowledge Bases", "MCP Servers", "Scheduler",
+    ];
+
+    private static readonly HashSet<string> InstantSaveSections = ["Knowledge Bases", "MCP Servers", "Scheduler"];
+
+    private string _selectedSection = "Lemonade";
+
+    private string _theme = "system";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                _theme = await JS.InvokeAsync<string>("lemon.getTheme");
+                StateHasChanged();
+            }
+            catch (JSException) { }
+        }
+    }
+
+    // Theme is a per-browser preference (localStorage), not a server-side
+    // setting, so it applies immediately and isn't part of Save.
+    private async Task OnThemeChanged(ChangeEventArgs e)
+    {
+        _theme = e.Value?.ToString() ?? "system";
+        try { await JS.InvokeVoidAsync("lemon.setTheme", _theme); } catch (JSException) { }
+    }
+
+    protected override void OnInitialized()
+    {
+        _edited = SettingsStore.LoadFresh();
+        _allowedRootsText = string.Join(Environment.NewLine, _edited.FileSystem.AllowedRoots);
+    }
+
+    private bool IsModuleDisabled(string configKey) => !_edited.Modules.Enabled.GetValueOrDefault(configKey, false);
+
+    private bool GetModuleEnabled(string configKey) => _edited.Modules.Enabled.GetValueOrDefault(configKey, false);
+
+    private void SetModuleEnabled(string configKey, bool isEnabled) => _edited.Modules.Enabled[configKey] = isEnabled;
+
+    // The "Saved." confirmation fades after a few seconds (errors stay until the next save).
+    private async Task ClearSavedStatusAsync()
+    {
+        await Task.Delay(4000);
+        if (_statusText == "Saved.")
+        {
+            _statusText = "";
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _isSaving = true;
+        _statusText = "Saving...";
+        _restartRequired = false;
+        StateHasChanged();
+
+        try
+        {
+            _edited.FileSystem.AllowedRoots = _allowedRootsText
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToList();
+
+            // Same normalisation the Avalonia app does on save: trim text
+            // fields, a blank system prompt falls back to the default, a
+            // blank persona dropdown to "Default".
+            var e = _edited;
+            e.Lemonade.BaseUrl = e.Lemonade.BaseUrl.Trim();
+            e.Lemonade.ChatModel = e.Lemonade.ChatModel.Trim();
+            e.Lemonade.EmbeddingModel = e.Lemonade.EmbeddingModel.Trim();
+            e.Lemonade.ApiKey = e.Lemonade.ApiKey.Trim();
+            e.WebSearch.SearXngBaseUrl = e.WebSearch.SearXngBaseUrl.Trim();
+            e.WebSearch.JinaApiKey = e.WebSearch.JinaApiKey.Trim();
+            e.WebSearch.TavilyApiKey = e.WebSearch.TavilyApiKey.Trim();
+            e.WebSearch.FirecrawlApiKey = e.WebSearch.FirecrawlApiKey.Trim();
+            e.Assistant.SystemPrompt = string.IsNullOrWhiteSpace(e.Assistant.SystemPrompt) ? new AssistantSettings().SystemPrompt : e.Assistant.SystemPrompt.Trim();
+            e.Persona.Identity = e.Persona.Identity.Trim();
+            e.Persona.AboutUser = e.Persona.AboutUser.Trim();
+            e.Persona.Tone = string.IsNullOrWhiteSpace(e.Persona.Tone) ? "Default" : e.Persona.Tone;
+            e.Persona.Verbosity = string.IsNullOrWhiteSpace(e.Persona.Verbosity) ? "Default" : e.Persona.Verbosity;
+            e.Persona.EmojiUsage = string.IsNullOrWhiteSpace(e.Persona.EmojiUsage) ? "Default" : e.Persona.EmojiUsage;
+            e.Persona.CustomInstructions = e.Persona.CustomInstructions.Trim();
+            e.ImageGen.ModelId = e.ImageGen.ModelId.Trim();
+            e.Backup.BackupFolder = e.Backup.BackupFolder.Trim();
+            e.AppData.DataFolder = e.AppData.DataFolder.Trim();
+
+            // The number inputs' min/max don't stop typing an out-of-range
+            // value, so clamp to the same ranges the Avalonia app's
+            // NumericUpDowns enforce.
+            e.ImageGen.DefaultWidth = Math.Clamp(e.ImageGen.DefaultWidth, 64, 2048);
+            e.ImageGen.DefaultHeight = Math.Clamp(e.ImageGen.DefaultHeight, 64, 2048);
+            e.ImageGen.Steps = Math.Clamp(e.ImageGen.Steps, 1, 50);
+            e.ImageGen.CfgScale = Math.Clamp(e.ImageGen.CfgScale, 0, 20);
+            e.ImageGen.Seed = Math.Clamp(e.ImageGen.Seed, -1, int.MaxValue);
+            e.Memory.CompactionTriggerPercent = Math.Clamp(e.Memory.CompactionTriggerPercent, 10, 95);
+            e.Backup.IntervalDays = Math.Clamp(e.Backup.IntervalDays, 1, 365);
+            e.Backup.KeepCount = Math.Clamp(e.Backup.KeepCount, 1, 100);
+
+            // A base URL with no trailing slash silently breaks every
+            // relative request built against it later (.NET's URI-combine
+            // rules replace the last path segment instead of appending) -
+            // a bug the desktop editions hit as well.
+            if (!string.IsNullOrWhiteSpace(_edited.Lemonade.BaseUrl) && !_edited.Lemonade.BaseUrl.EndsWith('/'))
+            {
+                _edited.Lemonade.BaseUrl += "/";
+            }
+
+            // Only BaseUrl/ApiKey (baked into the IChatClient singleton's own
+            // already-constructed OpenAI SDK client at startup) and
+            // DataFolder (baked into AppDatabase's already-open SQLite
+            // connection string) are genuinely unchangeable without a
+            // restart - a default
+            // ChatModel/EmbeddingModel change does NOT need one, since
+            // Home.razor re-reads Settings.Lemonade fresh from the live
+            // singleton every time a new chat session initializes, not once
+            // at app startup.
+            var requiresRestart =
+                _edited.Lemonade.BaseUrl != LiveSettings.Lemonade.BaseUrl ||
+                _edited.Lemonade.ApiKey != LiveSettings.Lemonade.ApiKey ||
+                _edited.AppData.DataFolder != LiveSettings.AppData.DataFolder;
+
+            SettingsStore.Save(_edited);
+            _edited.CopyInto(LiveSettings);
+
+            // Mirrors every other Settings-mutating page (/mcp, /scheduler) -
+            // Mcp always reconnects regardless of what changed; any module
+            // whose enabled flag actually flipped starts or stops.
+            await ModuleRegistry.ReconcileEnabledModulesAsync(CancellationToken.None);
+
+            _restartRequired = requiresRestart;
+            _statusText = "Saved.";
+            _ = ClearSavedStatusAsync();
+        }
+        catch (Exception ex)
+        {
+            _statusText = $"Couldn't save settings: {ex.Message}";
+        }
+        finally
+        {
+            _isSaving = false;
+            StateHasChanged();
+        }
+    }
+}

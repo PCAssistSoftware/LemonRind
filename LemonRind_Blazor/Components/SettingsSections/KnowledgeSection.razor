@@ -1,0 +1,280 @@
+@using LemonRindBlazor.Knowledge
+@inject KnowledgeRepository Repository
+@inject KnowledgeIngestionService IngestionService
+
+<div class="knowledge-page">
+
+    <div class="create-kb">
+        <input @bind="_newKbName" placeholder="New knowledge base name" />
+        <input @bind="_newKbDescription" placeholder="Description (optional)" />
+        <button class="btn-primary" @onclick="CreateKnowledgeBase" disabled="@string.IsNullOrWhiteSpace(_newKbName)">Create</button>
+    </div>
+
+    @foreach (var kb in _knowledgeBases)
+    {
+        <div class="kb-card">
+            <div class="kb-header">
+                <div>
+                    <h3>@kb.Name</h3>
+                    @if (!string.IsNullOrEmpty(kb.Description))
+                    {
+                        <div class="kb-description">@kb.Description</div>
+                    }
+                </div>
+                <button class="kb-delete" @onclick="() => DeleteKnowledgeBase(kb.Id)">Delete knowledge base</button>
+            </div>
+
+            <div class="kb-sources">
+                @foreach (var source in GetSources(kb.Id))
+                {
+                    <div class="source-row">
+                        <span class="source-name">@source.DisplayName</span>
+                        <span class="source-status status-@source.Status.ToLowerInvariant()">@source.Status</span>
+                        @if (source.Status == "Ready")
+                        {
+                            <span class="source-chunks">(@source.ChunkCount chunks)</span>
+                        }
+                        @if (source.Status == "Failed")
+                        {
+                            <span class="source-error" title="@source.ErrorMessage">@source.ErrorMessage</span>
+                        }
+                        <button class="source-delete" @onclick="() => DeleteSource(source.Id, kb.Id)">&times;</button>
+                    </div>
+                }
+            </div>
+
+            <div class="kb-add-source">
+                <div class="add-row">
+                    <label class="source-label">+ File</label>
+                    <InputFile OnChange="e => AddFileSource(kb.Id, e)" />
+                </div>
+                <div class="add-row">
+                    <label class="source-label">+ Folder</label>
+                    <InputFile OnChange="e => AddFolderSource(kb.Id, e)" multiple webkitdirectory />
+                </div>
+
+                <div class="add-row">
+                    <input @bind="_websiteUrl[kb.Id]" placeholder="https://..." />
+                    <button @onclick="() => AddWebsiteSource(kb.Id)">+ Website</button>
+                </div>
+
+                <div class="add-row">
+                    <input @bind="_textName[kb.Id]" placeholder="Name for this text" />
+                    <button @onclick="() => AddTextSource(kb.Id)">+ Text</button>
+                </div>
+                <textarea @bind="_textContent[kb.Id]" placeholder="Paste text here" rows="3"></textarea>
+
+                @if (!string.IsNullOrEmpty(_statusText.GetValueOrDefault(kb.Id)))
+                {
+                    <div class="kb-status">@_statusText[kb.Id]</div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    // RAG (Knowledge Bases), shown as a "Knowledge Bases" section of
+    // Settings like in the desktop editions. Folder-source ingestion is deliberately not
+    // built here (unlike the desktop apps' native folder picker) - a
+    // browser file input's multi-file/webkitdirectory support is a real but
+    // more involved adaptation, left for a follow-up; file/website/text sources cover the core RAG demo.
+    private List<KnowledgeBaseSummary> _knowledgeBases = [];
+    private readonly Dictionary<string, List<KnowledgeSource>> _sourcesByKb = [];
+    private readonly Dictionary<string, string> _websiteUrl = [];
+    private readonly Dictionary<string, string> _textName = [];
+    private readonly Dictionary<string, string> _textContent = [];
+    private readonly Dictionary<string, string> _statusText = [];
+    private string _newKbName = "";
+    private string _newKbDescription = "";
+
+    protected override void OnInitialized()
+    {
+        RefreshKnowledgeBases();
+    }
+
+    private void RefreshKnowledgeBases()
+    {
+        _knowledgeBases = Repository.ListKnowledgeBases();
+        _sourcesByKb.Clear();
+
+        // A Dictionary<TKey,TValue> indexer getter throws KeyNotFoundException
+        // for a missing key - a KeyNotFoundException would crash the
+        // whole circuit the first time a freshly-created KB's card rendered, since @bind="_websiteUrl[kb.Id]" etc. evaluate the
+        // getter side immediately. Seeding every KB's entry here (each time
+        // the list is refreshed, including right after a new KB is created)
+        // means the indexer is never asked for a key that isn't there.
+        foreach (var kb in _knowledgeBases)
+        {
+            _websiteUrl.TryAdd(kb.Id, "");
+            _textName.TryAdd(kb.Id, "");
+            _textContent.TryAdd(kb.Id, "");
+        }
+    }
+
+    private List<KnowledgeSource> GetSources(string kbId)
+    {
+        if (!_sourcesByKb.TryGetValue(kbId, out var sources))
+        {
+            sources = Repository.ListSources(kbId);
+            _sourcesByKb[kbId] = sources;
+        }
+        return sources;
+    }
+
+    private void CreateKnowledgeBase()
+    {
+        if (string.IsNullOrWhiteSpace(_newKbName)) return;
+        Repository.CreateKnowledgeBase(_newKbName.Trim(), _newKbDescription.Trim());
+        _newKbName = "";
+        _newKbDescription = "";
+        RefreshKnowledgeBases();
+    }
+
+    private void DeleteKnowledgeBase(string id)
+    {
+        Repository.DeleteKnowledgeBase(id);
+        RefreshKnowledgeBases();
+    }
+
+    private void DeleteSource(string sourceId, string kbId)
+    {
+        Repository.DeleteSource(sourceId);
+        _sourcesByKb.Remove(kbId);
+    }
+
+    private async Task AddFileSource(string kbId, Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        _statusText[kbId] = $"Ingesting {file.Name}...";
+        StateHasChanged();
+
+        // Blazor Server has no native file-picker-returns-a-local-path the
+        // way the desktop apps' OpenFileDialog does - the file's bytes live
+        // in the browser until uploaded, so they're saved to a real
+        // server-side path first (FileTextExtractor itself takes a path,
+        // not a stream), then the ingestion service takes over exactly as
+        // it already did on the desktop side.
+        var uploadsDir = Path.Combine(AppContext.BaseDirectory, "data", "Uploads");
+        Directory.CreateDirectory(uploadsDir);
+        var savedPath = Path.Combine(uploadsDir, $"{Guid.NewGuid()}-{file.Name}");
+
+        try
+        {
+            await using (var stream = file.OpenReadStream(maxAllowedSize: 25 * 1024 * 1024))
+            await using (var fileStream = File.Create(savedPath))
+            {
+                await stream.CopyToAsync(fileStream);
+            }
+
+            await IngestionService.AddFileSourceAsync(kbId, savedPath, CancellationToken.None);
+            _statusText[kbId] = $"Added {file.Name}.";
+        }
+        catch (Exception ex)
+        {
+            _statusText[kbId] = $"Couldn't add {file.Name}: {ex.Message}";
+        }
+        finally
+        {
+            File.Delete(savedPath);
+        }
+
+        _sourcesByKb.Remove(kbId);
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// A browser can't hand over a real folder path, so a picked folder's
+    /// files are uploaded into a temp folder first and ingested from there
+    /// with the same AddFolderSourceAsync the desktop apps use (supported
+    /// file types only; unreadable files are skipped by that method).
+    /// </summary>
+    private async Task AddFolderSource(string kbId, Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs e)
+    {
+        const int maxFiles = 500;
+        var supported = e.GetMultipleFiles(maxFiles)
+            .Where(f => Services.FileTextExtractor.IsSupported(f.Name))
+            .ToList();
+        if (supported.Count == 0)
+        {
+            _statusText[kbId] = $"No supported files in that folder (supported: {string.Join(", ", Services.FileTextExtractor.SupportedExtensions)}).";
+            return;
+        }
+
+        _statusText[kbId] = $"Ingesting {supported.Count} file(s)...";
+        StateHasChanged();
+
+        var tempRoot = Path.Combine(AppContext.BaseDirectory, "data", "Uploads", Guid.NewGuid().ToString());
+        // The folder name becomes the source's display name.
+        var folderPath = Path.Combine(tempRoot, $"Uploaded folder ({supported.Count} files)");
+        Directory.CreateDirectory(folderPath);
+
+        try
+        {
+            var index = 0;
+            foreach (var file in supported)
+            {
+                // Index prefix keeps same-named files from different
+                // subfolders from overwriting each other.
+                await using var stream = file.OpenReadStream(maxAllowedSize: 25 * 1024 * 1024);
+                await using var fileStream = File.Create(Path.Combine(folderPath, $"{index++}-{file.Name}"));
+                await stream.CopyToAsync(fileStream);
+            }
+
+            await IngestionService.AddFolderSourceAsync(kbId, folderPath, CancellationToken.None);
+            _statusText[kbId] = $"Added folder ({supported.Count} files).";
+        }
+        catch (Exception ex)
+        {
+            _statusText[kbId] = $"Couldn't add folder: {ex.Message}";
+        }
+        finally
+        {
+            try { Directory.Delete(tempRoot, recursive: true); } catch { /* best-effort temp cleanup */ }
+        }
+
+        _sourcesByKb.Remove(kbId);
+        StateHasChanged();
+    }
+
+    private async Task AddWebsiteSource(string kbId)
+    {
+        if (!_websiteUrl.TryGetValue(kbId, out var url) || string.IsNullOrWhiteSpace(url)) return;
+
+        _statusText[kbId] = $"Fetching {url}...";
+        StateHasChanged();
+        try
+        {
+            await IngestionService.AddWebsiteSourceAsync(kbId, url.Trim(), CancellationToken.None);
+            _statusText[kbId] = $"Added {url}.";
+            _websiteUrl[kbId] = "";
+        }
+        catch (Exception ex)
+        {
+            _statusText[kbId] = $"Couldn't add {url}: {ex.Message}";
+        }
+        _sourcesByKb.Remove(kbId);
+    }
+
+    private async Task AddTextSource(string kbId)
+    {
+        var name = _textName.GetValueOrDefault(kbId, "").Trim();
+        var content = _textContent.GetValueOrDefault(kbId, "").Trim();
+        if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(content)) return;
+
+        _statusText[kbId] = "Ingesting text...";
+        StateHasChanged();
+        try
+        {
+            await IngestionService.AddTextSourceAsync(kbId, content, name, CancellationToken.None);
+            _statusText[kbId] = $"Added \"{name}\".";
+            _textName[kbId] = "";
+            _textContent[kbId] = "";
+        }
+        catch (Exception ex)
+        {
+            _statusText[kbId] = $"Couldn't add text: {ex.Message}";
+        }
+        _sourcesByKb.Remove(kbId);
+    }
+}

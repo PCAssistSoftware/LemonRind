@@ -1,0 +1,170 @@
+@using System.Text.Json
+@using LemonRindBlazor.Mcp
+@using LemonRindBlazor.Modules
+@inject McpServerRepository Repository
+@inject ModuleRegistry ModuleRegistry
+
+<div class="mcp-page">
+    <p class="mcp-intro">
+        Connects to external MCP servers (e.g. Postmark for email) and exposes their tools to the model.
+        Paste a server's own <code>{"mcpServers": {...}}</code> config snippet (most MCP servers' own docs
+        give you this) - the real, primary way to add one here, not just an alternative to the manual
+        fields below.
+    </p>
+
+    <div class="import-box">
+        <textarea @bind="_pendingConfigJson" placeholder='{"mcpServers": {"name": {"command": "npx", "args": [...], "env": {...}}}}' rows="4"></textarea>
+        <button class="btn-primary" @onclick="ImportConfigJson" disabled="@string.IsNullOrWhiteSpace(_pendingConfigJson)">Import</button>
+    </div>
+
+    <details class="manual-add">
+        <summary>Or add one manually</summary>
+        <div class="manual-fields">
+            <input @bind="_newName" placeholder="Name" />
+            <input @bind="_newCommand" placeholder="Command (e.g. npx)" />
+            <input @bind="_newArguments" placeholder="Arguments, space-separated (e.g. -y @@scope/server-mcp)" />
+            <textarea @bind="_newEnvironmentVariables" placeholder="Environment variables, one NAME=value per line" rows="2"></textarea>
+            <button class="btn-primary" @onclick="CreateServer" disabled="@(string.IsNullOrWhiteSpace(_newName) || string.IsNullOrWhiteSpace(_newCommand))">Add</button>
+        </div>
+    </details>
+
+    @if (!string.IsNullOrEmpty(_statusText))
+    {
+        <div class="mcp-status">@_statusText</div>
+    }
+
+    <div class="server-list">
+        @foreach (var server in _servers)
+        {
+            <div class="server-row">
+                <label class="server-toggle">
+                    <input type="checkbox" checked="@server.IsEnabled" @onchange="e => ToggleServer(server, (bool)e.Value!)" />
+                    <span class="server-name">@server.Name</span>
+                </label>
+                <span class="server-command">@server.Command @string.Join(" ", server.Arguments)</span>
+                <button class="server-delete" @onclick="() => DeleteServer(server.Id)">Delete</button>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    // MCP client support, shown as a Settings section. JSON-paste-import is the
+    // primary add-server UX (most MCP servers' docs already give you this
+    // exact snippet, so typing fields by hand is the secondary path) - the manual
+    // fields stay available in a collapsed <details> for anyone who needs
+    // them. After any add/toggle/delete, ModuleRegistry.ReconcileEnabledModulesAsync
+    // reconnects McpModule live, so this takes effect
+    // immediately, not after a restart.
+    private List<McpServerConfig> _servers = [];
+    private string _pendingConfigJson = "";
+    private string _newName = "";
+    private string _newCommand = "";
+    private string _newArguments = "";
+    private string _newEnvironmentVariables = "";
+    private string _statusText = "";
+
+    protected override void OnInitialized()
+    {
+        RefreshServers();
+    }
+
+    private void RefreshServers()
+    {
+        _servers = Repository.ListServers();
+    }
+
+    private class McpConfigFileJson
+    {
+        public Dictionary<string, McpServerConfigJson>? mcpServers { get; set; }
+    }
+
+    private class McpServerConfigJson
+    {
+        public string command { get; set; } = "";
+        public List<string>? args { get; set; }
+        public Dictionary<string, string>? env { get; set; }
+    }
+
+    private async Task ImportConfigJson()
+    {
+        if (string.IsNullOrWhiteSpace(_pendingConfigJson)) return;
+
+        try
+        {
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var parsed = JsonSerializer.Deserialize<McpConfigFileJson>(_pendingConfigJson, options);
+            if (parsed?.mcpServers is null || parsed.mcpServers.Count == 0)
+            {
+                _statusText = "No servers found - expected a top-level \"mcpServers\" object.";
+                return;
+            }
+
+            var importedNames = new List<string>();
+            foreach (var (serverName, serverJson) in parsed.mcpServers)
+            {
+                if (string.IsNullOrWhiteSpace(serverJson.command)) continue;
+                Repository.CreateServer(serverName, serverJson.command, serverJson.args ?? [], serverJson.env ?? []);
+                importedNames.Add(serverName);
+            }
+
+            _pendingConfigJson = "";
+            RefreshServers();
+
+            if (importedNames.Count > 0)
+            {
+                await ModuleRegistry.ReconcileEnabledModulesAsync(CancellationToken.None);
+                _statusText = $"Imported and connected: {string.Join(", ", importedNames)}.";
+            }
+            else
+            {
+                _statusText = "Nothing valid to import - each server needs at least a \"command\".";
+            }
+        }
+        catch (Exception ex)
+        {
+            _statusText = $"Couldn't parse that JSON: {ex.Message}";
+        }
+    }
+
+    private async Task CreateServer()
+    {
+        if (string.IsNullOrWhiteSpace(_newName) || string.IsNullOrWhiteSpace(_newCommand)) return;
+
+        var arguments = _newArguments.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
+
+        var environmentVariables = new Dictionary<string, string>();
+        foreach (var line in _newEnvironmentVariables.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = line.Split('=', 2);
+            if (parts.Length == 2) environmentVariables[parts[0].Trim()] = parts[1].Trim();
+        }
+
+        Repository.CreateServer(_newName.Trim(), _newCommand.Trim(), arguments, environmentVariables);
+
+        _newName = "";
+        _newCommand = "";
+        _newArguments = "";
+        _newEnvironmentVariables = "";
+
+        RefreshServers();
+        await ModuleRegistry.ReconcileEnabledModulesAsync(CancellationToken.None);
+        _statusText = "Added and connected.";
+    }
+
+    private async Task ToggleServer(McpServerConfig server, bool isEnabled)
+    {
+        Repository.SetEnabled(server.Id, isEnabled);
+        RefreshServers();
+        await ModuleRegistry.ReconcileEnabledModulesAsync(CancellationToken.None);
+        _statusText = isEnabled ? $"{server.Name} connected." : $"{server.Name} disconnected.";
+    }
+
+    private async Task DeleteServer(string id)
+    {
+        Repository.DeleteServer(id);
+        RefreshServers();
+        await ModuleRegistry.ReconcileEnabledModulesAsync(CancellationToken.None);
+        _statusText = "Deleted.";
+    }
+}

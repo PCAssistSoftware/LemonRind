@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="LemonRind_Avalonia/LemonRindAvalonia.csproj" />
+  <Project Path="LemonRind_Blazor/LemonRindBlazor.csproj" />
+</Solution>

@@ -1,0 +1,32 @@
+# Build output - includes the live data folder (database, settings, API
+# keys) at <project>\bin\Debug\<tfm>\data\, so this must never be tracked.
+[Bb]in/
+[Oo]bj/
+
+# "dotnet publish" output (the Avalonia project publishes into its own publish\ folder, which also
+# carries a copy of the data folder)
+publish/
+
+# Visual Studio local workspace/cache
+.vs/
+
+# Local tool cache
+.cr/
+
+# AI-assistant tool folders/debris (browser-test logs, per-machine launch configs)
+.playwright-mcp/
+.claude/
+
+# Manual project backup archives (large, not source) - these now live outside the repo (..\Backups), kept here as a safety net
+Backups/
+
+# Private development notes - not part of the public project (the WPF project's is LemonRind_WPF\LemonRind_WPF.md)
+CLAUDE.md
+LemonRind_WPF.md
+LemonRind_Avalonia.md
+LemonRind_Blazor.md
+reference/
+Reference/
+
+# Visual Studio user-specific project settings
+*.user

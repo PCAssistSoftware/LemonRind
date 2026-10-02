@@ -1,0 +1,272 @@
+/* Grey page with a white content card (matches the app's grey-pane / white-chat scheme). */
+.settings-page {
+    min-height: 100vh;
+    box-sizing: border-box;
+    padding: 1.25rem 2rem 3rem;
+    background: var(--pane-bg);
+}
+
+.settings-inner {
+    max-width: 1100px;
+    margin: 0 auto;
+}
+
+.settings-inner > h2 {
+    font-size: 1.6rem;
+    margin: 1rem 0 0.25rem;
+}
+
+/* Left-nav + content layout, replacing the single long flat
+   page. */
+.settings-layout {
+    display: flex;
+    gap: 1.5rem;
+    margin-top: 1rem;
+    align-items: flex-start;
+}
+
+.settings-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex-shrink: 0;
+    width: 210px;
+}
+
+.settings-nav-item {
+    text-align: left;
+    background: none;
+    border: none;
+    border-radius: var(--radius);
+    padding: 0.65rem 0.9rem;
+    cursor: pointer;
+    font-size: 0.95rem;
+    color: var(--text);
+}
+
+.settings-nav-item:hover {
+    background: var(--pane-hover);
+}
+
+.settings-nav-item.active {
+    background: var(--card-bg);
+    box-shadow: var(--shadow-sm);
+    font-weight: 700;
+}
+
+.settings-content {
+    flex: 1;
+    min-width: 0;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem 1.75rem;
+    box-shadow: var(--shadow-sm);
+}
+
+.settings-status {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin: 0.5rem 0;
+}
+
+.settings-restart-warning {
+    background: var(--chip-warn-bg);
+    border: 1px solid var(--warning);
+    border-radius: 6px;
+    padding: 0.6rem 0.8rem;
+    font-size: 0.85rem;
+    color: var(--chip-warn-fg);
+    margin: 0.5rem 0 1rem;
+}
+
+.settings-section {
+    margin: 0;
+}
+
+.settings-section h3 {
+    font-size: 1.15rem;
+    margin: 0 0 1rem;
+}
+
+.section-disabled {
+    opacity: 0.6;
+}
+
+.settings-section label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    margin-bottom: 0.9rem;
+}
+
+.settings-section input, .settings-section select, .settings-section textarea {
+    padding: 0.55rem 0.7rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-strong);
+    font-family: inherit;
+    font-size: 0.9rem;
+}
+
+.settings-row {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.settings-row label {
+    flex: 1;
+    min-width: 100px;
+}
+
+.module-manage-link {
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+.settings-save {
+    background: var(--user-bubble-bg);
+    color: var(--user-bubble-fg);
+    border-color: transparent;
+    /* Lines up under .settings-content rather than .settings-nav
+       (180px + the layout's own 1.5rem gap) - left to the page's own left
+       edge, it coincidentally sits under the nav column instead, which
+       reads as if Save only applied to the nav rather than to whichever
+       section is currently showing. */
+    display: inline-block;
+    margin: 0;
+    padding: 0.7rem 2rem;
+    font-size: 1rem;
+    font-weight: 600;
+    border-radius: var(--radius);
+}
+
+.settings-help {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    margin: 0 0 0.75rem;
+}
+
+/* Same notice on every module-backed section (consistent with the Avalonia app). */
+.module-disabled-banner {
+    background: var(--chip-warn-bg);
+    color: var(--chip-warn-fg);
+    border: 1px solid var(--warning);
+    border-radius: var(--radius-sm);
+    padding: 0.6rem 0.85rem;
+    font-size: 0.9rem;
+    margin: 0 0 1.1rem;
+}
+
+/* Toggle rows (Modules list, Interface): switch on the left, bold name + muted description stacked on the right, so every row lines up. */
+.toggle-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 0.9rem 0;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.toggle-row:last-child {
+    border-bottom: none;
+}
+
+.settings-section label.toggle-text {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    gap: 0.2rem;
+    color: var(--text);
+    cursor: pointer;
+}
+
+.toggle-text .module-name {
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--text);
+}
+
+.toggle-text .module-description {
+    font-size: 0.88rem;
+    line-height: 1.4;
+    color: var(--text-muted);
+}
+
+.settings-section label.switch {
+    position: relative;
+    display: inline-block;
+    width: 42px;
+    height: 24px;
+    flex-shrink: 0;
+    margin: 0.15rem 0 0;
+}
+
+.switch input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.switch .slider {
+    position: absolute;
+    inset: 0;
+    background: var(--border-strong);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.switch .slider::before {
+    content: "";
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    left: 3px;
+    top: 3px;
+    background: #fff;
+    border-radius: 50%;
+    box-shadow: var(--shadow-sm);
+    transition: transform 0.15s;
+}
+
+.switch input:checked + .slider {
+    background: var(--accent);
+}
+
+.switch input:checked + .slider::before {
+    transform: translateX(18px);
+}
+
+.switch input:focus-visible + .slider {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+/* Save button + its result, lined up under the content card. */
+.save-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-left: calc(210px + 1.5rem);
+    margin-top: 1.5rem;
+}
+
+.save-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+.save-status.ok {
+    color: var(--success);
+}
+
+.save-status.error {
+    color: var(--danger);
+    font-weight: 500;
+}

@@ -1,0 +1,167 @@
+.scheduler-page {
+    margin: 0;
+}
+
+.scheduler-intro {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.scheduler-intro code {
+    background: var(--hover);
+    padding: 1px 4px;
+    border-radius: 4px;
+}
+
+.add-box {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin: 1rem 0;
+}
+
+.add-box input, .add-box textarea, .add-box select {
+    padding: 0.5rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-strong);
+}
+
+/* GUI cron builder row. */
+.cron-builder-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.cron-builder-row select {
+    padding: 0.5rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-strong);
+}
+
+.cron-builder-row span {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.add-box button {
+    align-self: flex-start;
+}
+
+.scheduler-status {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin: 0.5rem 0;
+}
+
+.job-list {
+    margin-top: 1rem;
+}
+
+.job-row {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.job-main {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.job-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-weight: bold;
+}
+
+.job-cron {
+    flex: 1;
+    font-family: Consolas, monospace;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.job-delete {
+    background: none;
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    border-radius: 6px;
+    padding: 2px 8px;
+    cursor: pointer;
+}
+
+.job-detail {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-top: 0.3rem;
+}
+
+.job-times {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 0.3rem;
+}
+
+.no-jobs {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+/* Editable job rows (Name / cron / prompt / model + "Save changes"). */
+.job-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.job-edit-name {
+    flex: 1;
+    font-weight: bold;
+    padding: 0.3rem 0.4rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+}
+
+.job-edit-cron, .job-edit-prompt, .job-row select {
+    padding: 0.3rem 0.4rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 0.85rem;
+}
+
+.job-edit-cron {
+    font-family: Consolas, monospace;
+}
+
+.job-save {
+    align-self: flex-start;
+    padding: 2px 10px;
+}
+
+/* ---- card look: items sit on a soft panel inside the white settings card ---- */
+.add-box {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem 1.1rem;
+}
+
+.job-row {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.9rem 1.1rem;
+    margin-bottom: 0.7rem;
+}
+
+.add-box > button, .job-save {
+    align-self: flex-start;
+    padding: 0.5rem 1.4rem;
+}

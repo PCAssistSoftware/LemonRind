@@ -1,0 +1,198 @@
+@page "/logs"
+@rendermode InteractiveServer
+@using LemonRindBlazor.Services
+@inject LemonadeLogClient LogClient
+@inject IJSRuntime JS
+@implements IDisposable
+
+<PageTitle>Lemonade Logs - Lemon Rind (Blazor test)</PageTitle>
+
+<div class="logs-page">
+    <a href="/" class="back-link"><Icon Name="arrow-left" Size="16" /> Back to chat</a>
+    <h2>Lemonade Logs</h2>
+    <p class="logs-intro">
+        Live stream straight from Lemonade's own server - not this app's logs. Useful for seeing exactly what
+        Lemonade itself is doing (model loads, requests, errors) while testing.
+    </p>
+
+    <div class="logs-status">@StatusLine</div>
+
+    <div class="logs-toolbar">
+        <select @bind="_minSeverity" title="Show only this severity and above">
+            <option value="0">All severities</option>
+            <option value="1">Warnings and above</option>
+            <option value="2">Errors only</option>
+        </select>
+        <input type="search" placeholder="Filter lines..." @bind="_filterText" @bind:event="oninput" />
+        <button @onclick="TogglePause" title="Freeze the view while you read (new lines keep arriving in the background)">
+            <Icon Name="@(_paused ? "play" : "pause")" Size="14" /> @(_paused ? "Resume" : "Pause")
+        </button>
+        <button @onclick="CopyVisibleAsync" title="Copy the lines currently shown"><Icon Name="copy" Size="14" /> @(_copied ? "Copied" : "Copy lines")</button>
+        <button @onclick="ClearView" title="Clear the lines shown here (does not touch Lemonade's own log)"><Icon Name="trash" Size="14" /> Clear</button>
+    </div>
+
+    <div class="log-header" aria-hidden="true">
+        <span class="log-timestamp">Time</span>
+        <span class="log-severity">Severity</span>
+        <span class="log-tag">Tag</span>
+        <span class="log-line">Line</span>
+    </div>
+
+    <div class="log-entries">
+        @foreach (var entry in Visible)
+        {
+            <div class="log-entry severity-@entry.Severity.ToLowerInvariant()">
+                <span class="log-timestamp">@entry.Timestamp</span>
+                <span class="log-severity">@entry.Severity</span>
+                <span class="log-tag">@entry.Tag</span>
+                <span class="log-line">@entry.Line</span>
+            </div>
+        }
+        @if (!Visible.Any())
+        {
+            <p class="no-logs">@(_entries.Count == 0 ? "No log entries yet." : "No lines match the current filter.")</p>
+        }
+    </div>
+</div>
+
+@code {
+    // Live Lemonade log streaming, via
+    // LemonadeLogClient.StreamAsync - a real WS connection to Lemonade's own
+    // /logs/stream endpoint, not this app's own logs.
+    //
+    // StreamAsync's onSnapshot/onEntry callbacks fire from this page's own
+    // background streaming Task, never this circuit's synchronization
+    // context - every mutation of _entries/_statusText goes through
+    // InvokeAsync, same reason SchedulerNotifier's own subscription does.
+    private const int MaxEntries = 3000;
+    private readonly List<LemonadeLogEntry> _entries = [];
+    private string _statusText = "Connecting...";
+
+    // View controls. Filtering is purely a view over _entries (the full capped list keeps accumulating), so changing
+    // or clearing a filter never loses lines; Pause freezes a snapshot of the list while new lines keep arriving.
+    private int _minSeverity;
+    private string _filterText = "";
+    private bool _paused;
+    private List<LemonadeLogEntry>? _pausedView;
+    private bool _copied;
+    private int _clearedBefore;   // lines before this index (of the full list) are hidden by Clear
+
+    private IEnumerable<LemonadeLogEntry> Visible
+    {
+        get
+        {
+            IEnumerable<LemonadeLogEntry> source = _pausedView ?? _entries;
+            if (_clearedBefore > 0 && _pausedView is null) source = source.Skip(_clearedBefore);
+            if (_minSeverity > 0) source = source.Where(e => SeverityRank(e.Severity) >= _minSeverity);
+            if (!string.IsNullOrWhiteSpace(_filterText))
+            {
+                source = source.Where(e => e.Line.Contains(_filterText, StringComparison.OrdinalIgnoreCase)
+                    || e.Tag.Contains(_filterText, StringComparison.OrdinalIgnoreCase));
+            }
+            return source;
+        }
+    }
+
+    private static int SeverityRank(string severity) => severity switch { "Warn" => 1, "Error" or "Fatal" => 2, _ => 0 };
+
+    private string StatusLine
+    {
+        get
+        {
+            if (!_paused) return _statusText;
+            return $"Paused - {_entries.Count - (_pausedView?.Count ?? 0)} new line(s) waiting. {_statusText}";
+        }
+    }
+
+    private void TogglePause()
+    {
+        _paused = !_paused;
+        _pausedView = _paused ? [.. _entries] : null;
+    }
+
+    private void ClearView()
+    {
+        _clearedBefore = _entries.Count;
+        if (_paused) _pausedView = [];
+    }
+
+    private async Task CopyVisibleAsync()
+    {
+        var text = string.Join('\n', Visible.Select(e => $"{e.Timestamp}\t{e.Severity}\t{e.Tag}\t{e.Line}"));
+        try { await JS.InvokeVoidAsync("lemon.copyText", text); } catch (JSException) { return; }
+        _copied = true;
+        StateHasChanged();
+        await Task.Delay(1500);
+        _copied = false;
+    }
+    private CancellationTokenSource? _cts;
+
+    protected override void OnInitialized()
+    {
+        _cts = new CancellationTokenSource();
+        _ = StreamLoopAsync(_cts.Token);
+    }
+
+    private async Task StreamLoopAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await LogClient.StreamAsync(OnSnapshot, OnEntry, cancellationToken);
+                await InvokeAsync(() => { _statusText = "Disconnected - reconnecting..."; StateHasChanged(); });
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                await InvokeAsync(() => { _statusText = $"Connection error: {ex.Message} - retrying in 5s..."; StateHasChanged(); });
+            }
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+        }
+    }
+
+    private void OnSnapshot(List<LemonadeLogEntry> entries)
+    {
+        _ = InvokeAsync(() =>
+        {
+            _entries.AddRange(entries);
+            TrimEntries();
+            _statusText = $"Connected - {_entries.Count} entries.";
+            StateHasChanged();
+        });
+    }
+
+    private void OnEntry(LemonadeLogEntry entry)
+    {
+        _ = InvokeAsync(() =>
+        {
+            _entries.Add(entry);
+            TrimEntries();
+            _statusText = $"Connected - {_entries.Count} entries.";
+            StateHasChanged();
+        });
+    }
+
+    private void TrimEntries()
+    {
+        if (_entries.Count > MaxEntries)
+        {
+            var removed = _entries.Count - MaxEntries;
+            _entries.RemoveRange(0, removed);
+            _clearedBefore = Math.Max(0, _clearedBefore - removed);
+        }
+    }
+
+    public void Dispose() => _cts?.Cancel();
+}

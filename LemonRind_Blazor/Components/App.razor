@@ -1,0 +1,32 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    @* Applies the saved theme (Light / Dark; no value = follow the OS) before first paint so there's no flash. *@
+    <script>
+        try {
+            var t = localStorage.getItem('lemon-theme');
+            if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+            var l = JSON.parse(localStorage.getItem('lemon-layout') || '{}');
+            for (var k in l) document.documentElement.style.setProperty(k, l[k] + 'px');
+        } catch (e) { }
+    </script>
+    <ResourcePreloader />
+    <link rel="icon" href="@Assets["favicon.ico"]" />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="@Assets["LemonRindBlazor.styles.css"]" />
+    <ImportMap />
+    <HeadOutlet />
+</head>
+
+<body>
+    <Routes />
+    <ReconnectModal />
+    <script src="@Assets["lemon.js"]"></script>
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+</body>
+
+</html>

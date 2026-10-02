@@ -1,0 +1,30 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="420" d:DesignHeight="220"
+        x:Class="LemonRindAvalonia.Views.ImageSizeDialog"
+        Icon="/Assets/AppIcon.ico" Background="{DynamicResource PaneBg}" Title="Image size" Width="420" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+
+    <Grid Margin="24" RowDefinitions="Auto,Auto,Auto,Auto">
+        <TextBlock Grid.Row="0" Text="The assistant wants to generate an image:" FontWeight="Bold" Margin="0,0,0,4" />
+        <TextBlock Grid.Row="1" Name="PromptPreviewText" TextWrapping="Wrap" FontSize="13" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,16" />
+
+        <Grid Grid.Row="2" ColumnDefinitions="*,12,*">
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="Width" Foreground="{DynamicResource TextMuted}" FontSize="12" Margin="0,0,0,2" />
+                <TextBox Name="WidthBox" Padding="6" />
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+                <TextBlock Text="Height" Foreground="{DynamicResource TextMuted}" FontSize="12" Margin="0,0,0,2" />
+                <TextBox Name="HeightBox" Padding="6" />
+            </StackPanel>
+        </Grid>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0">
+            <Button Content="Cancel" Padding="14,7" Margin="0,0,8,0" Click="OnCancelClick" />
+            <Button Classes="primary" Content="Generate" Padding="14,7" Click="OnGenerateClick" />
+        </StackPanel>
+    </Grid>
+</Window>

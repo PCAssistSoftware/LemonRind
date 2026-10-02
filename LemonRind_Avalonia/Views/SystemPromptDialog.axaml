@@ -1,0 +1,37 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="500"
+        x:Class="LemonRindAvalonia.Views.SystemPromptDialog"
+        Icon="/Assets/AppIcon.ico" Background="{DynamicResource PaneBg}" Title="System prompt" Width="600" Height="500" CanResize="False"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+
+    <Grid Margin="24" RowDefinitions="Auto,*,Auto">
+        <TextBlock Grid.Row="0"
+                   Name="DescriptionTextBlock"
+                   Foreground="{DynamicResource TextMuted}"
+                   FontSize="12"
+                   TextWrapping="Wrap"
+                   Margin="0,0,0,10" />
+
+        <!-- Selectable, read-only - same reasoning as this app's own reply/
+             thinking text and the model details dialog's own llamacpp-args
+             box: this is exactly the kind of text a user would want to copy
+             out. -->
+        <TextBox Grid.Row="1"
+                 Name="PromptTextBox"
+                 IsReadOnly="True"
+                 TextWrapping="Wrap"
+                 AcceptsReturn="True"
+                 FontFamily="Consolas"
+                 FontSize="12"
+                 Background="{DynamicResource Surface2}"
+                 BorderThickness="0"
+                 Padding="10" />
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+            <Button Content="Close" Padding="14,7" Click="OnCloseClick" />
+        </StackPanel>
+    </Grid>
+</Window>

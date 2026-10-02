@@ -1,0 +1,41 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:avdc="using:Avalonia.Data.Converters"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="380" d:DesignHeight="260"
+        x:Class="LemonRindAvalonia.Views.TagManagerDialog"
+        Icon="/Assets/AppIcon.ico" Background="{DynamicResource PaneBg}" Title="Manage tags" Width="380" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+
+    <Grid Margin="24" RowDefinitions="Auto,Auto,Auto,Auto">
+        <TextBlock Grid.Row="0" Text="Tags" FontWeight="Bold" Margin="0,0,0,8" />
+
+        <ItemsControl Name="TagsItemsControl" Grid.Row="1">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <WrapPanel />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="x:String">
+                    <Border Background="{DynamicResource Surface3}" CornerRadius="10" Padding="8,3" Margin="0,0,6,6">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding}" FontSize="12" VerticalAlignment="Center" />
+                            <Button Content="&#10005;" FontSize="9" Padding="4,0,0,0" Margin="6,0,0,0"
+                                    Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                    Click="OnRemoveTagClick" Tag="{Binding}" />
+                        </StackPanel>
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,12,0,0">
+            <TextBox Name="NewTagBox" Width="220" Padding="6" KeyDown="OnNewTagBoxKeyDown" />
+            <Button Content="Add" Padding="12,6" Margin="8,0,0,0" Click="OnAddTagClick" />
+        </StackPanel>
+
+        <Button Grid.Row="3" Content="Done" Padding="14,7" HorizontalAlignment="Right" Margin="0,20,0,0" Click="OnDoneClick" />
+    </Grid>
+</Window>

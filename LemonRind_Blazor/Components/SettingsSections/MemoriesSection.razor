@@ -1,0 +1,90 @@
+@using LemonRindBlazor.Memories
+@inject MemoryService MemoryService
+
+@* Memories review screen - what the assistant has learned about the user
+   over time (MemoryService.ExtractAndSaveFactsAsync, running silently after
+   every reply). Plain DB rows, not appsettings.json fields, so edit/delete
+   take effect immediately - no Save/restart needed. Matches the
+   Avalonia/WPF review screen: pinned facts (always included in the system
+   prompt) vs. other memories (only folded in when relevant to a turn). *@
+
+<div class="memories-review">
+    <p class="memories-intro">What the assistant has learned about you over time. Edit or delete anything wrong or no longer relevant.</p>
+
+    <h4>Pinned facts (always included)</h4>
+    @foreach (var item in _pinned)
+    {
+        <div class="memory-row">
+            <textarea @bind="item.Content" rows="2"></textarea>
+            <button @onclick="() => SaveAsync(item)">Save</button>
+            <button class="memory-delete" @onclick="() => Delete(item)">Delete</button>
+        </div>
+    }
+    @if (_pinned.Count == 0)
+    {
+        <p class="memories-empty">No pinned facts yet.</p>
+    }
+
+    <h4>Other memories (used when relevant)</h4>
+    @foreach (var item in _searchable)
+    {
+        <div class="memory-row">
+            <textarea @bind="item.Content" rows="2"></textarea>
+            <button @onclick="() => SaveAsync(item)">Save</button>
+            <button class="memory-delete" @onclick="() => Delete(item)">Delete</button>
+        </div>
+    }
+    @if (_searchable.Count == 0)
+    {
+        <p class="memories-empty">No other memories yet.</p>
+    }
+
+    @if (!string.IsNullOrEmpty(_statusText))
+    {
+        <p class="memories-status">@_statusText</p>
+    }
+</div>
+
+@code {
+    private List<MemoryItem> _pinned = [];
+    private List<MemoryItem> _searchable = [];
+    private string _statusText = "";
+
+    protected override void OnInitialized() => Refresh();
+
+    private void Refresh()
+    {
+        var all = MemoryService.ListAllFacts();
+        _pinned = all.Where(m => m.IsPinned).ToList();
+        _searchable = all.Where(m => !m.IsPinned).ToList();
+    }
+
+    private async Task SaveAsync(MemoryItem item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Content))
+        {
+            _statusText = "A memory can't be empty - delete it instead.";
+            return;
+        }
+
+        try
+        {
+            // Re-embeds the edited text (a stale embedding would make semantic
+            // recall match the OLD wording), same as the desktop apps.
+            await MemoryService.UpdateFactAsync(item, item.Content.Trim(), CancellationToken.None);
+            _statusText = "Saved.";
+        }
+        catch (Exception ex)
+        {
+            _statusText = $"Couldn't save: {ex.Message}";
+        }
+    }
+
+    private void Delete(MemoryItem item)
+    {
+        MemoryService.DeleteFact(item.Id);
+        _pinned.Remove(item);
+        _searchable.Remove(item);
+        _statusText = "Deleted.";
+    }
+}

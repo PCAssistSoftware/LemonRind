@@ -1,0 +1,510 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:LemonRindAvalonia.ViewModels"
+        xmlns:know="using:LemonRindAvalonia.Knowledge"
+        xmlns:avdc="using:Avalonia.Data.Converters"
+        xmlns:conv="using:LemonRindAvalonia.Converters"
+        xmlns:sys="using:System"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="960" d:DesignHeight="680"
+        x:Class="LemonRindAvalonia.Views.SettingsWindow"
+        x:DataType="vm:SettingsViewModel"
+        Width="960" Height="680"
+        WindowStartupLocation="CenterOwner"
+        Icon="/Assets/AppIcon.ico" Background="{DynamicResource PaneBg}" Title="Settings">
+
+    <!-- Left-nav + content layout, as in the WPF app's Settings screen. Each section's
+         panel binds its own IsVisible to {Binding SelectedSection} via
+         SectionVisibilityConverter + a ConverterParameter naming that
+         section, so only one shows at a time; Save/Restart stay outside the
+         per-section panels, always visible regardless of which one is
+         selected. -->
+    <Window.Styles>
+        <Style Selector="ListBox.settings-nav ListBoxItem">
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="12,9" />
+            <Setter Property="Margin" Value="0,1" />
+        </Style>
+        <Style Selector="ListBox.settings-nav ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource PaneHover}" />
+        </Style>
+        <Style Selector="ListBox.settings-nav ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource CardBg}" />
+            <Setter Property="FontWeight" Value="Bold" />
+        </Style>
+    </Window.Styles>
+
+    <Grid ColumnDefinitions="200,*">
+
+        <ListBox Grid.Column="0"
+                  Classes="settings-nav"
+                  ItemsSource="{Binding Sections}"
+                  SelectedItem="{Binding SelectedSection}"
+                  Background="Transparent"
+                  Margin="10,12,0,12"
+                  BorderThickness="0" />
+
+        <Grid Grid.Column="1" RowDefinitions="*,Auto">
+            <Border Grid.Row="0" Margin="12,12,12,0" CornerRadius="12" Background="{DynamicResource CardBg}"
+                    BorderBrush="{DynamicResource BorderBrushLight}" BorderThickness="1" ClipToBounds="True">
+            <ScrollViewer Padding="22,18">
+                <StackPanel Spacing="4">
+
+                    <StackPanel Spacing="4" IsVisible="{Binding SelectedSection, Converter={x:Static conv:SectionVisibilityConverter.Instance}, ConverterParameter=Lemonade}">
+                        <TextBlock Text="Lemonade" FontWeight="Bold" FontSize="15" Margin="0,0,0,4" />
+                        <TextBlock Text="Base URL" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <TextBox Text="{Binding LemonadeBaseUrl}" Margin="0,0,0,8" />
+                        <TextBlock Text="Chat model" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <TextBox Text="{Binding LemonadeChatModel}" Margin="0,0,0,8" />
+                        <TextBlock Text="Embedding model" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <TextBox Text="{Binding LemonadeEmbeddingModel}" Margin="0,0,0,8" />
+                        <TextBlock Text="API key (optional)" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <TextBox Text="{Binding LemonadeApiKey}" PasswordChar="•" Margin="0,0,0,8" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="4" IsVisible="{Binding SelectedSection, Converter={x:Static conv:SectionVisibilityConverter.Instance}, ConverterParameter='Web search'}">
+                        <TextBlock Text="Web search" FontWeight="Bold" FontSize="15" Margin="0,0,0,4" />
+                        <Border IsVisible="{Binding WebSearchModuleToggle.IsEnabled, Converter={x:Static avdc:BoolConverters.Not}}" Background="{DynamicResource ChipWarnBg}" BorderBrush="{DynamicResource Warning}" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,0,0,4">
+                            <TextBlock Text="This module is currently disabled - see Modules to enable it. This section still works either way." TextWrapping="Wrap" FontSize="12" />
+                        </Border>
+                        <!-- search_web/read_webpage stay fixed,
+                             stable tool names the model always sees; which
+                             backend actually answers them is this one
+                             swappable choice, shared by both tools.
+                             Shown first, above SearXNG's own URL
+                             field, since it's the setting that decides
+                             whether that field (or any of the API keys
+                             below) is even relevant right now. -->
+                        <TextBlock Text="Engine" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <ComboBox ItemsSource="{Binding EngineOptions}" SelectedItem="{Binding Engine}" HorizontalAlignment="Stretch" Margin="0,0,0,8" />
+
+                        <TextBlock Text="SearXNG base URL" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <TextBox Text="{Binding SearXngBaseUrl}" Margin="0,0,0,8" />
+
+                        <TextBlock Text="Jina API key (optional - Reader works without one at a lower rate, Search requires one)" Foreground="{DynamicResource TextMuted}" FontSize="12" TextWrapping="Wrap" />
+                        <TextBox Text="{Binding JinaApiKey}" PasswordChar="•" Margin="0,0,0,8" />
+
+                        <TextBlock Text="Tavily API key" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <TextBox Text="{Binding TavilyApiKey}" PasswordChar="•" Margin="0,0,0,8" />
+
+                        <TextBlock Text="Firecrawl API key" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <TextBlock Text="Also enables the crawl_website tool (multi-page site crawl), regardless of which Engine is selected above." Foreground="{DynamicResource TextMuted}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,2" />
+                        <TextBox Text="{Binding FirecrawlApiKey}" PasswordChar="•" Margin="0,0,0,8" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="4" IsVisible="{Binding SelectedSection, Converter={x:Static conv:SectionVisibilityConverter.Instance}, ConverterParameter='File system access'}">
+                        <TextBlock Text="File system access" FontWeight="Bold" FontSize="15" Margin="0,0,0,4" />
+                        <Border IsVisible="{Binding FileSystemModuleToggle.IsEnabled, Converter={x:Static avdc:BoolConverters.Not}}" Background="{DynamicResource ChipWarnBg}" BorderBrush="{DynamicResource Warning}" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,0,0,4">
+                            <TextBlock Text="This module is currently disabled - see Modules to enable it. This section still works either way." TextWrapping="Wrap" FontSize="12" />
+                        </Border>
+                        <TextBlock Text="Allowed folders (one per line)" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <TextBox Text="{Binding AllowedRootsText}" AcceptsReturn="True" Height="70" TextWrapping="Wrap" Margin="0,0,0,8" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="4" IsVisible="{Binding SelectedSection, Converter={x:Static conv:SectionVisibilityConverter.Instance}, ConverterParameter=Memory}">
+                        <TextBlock Text="Memory" FontWeight="Bold" FontSize="15" Margin="0,0,0,4" />
+                        <TextBlock Text="{Binding CompactionTriggerPercent, StringFormat='Compact conversation history once past {0:0}% of context'}" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <Slider Minimum="10" Maximum="95" TickFrequency="5" Value="{Binding CompactionTriggerPercent}" Margin="0,0,0,16" />
+
+                        <!-- Memories review screen - what the assistant has
+                             learned about the user over time
+                             (MemoryService.ExtractAndSaveFactsAsync, running
+                             silently after every reply). Plain DB rows, not
+                             appsettings.json fields, so edit/delete take
+                             effect immediately - no Save/restart needed for
+                             anything here, same as Knowledge Bases. -->
+                        <TextBlock Text="What the assistant has learned about you over time. Edit or delete anything wrong or no longer relevant."
+                                   Foreground="{DynamicResource TextMuted}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8" />
+
+                        <TextBlock Text="Pinned facts (always included)" FontWeight="Bold" Margin="0,0,0,6" />
+                        <ItemsControl ItemsSource="{Binding PinnedMemories}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:MemoryItemViewModel">
+                                    <Border BorderBrush="{DynamicResource BorderBrushLight}" BorderThickness="0,0,0,1" Padding="0,8">
+                                        <Grid ColumnDefinitions="*,Auto,Auto">
+                                            <TextBox Grid.Column="0" Text="{Binding Content}" TextWrapping="Wrap" AcceptsReturn="True" Padding="6" VerticalAlignment="Center" />
+                                            <Button Classes="primary" Grid.Column="1" Content="Save" Padding="10,6" Margin="6,0,0,0"
+                                                    Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).SaveMemoryEditCommand}"
+                                                    CommandParameter="{Binding}" />
+                                            <Button Grid.Column="2" Content="Delete" Padding="10,6" Margin="6,0,0,0"
+                                                    Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).DeleteMemoryCommand}"
+                                                    CommandParameter="{Binding}" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="No pinned facts yet." Foreground="{DynamicResource TextMuted}" FontStyle="Italic" Margin="0,4,0,0"
+                                   IsVisible="{Binding !HasPinnedMemories}" />
+
+                        <TextBlock Text="Other memories (used when relevant)" FontWeight="Bold" Margin="16,0,0,6" />
+                        <ItemsControl ItemsSource="{Binding SearchableMemories}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:MemoryItemViewModel">
+                                    <Border BorderBrush="{DynamicResource BorderBrushLight}" BorderThickness="0,0,0,1" Padding="0,8">
+                                        <Grid ColumnDefinitions="*,Auto,Auto">
+                                            <TextBox Grid.Column="0" Text="{Binding Content}" TextWrapping="Wrap" AcceptsReturn="True" Padding="6" VerticalAlignment="Center" />
+                                            <Button Classes="primary" Grid.Column="1" Content="Save" Padding="10,6" Margin="6,0,0,0"
+                                                    Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).SaveMemoryEditCommand}"
+                                                    CommandParameter="{Binding}" />
+                                            <Button Grid.Column="2" Content="Delete" Padding="10,6" Margin="6,0,0,0"
+                                                    Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).DeleteMemoryCommand}"
+                                                    CommandParameter="{Binding}" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="No other memories yet." Foreground="{DynamicResource TextMuted}" FontStyle="Italic" Margin="0,4,0,0"
+                                   IsVisible="{Binding !HasSearchableMemories}" />
+
+                        <TextBlock Text="{Binding MemoriesStatusText}" Foreground="{DynamicResource TextMuted}" Margin="0,12,0,8" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="4" IsVisible="{Binding SelectedSection, Converter={x:Static conv:SectionVisibilityConverter.Instance}, ConverterParameter=Assistant}">
+                        <TextBlock Text="Assistant" FontWeight="Bold" FontSize="15" Margin="0,0,0,4" />
+                        <TextBlock Text="System prompt" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <TextBox Text="{Binding SystemPrompt}" AcceptsReturn="True" Height="70" TextWrapping="Wrap" Margin="0,0,0,8" />
+                    </StackPanel>
+
+                    <!-- Persona. Settings-authored only, not
+                         AI-self-editable via a tool (a possible future
+                         option, not a closed door - see AppSettings.
+                         PersonaSettings). Everything here is optional - a
+                         blank field costs nothing in prompt size. -->
+                    <StackPanel Spacing="4" IsVisible="{Binding SelectedSection, Converter={x:Static conv:SectionVisibilityConverter.Instance}, ConverterParameter=Persona}">
+                        <TextBlock Text="Persona" FontWeight="Bold" FontSize="15" Margin="0,0,0,4" />
+                        <TextBlock Text="Gives the assistant a consistent personality and a standing sense of who you are, so it doesn't feel like a stranger at the start of every chat. Everything here is optional - leave a field blank and it's left out of the prompt entirely, at no cost. Applies to new messages immediately, no restart needed."
+                                   Foreground="{DynamicResource TextMuted}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,10" />
+
+                        <TextBlock Text="Identity (who the assistant is)" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <TextBlock Text="A name and personality for the assistant, separate from the System prompt's operating instructions. E.g. &quot;You are Max, a dry-witted, practical assistant who prefers short, direct answers.&quot;"
+                                   Foreground="{DynamicResource TextMuted}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,2" />
+                        <TextBox Text="{Binding PersonaIdentity}" AcceptsReturn="True" Height="70" TextWrapping="Wrap" Margin="0,0,0,10" />
+
+                        <TextBlock Text="About you (who you are)" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <TextBlock Text="A short standing bio - your name, role, and anything the assistant should always know about you. Unlike Memories, this is always included, not just when something recent seems relevant to it."
+                                   Foreground="{DynamicResource TextMuted}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,2" />
+                        <TextBox Text="{Binding PersonaAboutUser}" AcceptsReturn="True" Height="70" TextWrapping="Wrap" Margin="0,0,0,10" />
+
+                        <TextBlock Text="Writing style" FontWeight="Bold" Margin="0,0,0,4" />
+                        <Grid ColumnDefinitions="*,12,*,12,*" Margin="0,0,0,10">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="Tone" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                                <ComboBox ItemsSource="{Binding PersonaToneOptions}" SelectedItem="{Binding PersonaTone}" Padding="6" HorizontalAlignment="Stretch" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="Verbosity" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                                <ComboBox ItemsSource="{Binding PersonaVerbosityOptions}" SelectedItem="{Binding PersonaVerbosity}" Padding="6" HorizontalAlignment="Stretch" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="4">
+                                <TextBlock Text="Emoji use" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                                <ComboBox ItemsSource="{Binding PersonaEmojiUsageOptions}" SelectedItem="{Binding PersonaEmojiUsage}" Padding="6" HorizontalAlignment="Stretch" />
+                            </StackPanel>
+                        </Grid>
+
+                        <TextBlock Text="Custom instructions (anything else)" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <TextBox Text="{Binding PersonaCustomInstructions}" AcceptsReturn="True" Height="60" TextWrapping="Wrap" Margin="0,0,0,8" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="4" IsVisible="{Binding SelectedSection, Converter={x:Static conv:SectionVisibilityConverter.Instance}, ConverterParameter=Interface}">
+                        <TextBlock Text="Interface" FontWeight="Bold" FontSize="15" Margin="0,0,0,4" />
+                        <TextBlock Text="Theme" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <ComboBox ItemsSource="{Binding ThemeOptions}" SelectedItem="{Binding Theme}" HorizontalAlignment="Left" MinWidth="180" Margin="0,0,0,8" />
+                        <CheckBox IsChecked="{Binding ThinkingPanelOpenByDefault}" Content="Thinking panel open by default" />
+                        <TextBlock Text="Expand a reply's reasoning panel automatically instead of starting collapsed. Applies to replies shown from now on - no restart needed."
+                                   Foreground="{DynamicResource TextMuted}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="4" IsVisible="{Binding SelectedSection, Converter={x:Static conv:SectionVisibilityConverter.Instance}, ConverterParameter=Storage}">
+                        <TextBlock Text="Storage" FontWeight="Bold" FontSize="15" Margin="0,0,0,4" />
+                        <TextBlock Text="Data folder (requires restart) - holds the database, generated/attached images, workspace files, and the settings file itself. Relative paths are resolved against the app's own folder."
+                                   Foreground="{DynamicResource TextMuted}" FontSize="12" TextWrapping="Wrap" />
+                        <TextBox Text="{Binding DataFolder}" Margin="0,0,0,8" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="4" IsVisible="{Binding SelectedSection, Converter={x:Static conv:SectionVisibilityConverter.Instance}, ConverterParameter=Modules}">
+                        <TextBlock Text="Modules" FontWeight="Bold" FontSize="15" Margin="0,0,0,4" />
+                        <ItemsControl ItemsSource="{Binding Modules}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:ModuleToggleItem">
+                                    <!-- Switch on the left, bold name over a muted description - every row lines up. -->
+                                    <Grid ColumnDefinitions="Auto,*" Margin="0,0,0,2">
+                                        <ToggleSwitch Grid.Column="0" IsChecked="{Binding IsEnabled}" OnContent="" OffContent="" VerticalAlignment="Top" Margin="0,2,12,0" />
+                                        <StackPanel Grid.Column="1" Spacing="2" Margin="0,8,0,12">
+                                            <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="14" />
+                                            <TextBlock Text="{Binding Description}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource TextMuted}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <!-- RAG. Plain DB rows, not appsettings.json fields, so
+                         create/delete/add-source all take effect immediately - no
+                         Save/restart needed for anything in this section. -->
+                    <StackPanel Spacing="4" IsVisible="{Binding SelectedSection, Converter={x:Static conv:SectionVisibilityConverter.Instance}, ConverterParameter='Knowledge Bases'}">
+                        <TextBlock Text="Knowledge Bases" FontWeight="Bold" FontSize="15" Margin="0,0,0,4" />
+                        <Border IsVisible="{Binding KnowledgeModuleToggle.IsEnabled, Converter={x:Static avdc:BoolConverters.Not}}" Background="{DynamicResource ChipWarnBg}" BorderBrush="{DynamicResource Warning}" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,0,0,4">
+                            <TextBlock Text="This module is currently disabled - see Modules to enable it. This section still works either way." TextWrapping="Wrap" FontSize="12" />
+                        </Border>
+                        <Border BorderBrush="{DynamicResource BorderBrushLight}" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,8">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="Create a new knowledge base" FontSize="12" Foreground="{DynamicResource TextMuted}" />
+                                <TextBox Text="{Binding NewKnowledgeBaseName}" PlaceholderText="Name" />
+                                <TextBox Text="{Binding NewKnowledgeBaseDescription}" PlaceholderText="Description (optional)" />
+                                <Button Classes="primary" Content="Create" Command="{Binding CreateKnowledgeBaseCommand}" HorizontalAlignment="Left" Padding="10,4" />
+                            </StackPanel>
+                        </Border>
+
+                        <ItemsControl ItemsSource="{Binding KnowledgeBaseCards}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:KnowledgeBaseCardViewModel">
+                                    <Border BorderBrush="{DynamicResource BorderBrushLight}" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,8">
+                                        <StackPanel Spacing="6">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="{Binding Name}" FontWeight="Bold" />
+                                                    <TextBlock Text="{Binding Description}" Foreground="{DynamicResource TextMuted}" FontSize="12" IsVisible="{Binding Description, Converter={x:Static avdc:StringConverters.IsNotNullOrEmpty}}" />
+                                                </StackPanel>
+                                                <Button Grid.Column="1" Content="Delete knowledge base" Command="{Binding DeleteCommand}" Padding="8,2" />
+                                            </Grid>
+
+                                            <ItemsControl ItemsSource="{Binding Sources}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="know:KnowledgeSource">
+                                                        <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,2">
+                                                            <TextBlock Grid.Column="0" Text="{Binding DisplayName}" ToolTip.Tip="{Binding ErrorMessage}" />
+                                                            <TextBlock Grid.Column="1" Text="{Binding Status}" Foreground="{DynamicResource TextMuted}" FontSize="11" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                                            <Button Grid.Column="2"
+                                                                    Content="✕"
+                                                                    Padding="4,0"
+                                                                    FontSize="11"
+                                                                    Command="{Binding $parent[ItemsControl].((vm:KnowledgeBaseCardViewModel)DataContext).DeleteSourceCommand}"
+                                                                    CommandParameter="{Binding}" />
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+
+                                            <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource TextMuted}" FontSize="11" IsVisible="{Binding StatusText, Converter={x:Static avdc:StringConverters.IsNotNullOrEmpty}}" />
+
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <Button Content="+ File" Click="OnAddFileSourceClick" IsEnabled="{Binding !IsBusy}" Padding="8,2" />
+                                                <Button Content="+ Folder" Click="OnAddFolderSourceClick" IsEnabled="{Binding !IsBusy}" Padding="8,2" />
+                                            </StackPanel>
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <TextBox Text="{Binding NewWebsiteUrl}" PlaceholderText="Website URL" Width="220" />
+                                                <Button Content="+ Website" Command="{Binding AddWebsiteSourceCommand}" IsEnabled="{Binding !IsBusy}" Padding="8,2" />
+                                            </StackPanel>
+                                            <StackPanel Spacing="4">
+                                                <TextBox Text="{Binding NewTextName}" PlaceholderText="Name for this text" />
+                                                <TextBox Text="{Binding NewTextContent}" PlaceholderText="Paste text here" AcceptsReturn="True" Height="50" TextWrapping="Wrap" />
+                                                <Button Content="+ Text" Command="{Binding AddTextSourceCommand}" IsEnabled="{Binding !IsBusy}" Padding="8,2" HorizontalAlignment="Left" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <!-- MCP. Same "plain DB rows, immediate write" shape as
+                         Knowledge Bases above; the module reconnects when Settings is
+                         saved (see McpModule). -->
+                    <StackPanel Spacing="4" IsVisible="{Binding SelectedSection, Converter={x:Static conv:SectionVisibilityConverter.Instance}, ConverterParameter='MCP Servers'}">
+                        <TextBlock Text="MCP Servers" FontWeight="Bold" FontSize="15" Margin="0,0,0,4" />
+                        <Border IsVisible="{Binding McpModuleToggle.IsEnabled, Converter={x:Static avdc:BoolConverters.Not}}" Background="{DynamicResource ChipWarnBg}" BorderBrush="{DynamicResource Warning}" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,0,0,4">
+                            <TextBlock Text="This module is currently disabled - see Modules to enable it. This section still works either way." TextWrapping="Wrap" FontSize="12" />
+                        </Border>
+                        <Border BorderBrush="{DynamicResource BorderBrushLight}" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,8">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="Paste a server's own {&quot;mcpServers&quot;: {...}} config (most MCP servers' docs give you this)" FontSize="12" Foreground="{DynamicResource TextMuted}" TextWrapping="Wrap" />
+                                <TextBox Text="{Binding PendingMcpServerConfigJson}" AcceptsReturn="True" Height="80" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12" />
+                                <Button Classes="primary" Content="Import" Command="{Binding ImportMcpServerConfigJsonCommand}" HorizontalAlignment="Left" Padding="10,4" />
+
+                                <TextBlock Text="Or add one manually" FontSize="12" Foreground="{DynamicResource TextMuted}" Margin="0,8,0,0" />
+                                <TextBox Text="{Binding NewMcpServerName}" PlaceholderText="Name" />
+                                <TextBox Text="{Binding NewMcpServerCommand}" PlaceholderText="Command (e.g. npx)" />
+                                <TextBox Text="{Binding NewMcpServerArguments}" PlaceholderText="Arguments, space-separated (e.g. -y @scope/server-mcp)" />
+                                <TextBox Text="{Binding NewMcpServerEnvironmentVariables}" PlaceholderText="Environment variables, one NAME=value per line" AcceptsReturn="True" Height="50" TextWrapping="Wrap" />
+                                <Button Classes="primary" Content="Add" Command="{Binding CreateMcpServerCommand}" HorizontalAlignment="Left" Padding="10,4" />
+
+                                <TextBlock Text="{Binding McpStatusText}" Foreground="{DynamicResource TextMuted}" FontSize="12" IsVisible="{Binding McpStatusText, Converter={x:Static avdc:StringConverters.IsNotNullOrEmpty}}" Margin="0,4,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <ItemsControl ItemsSource="{Binding McpServers}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:McpServerRowViewModel">
+                                    <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,2">
+                                        <CheckBox Grid.Column="0" IsChecked="{Binding IsEnabled}" />
+                                        <StackPanel Grid.Column="1" Margin="6,0,0,0">
+                                            <TextBlock Text="{Binding Name}" FontWeight="Bold" />
+                                            <TextBlock Text="{Binding Command}" Foreground="{DynamicResource TextMuted}" FontSize="11" />
+                                        </StackPanel>
+                                        <Button Grid.Column="2"
+                                                Content="✕"
+                                                Padding="4,0"
+                                                FontSize="11"
+                                                Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).DeleteMcpServerCommand}"
+                                                CommandParameter="{Binding}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <!-- Scheduler. Same "plain DB rows, immediate write"
+                         shape - added specifically so creating/testing a job
+                         doesn't depend on the model reliably calling schedule_job
+                         (it sometimes just narrates success instead). Includes a
+                         GUI Daily/Weekly/Monthly picker (as in the WPF app) -
+                         the builder ComboBoxes below just compute and overwrite
+                         NewJobCronExpressionText; picking "Custom" leaves that
+                         field free to type/edit raw cron syntax directly. -->
+                    <StackPanel Spacing="4" IsVisible="{Binding SelectedSection, Converter={x:Static conv:SectionVisibilityConverter.Instance}, ConverterParameter=Scheduler}">
+                        <TextBlock Text="Scheduler" FontWeight="Bold" FontSize="15" Margin="0,0,0,4" />
+                        <Border IsVisible="{Binding SchedulerModuleToggle.IsEnabled, Converter={x:Static avdc:BoolConverters.Not}}" Background="{DynamicResource ChipWarnBg}" BorderBrush="{DynamicResource Warning}" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,0,0,4">
+                            <TextBlock Text="This module is currently disabled - see Modules to enable it. This section still works either way." TextWrapping="Wrap" FontSize="12" />
+                        </Border>
+                        <Border BorderBrush="{DynamicResource BorderBrushLight}" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,8">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="New scheduled job" FontSize="12" Foreground="{DynamicResource TextMuted}" />
+                                <TextBox Text="{Binding NewJobName}" PlaceholderText="Name" />
+
+                                <TextBlock Text="Schedule" Foreground="{DynamicResource TextMuted}" FontSize="12" Margin="0,4,0,0" />
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <ComboBox ItemsSource="{Binding JobFrequencyOptions}" SelectedItem="{Binding JobFrequency}" MinWidth="130" />
+                                    <ComboBox ItemsSource="{Binding JobDayOfWeekOptions}" SelectedItem="{Binding JobDayOfWeek}" MinWidth="90"
+                                              IsVisible="{Binding JobFrequency, Converter={x:Static conv:SectionVisibilityConverter.Instance}, ConverterParameter=Weekly}" />
+                                    <ComboBox ItemsSource="{Binding JobDayOfMonthOptions}" SelectedItem="{Binding JobDayOfMonth}" MinWidth="60"
+                                              IsVisible="{Binding JobFrequency, Converter={x:Static conv:SectionVisibilityConverter.Instance}, ConverterParameter=Monthly}" />
+                                    <TextBlock Text="at" VerticalAlignment="Center" Foreground="{DynamicResource TextMuted}" />
+                                    <ComboBox ItemsSource="{Binding JobHourOptions}" SelectedItem="{Binding JobHour}" MinWidth="50">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate x:DataType="sys:Int32">
+                                                <TextBlock Text="{Binding StringFormat={}{0:00}}" />
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                    <TextBlock Text=":" VerticalAlignment="Center" />
+                                    <ComboBox ItemsSource="{Binding JobMinuteOptions}" SelectedItem="{Binding JobMinute}" MinWidth="50">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate x:DataType="sys:Int32">
+                                                <TextBlock Text="{Binding StringFormat={}{0:00}}" />
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </StackPanel>
+
+                                <TextBlock Text="Cron expression (auto-filled above, or type your own) - order is: minute hour day month weekday" Foreground="{DynamicResource TextMuted}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                <TextBox Text="{Binding NewJobCronExpressionText}" FontFamily="Consolas"
+                                         ToolTip.Tip="Field order: minute hour day month weekday. E.g. 50 19 * * * runs at 19:50 every day." />
+                                <TextBlock Text="Standard 5-field cron (minute hour day-of-month month day-of-week), interpreted in your local timezone." Foreground="{DynamicResource TextMuted}" FontSize="11" TextWrapping="Wrap" />
+                                <TextBox Text="{Binding NewJobPrompt}" PlaceholderText="Prompt to run through the assistant" AcceptsReturn="True" Height="60" TextWrapping="Wrap" />
+                                <ComboBox ItemsSource="{Binding SchedulerAvailableModels}" SelectedItem="{Binding NewJobModelId}" HorizontalAlignment="Left" MinWidth="200" />
+                                <Button Classes="primary" Content="Add" Command="{Binding CreateScheduledJobCommand}" HorizontalAlignment="Left" Padding="10,4" />
+
+                                <TextBlock Text="{Binding SchedulerStatusText}" Foreground="{DynamicResource TextMuted}" FontSize="12" IsVisible="{Binding SchedulerStatusText, Converter={x:Static avdc:StringConverters.IsNotNullOrEmpty}}" Margin="0,4,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <ItemsControl ItemsSource="{Binding ScheduledJobs}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:ScheduledJobRowViewModel">
+                                    <Border BorderBrush="{DynamicResource BorderBrushLight}" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,8">
+                                        <StackPanel Spacing="4">
+                                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                                <CheckBox Grid.Column="0" IsChecked="{Binding IsEnabled}" />
+                                                <TextBox Grid.Column="1" Text="{Binding Name}" Margin="6,0,6,0" FontWeight="Bold" />
+                                                <Button Grid.Column="2"
+                                                        Content="✕"
+                                                        Padding="4,0"
+                                                        FontSize="11"
+                                                        Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).DeleteScheduledJobCommand}"
+                                                        CommandParameter="{Binding}" />
+                                            </Grid>
+                                            <TextBox Text="{Binding CronExpressionText}" />
+                                            <TextBox Text="{Binding Prompt}" AcceptsReturn="True" Height="50" TextWrapping="Wrap" />
+                                            <ComboBox ItemsSource="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).SchedulerAvailableModels}" SelectedItem="{Binding ModelId}" HorizontalAlignment="Left" MinWidth="200" />
+                                            <TextBlock Text="{Binding LastRunDisplay, StringFormat='Last run: {0}'}" Foreground="{DynamicResource TextMuted}" FontSize="11" />
+                                            <TextBlock Text="{Binding NextRunDisplay, StringFormat='Next run: {0}'}" Foreground="{DynamicResource TextMuted}" FontSize="11" />
+                                            <Button Classes="primary" Content="Save changes"
+                                                    HorizontalAlignment="Left"
+                                                    Padding="8,2"
+                                                    Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).SaveScheduledJobEditCommand}"
+                                                    CommandParameter="{Binding}" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <StackPanel Spacing="4" IsVisible="{Binding SelectedSection, Converter={x:Static conv:SectionVisibilityConverter.Instance}, ConverterParameter='Image generation'}">
+                        <TextBlock Text="Image generation" FontWeight="Bold" FontSize="15" Margin="0,0,0,4" />
+                        <Border IsVisible="{Binding ImageGenModuleToggle.IsEnabled, Converter={x:Static avdc:BoolConverters.Not}}" Background="{DynamicResource ChipWarnBg}" BorderBrush="{DynamicResource Warning}" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,0,0,4">
+                            <TextBlock Text="This module is currently disabled - see Modules to enable it. This section still works either way." TextWrapping="Wrap" FontSize="12" />
+                        </Border>
+                        <TextBlock Text="Model" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <TextBox Text="{Binding ImageGenModelId}" Margin="0,0,0,8" />
+                        <Grid ColumnDefinitions="*,12,*" Margin="0,0,0,8">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="Default width" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                                <NumericUpDown Value="{Binding ImageGenDefaultWidth}" Minimum="64" Maximum="2048" Increment="64" FormatString="0" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="Default height" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                                <NumericUpDown Value="{Binding ImageGenDefaultHeight}" Minimum="64" Maximum="2048" Increment="64" FormatString="0" />
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock Text="Steps (refinement passes)" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <NumericUpDown Value="{Binding ImageGenSteps}" Minimum="1" Maximum="50" FormatString="0" Margin="0,0,0,8" />
+                        <TextBlock Text="CFG scale (how literally the prompt is followed)" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <NumericUpDown Value="{Binding ImageGenCfgScale}" Minimum="0" Maximum="20" Increment="0.5" Margin="0,0,0,8" />
+                        <TextBlock Text="Seed (-1 randomizes a new one each time)" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <NumericUpDown Value="{Binding ImageGenSeed}" Minimum="-1" Maximum="2147483647" FormatString="0" Margin="0,0,0,8" />
+                    </StackPanel>
+
+                    <!-- Auto-backup. Purely operational (no AI
+                         involvement), but gets a section here like every
+                         other module for the same reason it gets a
+                         Modules-tab toggle. -->
+                    <StackPanel Spacing="4" IsVisible="{Binding SelectedSection, Converter={x:Static conv:SectionVisibilityConverter.Instance}, ConverterParameter='Auto-backup'}">
+                        <TextBlock Text="Auto-backup" FontWeight="Bold" FontSize="15" Margin="0,0,0,4" />
+                        <Border IsVisible="{Binding BackupModuleToggle.IsEnabled, Converter={x:Static avdc:BoolConverters.Not}}" Background="{DynamicResource ChipWarnBg}" BorderBrush="{DynamicResource Warning}" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,0,0,4">
+                            <TextBlock Text="This module is currently disabled - see Modules to enable it. This section still works either way." TextWrapping="Wrap" FontSize="12" />
+                        </Border>
+                        <TextBlock Text="Periodically zips your whole data folder (database, generated/attached images, workspace files) to a separate folder as a safety net - no AI involvement. Checked a few times a day; a new backup is made once the interval below has passed."
+                                   Foreground="{DynamicResource TextMuted}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,10" />
+
+                        <TextBlock Text="Back up every (days)" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <NumericUpDown Value="{Binding BackupIntervalDays}" Minimum="1" Maximum="365" FormatString="0" Margin="0,0,0,8" />
+
+                        <TextBlock Text="Backup folder" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <TextBlock Text="Kept separate from your data folder on purpose - storing backups inside the folder being backed up would make each new backup include every previous one."
+                                   Foreground="{DynamicResource TextMuted}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4" />
+                        <TextBox Text="{Binding BackupFolder}" Margin="0,0,0,8" />
+
+                        <TextBlock Text="Keep this many recent backups" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <NumericUpDown Value="{Binding BackupKeepCount}" Minimum="1" Maximum="100" FormatString="0" Margin="0,0,0,8" />
+                    </StackPanel>
+
+                </StackPanel>
+            </ScrollViewer>
+            </Border>
+
+            <StackPanel Grid.Row="1" Spacing="6" Margin="14,10,14,14">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Classes="primary" Content="Save" Command="{Binding SaveCommand}" IsEnabled="{Binding !IsSaving}" Padding="22,9" />
+                    <Button Content="Restart now" Click="OnRestartClick" Padding="14,6" IsVisible="{Binding RestartNeeded}" />
+                </StackPanel>
+                <!-- Own row, wrapped - the restart-required message is long enough to overflow the window width sitting inline next to the buttons. -->
+                <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Foreground="{DynamicResource TextMuted}" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

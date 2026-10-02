@@ -1,0 +1,64 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:conv="using:LemonRindAvalonia.Converters"
+        xmlns:services="using:LemonRindAvalonia.Services"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="1300" d:DesignHeight="700"
+        x:Class="LemonRindAvalonia.Views.LogViewerWindow"
+        Icon="/Assets/AppIcon.ico" Title="Lemonade logs" Width="1300" Height="700" MinWidth="500" MinHeight="300"
+        WindowStartupLocation="CenterOwner" Background="{DynamicResource PaneBg}">
+
+    <Grid Margin="12" RowDefinitions="Auto,Auto,Auto,*">
+        <TextBlock Grid.Row="0" Name="StatusText" Text="Connecting..." Foreground="{DynamicResource TextMuted}" FontSize="12" Margin="0,0,0,8" />
+
+        <!-- View controls: filtering is only a view over the full (capped) list, so changing a filter never loses lines. -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,0,0,12">
+            <ComboBox Name="SeverityFilter" SelectedIndex="0" MinWidth="170" SelectionChanged="OnSeverityChanged">
+                <ComboBoxItem>All severities</ComboBoxItem>
+                <ComboBoxItem>Warnings and above</ComboBoxItem>
+                <ComboBoxItem>Errors only</ComboBoxItem>
+            </ComboBox>
+            <TextBox Name="TextFilter" PlaceholderText="Filter lines..." Width="260" TextChanged="OnTextFilterChanged" />
+            <Button Name="PauseButton" Click="OnPauseClick" ToolTip.Tip="Freeze the view while you read (new lines keep arriving in the background)" Content="Pause" />
+            <Button Click="OnCopyClick" ToolTip.Tip="Copy the lines currently shown" Content="Copy lines" />
+            <Button Click="OnClearClick" ToolTip.Tip="Clear the lines shown here (does not touch Lemonade's own log)" Content="Clear" />
+        </StackPanel>
+
+        <!-- Plain header row standing in for WPF's GridView column headers - Avalonia's base ListBox has no built-in multi-column header. -->
+        <Grid Grid.Row="2" ColumnDefinitions="200,70,130,*" Margin="4,0,4,4">
+            <TextBlock Grid.Column="0" Text="Time" FontWeight="Bold" FontSize="11" Foreground="{DynamicResource TextMuted}" />
+            <TextBlock Grid.Column="1" Text="Severity" FontWeight="Bold" FontSize="11" Foreground="{DynamicResource TextMuted}" />
+            <TextBlock Grid.Column="2" Text="Tag" FontWeight="Bold" FontSize="11" Foreground="{DynamicResource TextMuted}" />
+            <TextBlock Grid.Column="3" Text="Line" FontWeight="Bold" FontSize="11" Foreground="{DynamicResource TextMuted}" />
+        </Grid>
+
+        <!-- A plain ListBox (Avalonia virtualizes its items panel by
+             default, matching WPF's own ListView virtualization) rather
+             than a DataGrid dependency - this app's whole point is staying
+             lean, and four bound columns in a Grid do the job without a
+             new package. -->
+        <ListBox Grid.Row="3"
+                 Name="LogListBox"
+                 FontFamily="Consolas"
+                 FontSize="12"
+                 Background="#14161B" CornerRadius="8" Padding="6"
+                 SelectionMode="Multiple"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListBox.Styles>
+                <Style Selector="ListBoxItem"><Setter Property="Padding" Value="6,1" /><Setter Property="MinHeight" Value="0" /></Style>
+            </ListBox.Styles>
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="services:LemonadeLogEntry">
+                    <Grid ColumnDefinitions="200,70,130,*"
+                          Background="{Binding Severity, Converter={x:Static conv:SeverityToBackgroundConverter.Instance}}">
+                        <TextBlock Grid.Column="0" Text="{Binding Timestamp}" Foreground="{Binding Severity, Converter={x:Static conv:SeverityToForegroundConverter.Instance}}" FontWeight="{Binding Severity, Converter={x:Static conv:SeverityToFontWeightConverter.Instance}}" />
+                        <TextBlock Grid.Column="1" Text="{Binding Severity}" Foreground="{Binding Severity, Converter={x:Static conv:SeverityToForegroundConverter.Instance}}" FontWeight="{Binding Severity, Converter={x:Static conv:SeverityToFontWeightConverter.Instance}}" />
+                        <TextBlock Grid.Column="2" Text="{Binding Tag}" Foreground="{Binding Severity, Converter={x:Static conv:SeverityToForegroundConverter.Instance}}" FontWeight="{Binding Severity, Converter={x:Static conv:SeverityToFontWeightConverter.Instance}}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Grid.Column="3" Text="{Binding Line}" Foreground="{Binding Severity, Converter={x:Static conv:SeverityToForegroundConverter.Instance}}" FontWeight="{Binding Severity, Converter={x:Static conv:SeverityToFontWeightConverter.Instance}}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </Grid>
+</Window>

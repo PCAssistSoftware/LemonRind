@@ -1,0 +1,252 @@
+@using Cronos
+@using LemonRindBlazor.Scheduler
+@using LemonRindBlazor.Services
+@inject SchedulerRepository Repository
+@inject LemonadeManagementClient ManagementClient
+
+<div class="scheduler-page">
+    <p class="scheduler-intro">
+        Runs a saved prompt through the assistant (with full tool access - web search, files, MCP, etc.) on a
+        recurring cron schedule, e.g. <code>0 19 * * 5</code> for 7pm every Friday, interpreted in your own
+        local timezone. Jobs can also be created just by asking the assistant in chat
+        ("remind me every Monday at 9am to...") - this page and chat both manage the same underlying jobs.
+    </p>
+
+    <div class="add-box">
+        <input @bind="_newName" placeholder="Name" />
+        <div class="cron-builder-row">
+            <select @bind="_jobFrequency" @bind:after="RebuildCronFromBuilder">
+                <option value="Daily">Daily</option>
+                <option value="Weekly">Weekly</option>
+                <option value="Monthly">Monthly</option>
+                <option value="Custom">Custom</option>
+            </select>
+            @if (_jobFrequency == "Weekly")
+            {
+                <select @bind="_jobDayOfWeek" @bind:after="RebuildCronFromBuilder">
+                    @foreach (var day in Enum.GetValues<DayOfWeek>())
+                    {
+                        <option value="@day">@day</option>
+                    }
+                </select>
+            }
+            else if (_jobFrequency == "Monthly")
+            {
+                <select @bind="_jobDayOfMonth" @bind:after="RebuildCronFromBuilder">
+                    @for (var d = 1; d <= 31; d++)
+                    {
+                        <option value="@d">@d</option>
+                    }
+                </select>
+            }
+            @if (_jobFrequency != "Custom")
+            {
+                <span>at</span>
+                <select @bind="_jobHour" @bind:after="RebuildCronFromBuilder">
+                    @for (var h = 0; h < 24; h++)
+                    {
+                        <option value="@h">@h.ToString("00")</option>
+                    }
+                </select>
+                <span>:</span>
+                <select @bind="_jobMinute" @bind:after="RebuildCronFromBuilder">
+                    @foreach (var m in FiveMinuteSteps)
+                    {
+                        <option value="@m">@m.ToString("00")</option>
+                    }
+                </select>
+            }
+        </div>
+        <input @bind="_newCron" placeholder="Cron expression (e.g. 0 19 * * 5 for 7pm every Friday)" />
+        <textarea @bind="_newPrompt" placeholder="Prompt to run" rows="2"></textarea>
+        <select @bind="_newModelId">
+            <option value="">(use whatever model is currently selected)</option>
+            @foreach (var model in _availableModels)
+            {
+                <option value="@model">@model</option>
+            }
+        </select>
+        <button class="btn-primary" @onclick="CreateJob" disabled="@(string.IsNullOrWhiteSpace(_newName) || string.IsNullOrWhiteSpace(_newCron) || string.IsNullOrWhiteSpace(_newPrompt))">Add</button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_statusText))
+    {
+        <div class="scheduler-status">@_statusText</div>
+    }
+
+    <div class="job-list">
+        @foreach (var job in _jobs)
+        {
+            var edit = _edits[job.Id];
+            <div class="job-row">
+                <div class="job-main">
+                    <input type="checkbox" checked="@job.IsEnabled" @onchange="e => ToggleJob(job, (bool)e.Value!)" />
+                    <input class="job-edit-name" @bind="edit.Name" />
+                    <button class="job-delete" @onclick="() => DeleteJob(job.Id)">Delete</button>
+                </div>
+                <input class="job-edit-cron" @bind="edit.Cron" title="Field order: minute hour day month weekday. E.g. 50 19 * * * runs at 19:50 every day." />
+                <textarea class="job-edit-prompt" @bind="edit.Prompt" rows="2"></textarea>
+                <select @bind="edit.ModelId">
+                    <option value="">(use whatever model is currently selected)</option>
+                    @foreach (var model in _availableModels)
+                    {
+                        <option value="@model">@model</option>
+                    }
+                </select>
+                <div class="job-times">
+                    <span>Last run: @(job.LastRunAt.HasValue ? job.LastRunAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm") : "Never run")</span>
+                    <span>Next run: @(job.NextRunAt.HasValue ? job.NextRunAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm") : "Never (invalid schedule)")</span>
+                </div>
+                <button class="job-save btn-primary" @onclick="() => SaveJobEdit(job)">Save changes</button>
+            </div>
+        }
+        @if (_jobs.Count == 0)
+        {
+            <p class="no-jobs">No scheduled jobs yet.</p>
+        }
+    </div>
+</div>
+
+@code {
+    // A management UI alongside the chat-tool interface
+    // (schedule_job/list_scheduled_jobs/cancel_scheduled_job), "UI AND chat,
+    // same underlying data" rather than replacing one with the other.
+        private List<ScheduledJob> _jobs = [];
+    private List<string> _availableModels = [];
+    private string _newName = "";
+    private string _newCron = "";
+    private string _newPrompt = "";
+    private string _newModelId = "";
+    private string _statusText = "";
+
+    // GUI cron builder (as in the WPF app). Daily/Weekly/Monthly compute the cron string for you;
+    // "Custom" leaves _newCron fully free-typed (RebuildCronFromBuilder
+    // becomes a no-op), so a schedule the builder can't express is still
+    // fully editable in the same field.
+    private string _jobFrequency = "Daily";
+    private DayOfWeek _jobDayOfWeek = DayOfWeek.Monday;
+    private int _jobDayOfMonth = 1;
+    private int _jobHour = 9;
+    private int _jobMinute = 0;
+    private static readonly int[] FiveMinuteSteps = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+
+    protected override async Task OnInitializedAsync()
+    {
+        RefreshJobs();
+        var models = await ManagementClient.ListDownloadedModelsAsync(CancellationToken.None);
+        _availableModels = models.Select(m => m.Id).ToList();
+        RebuildCronFromBuilder();
+    }
+
+    /// <summary>Computes the standard 5-field cron string from whichever builder fields are relevant to the selected frequency - a no-op while "Custom" is selected.</summary>
+    private void RebuildCronFromBuilder()
+    {
+        _newCron = _jobFrequency switch
+        {
+            "Daily" => $"{_jobMinute} {_jobHour} * * *",
+            "Weekly" => $"{_jobMinute} {_jobHour} * * {(int)_jobDayOfWeek}",
+            "Monthly" => $"{_jobMinute} {_jobHour} {_jobDayOfMonth} * *",
+            _ => _newCron,
+        };
+    }
+
+    // Per-job editable copies - the row's Name/cron/prompt/model fields bind
+    // to these, and only "Save changes" writes them back (same as Avalonia).
+    private class JobEdit
+    {
+        public string Name { get; set; } = "";
+        public string Cron { get; set; } = "";
+        public string Prompt { get; set; } = "";
+        public string ModelId { get; set; } = "";
+    }
+
+    private readonly Dictionary<string, JobEdit> _edits = [];
+
+    private void RefreshJobs()
+    {
+        _jobs = Repository.ListJobs();
+        _edits.Clear();
+        foreach (var job in _jobs)
+        {
+            _edits[job.Id] = new JobEdit { Name = job.Name, Cron = job.CronExpression, Prompt = job.Prompt, ModelId = job.ModelId ?? "" };
+        }
+    }
+
+    private void SaveJobEdit(ScheduledJob job)
+    {
+        var edit = _edits[job.Id];
+        if (string.IsNullOrWhiteSpace(edit.Name) || string.IsNullOrWhiteSpace(edit.Cron) || string.IsNullOrWhiteSpace(edit.Prompt)) return;
+
+        try
+        {
+            // Re-parse (and recompute NextRunAt) against the LOCAL timezone,
+            // same as creating a job - not a formality.
+            var parsed = CronExpression.Parse(edit.Cron.Trim());
+            var nextRunAt = parsed.GetNextOccurrence(DateTime.UtcNow, TimeZoneInfo.Local, inclusive: false);
+            Repository.UpdateJob(job.Id, edit.Name.Trim(), edit.Cron.Trim(), edit.Prompt.Trim(), nextRunAt, string.IsNullOrEmpty(edit.ModelId) ? null : edit.ModelId);
+            RefreshJobs();
+            _statusText = "Saved.";
+        }
+        catch (Exception ex)
+        {
+            _statusText = $"Invalid cron expression: {ex.Message}";
+        }
+    }
+
+    private void CreateJob()
+    {
+        if (string.IsNullOrWhiteSpace(_newName) || string.IsNullOrWhiteSpace(_newCron) || string.IsNullOrWhiteSpace(_newPrompt)) return;
+
+        try
+        {
+            var parsed = CronExpression.Parse(_newCron.Trim());
+            var nextRunAt = parsed.GetNextOccurrence(DateTime.UtcNow, TimeZoneInfo.Local, inclusive: false);
+            Repository.CreateJob(_newName.Trim(), _newCron.Trim(), _newPrompt.Trim(), nextRunAt, string.IsNullOrEmpty(_newModelId) ? null : _newModelId);
+
+            _newName = "";
+            _newPrompt = "";
+            _newModelId = "";
+            // Resets the builder back to its own "Daily 09:00" default and
+            // recomputes _newCron from it, rather than leaving the cron
+            // field blank/stale - the form is immediately ready for the
+            // next job, matching RebuildCronFromBuilder's own doc comment.
+            _jobFrequency = "Daily";
+            _jobHour = 9;
+            _jobMinute = 0;
+            RebuildCronFromBuilder();
+            RefreshJobs();
+            _statusText = nextRunAt.HasValue
+                ? $"Added - next run at {nextRunAt.Value.ToLocalTime():dd/MM/yyyy HH:mm} (your local time)."
+                : "Added, but that cron expression has no future occurrence - it will never actually run. Double-check it.";
+        }
+        catch (Exception ex)
+        {
+            _statusText = $"Couldn't schedule that: {ex.Message}. Use a standard 5-field cron expression, e.g. '0 19 * * 5' for 7pm every Friday, interpreted in your own local timezone.";
+        }
+    }
+
+    private void ToggleJob(ScheduledJob job, bool isEnabled)
+    {
+        if (isEnabled)
+        {
+            // Recompute NextRunAt from now rather than leaving whatever stale
+            // value was stored from before it was disabled - otherwise a job
+            // left off for a while would fire immediately on the next poll
+            // tick (NextRunAt <= now) instead of at its next real occurrence.
+            var parsed = CronExpression.Parse(job.CronExpression);
+            var nextRunAt = parsed.GetNextOccurrence(DateTime.UtcNow, TimeZoneInfo.Local, inclusive: false);
+            Repository.UpdateJob(job.Id, job.Name, job.CronExpression, job.Prompt, nextRunAt, job.ModelId);
+        }
+        Repository.SetEnabled(job.Id, isEnabled);
+        RefreshJobs();
+        _statusText = isEnabled ? $"{job.Name} enabled." : $"{job.Name} disabled.";
+    }
+
+    private void DeleteJob(string id)
+    {
+        var job = _jobs.FirstOrDefault(j => j.Id == id);
+        Repository.DeleteJob(id);
+        RefreshJobs();
+        _statusText = job is not null ? $"Deleted \"{job.Name}\"." : "Deleted.";
+    }
+}

@@ -1,0 +1,962 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:LemonRindAvalonia.ViewModels"
+        xmlns:conv="using:LemonRindAvalonia.Converters"
+        xmlns:ctl="using:LemonRindAvalonia.Controls"
+        xmlns:know="using:LemonRindAvalonia.Knowledge"
+        xmlns:avdc="using:Avalonia.Data.Converters"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="1100" d:DesignHeight="650"
+        x:Class="LemonRindAvalonia.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Icon="/Assets/AppIcon.ico"
+        Width="1580" Height="750"
+        Background="{DynamicResource ChatBg}"
+        Title="Lemon Rind (Avalonia test)">
+
+    <Window.Styles>
+        <!-- Chat bubbles: grey for the assistant, blue for the user, text colour follows the bubble (theme-aware via the
+             palette in App.axaml - replaces the old fixed-colour converters). -->
+        <Style Selector="Border.bubble">
+            <Setter Property="Background" Value="{DynamicResource AssistantBubbleBg}" />
+        </Style>
+        <Style Selector="Border.bubble.user">
+            <Setter Property="Background" Value="{DynamicResource UserBubbleBg}" />
+        </Style>
+        <Style Selector="Border.bubble TextBox.bubble-text, Border.bubble ContentControl.bubble-md">
+            <Setter Property="Foreground" Value="{DynamicResource AssistantBubbleFg}" />
+        </Style>
+        <Style Selector="Border.bubble.user TextBox.bubble-text, Border.bubble.user ContentControl.bubble-md">
+            <Setter Property="Foreground" Value="{DynamicResource UserBubbleFg}" />
+        </Style>
+        <Style Selector="ListBox.sidebar-list ListBoxItem">
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="8,6" />
+        </Style>
+        <Style Selector="ListBox.sidebar-list ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource PaneHover}" />
+        </Style>
+        <Style Selector="ListBox.sidebar-list ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource PaneSelected}" />
+        </Style>
+        <Style Selector="ListBox.sidebar-list ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource PaneSelected}" />
+        </Style>
+        <!-- "Thinking": a quiet pill-style header instead of the default heavy boxed Expander header. -->
+        <Style Selector="Expander.thinking">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="Expander.thinking /template/ ToggleButton#ExpanderHeader">
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Padding" Value="10,3" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
+        </Style>
+        <Style Selector="Expander.thinking /template/ ToggleButton#ExpanderHeader:not(:pointerover) /template/ Border#ToggleButtonBackground">
+            <Setter Property="Background" Value="{DynamicResource Surface3}" />
+        </Style>
+        <Style Selector="Expander.thinking /template/ Border#ExpanderContent">
+            <Setter Property="BorderThickness" Value="2,0,0,0" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderStrong}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Margin" Value="6,6,0,0" />
+            <Setter Property="Padding" Value="10,2,0,2" />
+        </Style>
+        <Style Selector="TextBlock.model-header">
+            <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
+        </Style>
+
+        <!-- A message bubble's TextBox (used purely so its text is
+             selectable/copyable, see the ItemTemplate below) shouldn't look
+             like an input control at all - the Fluent theme draws its own
+             focus outline/border around a TextBox's whole template the
+             moment it's clicked to select text, regardless of the
+             BorderThickness="0" set directly on the element, since that
+             outline lives on the template's own border part, not the
+             plain property. Overriding it here for every pseudo-state
+             (focus/pointer-over/pressed) is what actually keeps the bubble
+             looking like plain text once the user starts selecting from it. -->
+        <Style Selector="TextBox.bubble-text">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="CornerRadius" Value="0" />
+        </Style>
+        <Style Selector="TextBox.bubble-text:focus /template/ Border#PART_BorderElement">
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="TextBox.bubble-text:pointerover /template/ Border#PART_BorderElement">
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="TextBox.bubble-text:focus-within /template/ Border#PART_BorderElement">
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+    </Window.Styles>
+
+    <!-- One shared chip template for a tool call's real outcome,
+         referenced by both the per-bubble ToolCalls list and the right
+         panel's RightPanelToolCalls list below, rather than duplicating the
+         same markup twice. -->
+    <Window.Resources>
+        <DataTemplate x:Key="ToolCallChipTemplate" x:DataType="vm:ToolCallResult">
+            <Border Background="{DynamicResource Surface3}"
+                    CornerRadius="8"
+                    Padding="6,2"
+                    Margin="0,0,4,4"
+                    ToolTip.Tip="{Binding ErrorMessage}">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <Ellipse Width="7" Height="7"
+                             VerticalAlignment="Center"
+                             Fill="{Binding Succeeded, Converter={x:Static conv:NullableBoolToStatusBrushConverter.Instance}}" />
+                    <TextBlock Text="{Binding Name}" FontSize="11" Foreground="{DynamicResource TextMuted}" VerticalAlignment="Center" />
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+    </Window.Resources>
+
+    <!-- Main window, ported from the VB.NET/WPF LemonRind app's
+         MainWindow.xaml. No
+         Design.DataContext: MainViewModel needs several DI dependencies -
+         see App.axaml.cs for how the real DataContext is set. -->
+    <Grid x:Name="RootGrid" ColumnDefinitions="340,5,*,5,280">
+
+        <!-- Sidebar -->
+        <Border Grid.Column="0" Background="{DynamicResource PaneBg}" />
+        <Grid Grid.Column="0" RowDefinitions="Auto,Auto,*,Auto" Margin="8">
+            <Button Grid.Row="0" Command="{Binding NewChatCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="10,12" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8">
+                <StackPanel Orientation="Horizontal" Spacing="9" HorizontalAlignment="Center"><ctl:Icon Kind="plus" Width="18" Height="18" /><TextBlock Text="New chat" VerticalAlignment="Center" /></StackPanel>
+            </Button>
+            <TextBox Grid.Row="1" Text="{Binding SearchText}" PlaceholderText="Search chats" Margin="0,0,0,8" />
+
+            <!-- SidebarItems is a flat mix of FolderHeaderSummary
+                 and ChatSessionSummary rows (see MainViewModel.
+                 RebuildSidebarItems) - no explicit ListBox.ItemTemplate here
+                 deliberately, so Avalonia picks the matching IMPLICIT
+                 DataTemplate below (one per type, keyed only by DataType,
+                 no x:Key) automatically per row. -->
+            <ListBox Grid.Row="2" Classes="sidebar-list" Background="Transparent" ItemsSource="{Binding SidebarItems}" SelectedItem="{Binding SelectedSidebarItem}">
+                <ListBox.DataTemplates>
+                    <DataTemplate x:DataType="vm:FolderHeaderSummary">
+                        <Button Command="{Binding ToggleExpandedCommand}"
+                                IsEnabled="{Binding IsCollapsible}"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Left"
+                                Padding="2,6">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="{Binding IsCollapsed, Converter={x:Static conv:BoolToChevronConverter.Instance}}"
+                                           FontSize="9"
+                                           IsVisible="{Binding IsCollapsible}"
+                                           VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource TextMuted}" />
+                            </StackPanel>
+                        </Button>
+                    </DataTemplate>
+
+                    <DataTemplate x:DataType="vm:ChatSessionSummary">
+                        <!-- Right-click context menu, replacing the original
+                             five always-visible icon buttons (Rename/Move/
+                             Tags/Export/Delete) - direct feedback that those
+                             Unicode-emoji glyphs rendered as unrecognizable
+                             "tofu" boxes with no font guaranteed to show them
+                             properly on both Windows and Linux, and that five
+                             of them squeezed into the sidebar were unreadable
+                             even widened. Plain text menu items carry no
+                             font-rendering risk at all. Confirmed this
+                             Avalonia version resolves $parent/DataContext
+                             bindings inside a ContextMenu back through its
+                             placement target's own visual tree.
+
+                             Set on this outer StackPanel (covering the whole
+                             tile - title row AND tag chips), not just the
+                             inner title Grid - attaching
+                             it to the narrower title-only Grid meant
+                             right-clicking anywhere else on the tile (blank
+                             space, the tags row) did nothing. Background=
+                             "Transparent" is required, not decorative -
+                             Avalonia doesn't hit-test a Panel's empty space
+                             at all without one, so right-clicks on blank
+                             area would fall through to the ListBox itself
+                             otherwise, same underlying reason as this app's
+                             other "invisible until it has a Background"
+                             hit-testing gotchas. -->
+                        <StackPanel Margin="0,2" Background="Transparent">
+                            <StackPanel.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Rename"
+                                              Command="{Binding $parent[ListBox].((vm:MainViewModel)DataContext).BeginRenameSessionCommand}"
+                                              CommandParameter="{Binding}">
+                                        <MenuItem.Icon><ctl:Icon Kind="pencil" Width="15" Height="15" /></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Move to folder..."
+                                              Command="{Binding $parent[ListBox].((vm:MainViewModel)DataContext).MoveToFolderCommand}"
+                                              CommandParameter="{Binding}">
+                                        <MenuItem.Icon><ctl:Icon Kind="folder" Width="15" Height="15" /></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="Manage tags..."
+                                              Command="{Binding $parent[ListBox].((vm:MainViewModel)DataContext).ManageTagsCommand}"
+                                              CommandParameter="{Binding}">
+                                        <MenuItem.Icon><ctl:Icon Kind="tag" Width="15" Height="15" /></MenuItem.Icon>
+                                    </MenuItem>
+                                    <!-- A code-behind Click handler, not a Command binding like the others: exporting needs Avalonia's own StorageProvider save-file dialog, which is View-side (no ViewModel-friendly equivalent). -->
+                                    <MenuItem Header="Export to Markdown..." Click="OnExportToMarkdownClick">
+                                        <MenuItem.Icon><ctl:Icon Kind="download" Width="15" Height="15" /></MenuItem.Icon>
+                                    </MenuItem>
+                                    <Separator />
+                                    <MenuItem Header="Delete"
+                                              Command="{Binding $parent[ListBox].((vm:MainViewModel)DataContext).DeleteSessionCommand}"
+                                              CommandParameter="{Binding}">
+                                        <MenuItem.Icon><ctl:Icon Kind="trash" Width="15" Height="15" /></MenuItem.Icon>
+                                    </MenuItem>
+                                </ContextMenu>
+                            </StackPanel.ContextMenu>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="{Binding Title}"
+                                           VerticalAlignment="Center"
+                                           FontWeight="Medium"
+                                           TextTrimming="CharacterEllipsis"
+                                           IsVisible="{Binding !IsEditingTitle}" />
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding RelativeTime}"
+                                           Margin="8,0,0,0"
+                                           VerticalAlignment="Center"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource TextFaint}"
+                                           ToolTip.Tip="{Binding UpdatedAt, StringFormat='{}{0:dd/MM/yyyy HH:mm}'}"
+                                           IsVisible="{Binding !IsEditingTitle}" />
+                                <TextBox Grid.ColumnSpan="2" Text="{Binding Title}"
+                                         BorderThickness="0"
+                                         Background="Transparent"
+                                         IsVisible="{Binding IsEditingTitle}"
+                                         LostFocus="OnSessionTitleLostFocus"
+                                         KeyDown="OnSessionTitleKeyDown" />
+                            </Grid>
+                            <ItemsControl ItemsSource="{Binding Tags}" IsVisible="{Binding HasTags}" Margin="0,2,0,0">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="x:String">
+                                        <Border Background="{DynamicResource Surface3}" CornerRadius="6" Padding="4,1" Margin="0,0,3,3">
+                                            <TextBlock Text="{Binding}" FontSize="9" Foreground="{DynamicResource TextMuted}" />
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.DataTemplates>
+            </ListBox>
+            <Button Grid.Row="3"
+                    Command="{Binding OpenSettingsCommand}"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Center"
+                    Padding="10,12"
+                    FontSize="14"
+                    Margin="0,8,0,0">
+                <StackPanel Orientation="Horizontal" Spacing="9" HorizontalAlignment="Center"><ctl:Icon Kind="settings" Width="18" Height="18" /><TextBlock Text="Settings" VerticalAlignment="Center" /></StackPanel>
+            </Button>
+        </Grid>
+
+        <!-- Chat area -->
+        <!-- Drag handles between the panes (the WPF app has these too). Widths are limited by the column
+             Min/Max set in code-behind and remembered in the settings file. -->
+        <GridSplitter Grid.Column="1" Width="5" Background="Transparent" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                      Cursor="SizeWestEast" DragCompleted="OnSplitterDragCompleted" />
+        <GridSplitter Grid.Column="3" Width="5" Background="Transparent" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                      Cursor="SizeWestEast" DragCompleted="OnSplitterDragCompleted" />
+
+        <Grid Grid.Column="2" RowDefinitions="Auto,*,Auto,Auto" Margin="12">
+
+            <!-- Header: model selector + context usage + stats + health dot.
+                 ContextUsageText is plain text; hovering it shows the
+                 detailed breakdown popup.
+
+                 Layout notes: (1) a FIXED-width column clips its content in Avalonia
+                 (unlike WPF's own Grid, which doesn't clip children to
+                 their cell by default) - "49 / 262,144 tokens (0%)" was
+                 wider than the 160px column, so "(0%)" was silently cut
+                 off. (2) removing the "*" column to fix that also removed
+                 the one thing pinning the health dot to the window's right
+                 edge - everything just clustered together starting from
+                 the left instead. So every text column is
+                 Auto (sized to its own real content, so nothing clips),
+                 and a dedicated "*" SPACER column (empty, no content of its
+                 own) does the job of pushing the model-status cluster to
+                 the right, instead of overloading one of the real content
+                 columns with that job. -->
+            <!-- StatsText (a plain one-line summary) removed from
+                 here now that the right panel's Stats tab shows the same
+                 numbers properly, split into Last-reply/Session sections -
+                 matching the real WPF app's own equivalent decision once its
+                 own right panel existed. -->
+            <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto,Auto" Margin="0,0,0,8">
+                <!-- A grouped dropdown
+                     (Chat/Image/Embedding/Other headers), replacing the
+                     original flat AvailableModels list. Avalonia has no
+                     WPF-style CollectionViewSource grouping, so
+                     GroupedAvailableModels is a pre-flattened list of
+                     ModelSelectorRow (header or model), and the header
+                     rows' own ComboBoxItem containers are disabled/non-
+                     hit-testable via the Style below - clicking one is a
+                     no-op, it can never become the actual selection. -->
+                <ComboBox Grid.Column="0"
+                          ItemsSource="{Binding GroupedAvailableModels}"
+                          SelectedItem="{Binding SelectedModelRow}"
+                          IsEnabled="{Binding !IsBusy}"
+                          HorizontalAlignment="Left"
+                          MinWidth="260">
+                    <ComboBox.Styles>
+                        <Style Selector="ComboBoxItem" x:DataType="vm:ModelSelectorRow">
+                            <Setter Property="IsEnabled" Value="{Binding !IsHeader}" />
+                            <Setter Property="IsHitTestVisible" Value="{Binding !IsHeader}" />
+                        </Style>
+                    </ComboBox.Styles>
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ModelSelectorRow">
+                            <TextBlock Text="{Binding DisplayText}"
+                                       Classes.model-header="{Binding IsHeader}"
+                                       FontWeight="{Binding IsHeader, Converter={x:Static conv:BoolToTabFontWeightConverter.Instance}}"
+                                       FontSize="{Binding IsHeader, Converter={x:Static conv:BoolToHeaderFontSizeConverter.Instance}}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <!-- Model details dialog (capabilities/context
+                     window/size/backend, plus real runtime launch arguments
+                     if this model is actually loaded right now). Greyed out
+                     via the same IsBusy bind as the dropdown itself - covers
+                     both "still loading" and "reply streaming". -->
+                <Button Grid.Column="1"
+                        Padding="8,7"
+                        Margin="6,0,0,0"
+                        ToolTip.Tip="Model details"
+                        IsEnabled="{Binding !IsBusy}"
+                        Command="{Binding OpenModelDetailsCommand}">
+                    <ctl:Icon Kind="info" Width="17" Height="17" />
+                </Button>
+                <!-- Grid.Column="2" is the "*" spacer - also where the model-
+                     loading indicator lives while a model switch is in flight
+                     (an indeterminate bar + elapsed seconds: Lemonade reports
+                     no real load progress, so nothing here is a guess). After
+                     a FAILED load the bar hides but the error text stays. -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" Margin="12,0,0,0">
+                    <ProgressBar IsIndeterminate="True" Width="90" Height="6" VerticalAlignment="Center"
+                                 IsVisible="{Binding IsModelLoading}" />
+                    <TextBlock Text="{Binding ModelLoadingText}" Foreground="{DynamicResource TextMuted}" FontSize="12" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <!-- A hoverable
+                     Border rather than a click target, since this is a
+                     glanceable hover detail, not something to navigate
+                     into. StaysOpen="True" so the Popup doesn't fight the
+                     manual PointerEntered/PointerExited-driven IsOpen. -->
+                <Border Grid.Column="3"
+                        Name="ContextUsageAnchor"
+                        Background="Transparent"
+                        Margin="0,0,12,0"
+                        PointerEntered="OnContextUsageAnchorPointerEntered"
+                        PointerExited="OnContextUsageAnchorPointerExited">
+                    <TextBlock Text="{Binding ContextUsageText}"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextMuted}" />
+                </Border>
+                <Popup Grid.Column="3"
+                       PlacementTarget="{Binding #ContextUsageAnchor}"
+                       Placement="Top"
+                       HorizontalOffset="-268"
+                       VerticalOffset="-8"
+                       IsLightDismissEnabled="False"
+                       IsOpen="{Binding IsContextBreakdownOpen, Mode=OneWay}">
+                    <Border Background="{DynamicResource CardBg}" BorderBrush="{DynamicResource BorderBrushLight}" BorderThickness="1" CornerRadius="8" Padding="12" Width="284"
+                            BoxShadow="0 2 12 0 #33000000">
+                        <StackPanel>
+                            <!-- The ONE total in this whole popup - genuinely
+                                 reported by Lemonade (GET /v1/stats after the
+                                 last completed turn), the exact same
+                                 ContextUsageCurrent/Max/Text the header
+                                 already shows. Nothing below is a second
+                                 competing total - "if you send now" is
+                                 deliberately an ADDITION on top of this,
+                                 never its own total (see ContextBreakdown's
+                                 own comment for why that matters). -->
+                            <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,4">
+                                <TextBlock Grid.Column="0" Text="Context now" FontWeight="Bold" FontSize="12" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource Accent}" VerticalAlignment="Center"
+                                           Text="{Binding ContextBreakdownInfo.PercentFull, StringFormat='{}{0}%'}" />
+                            </Grid>
+                            <TextBlock Text="{Binding ContextUsageText}" FontSize="11" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,4" />
+
+                            <TextBlock IsVisible="{Binding ContextBreakdownInfo.HasCompactions}"
+                                       Text="{Binding ContextBreakdownInfo.CompactionCount, StringFormat='compacted {0} time(s)'}"
+                                       FontSize="10" Foreground="{DynamicResource ChipWarnFg}" Margin="0,0,0,6"
+                                       ToolTip.Tip="Older messages were summarized away to save context space - the full conversation is still saved and visible, only what's sent to the model was trimmed." />
+
+                            <!-- Composition breakdown - widths sized against
+                                 the real max context window, NOT rescaled to
+                                 force these three parts to sum exactly to
+                                 the total above - a small gap between "sum
+                                 of these three" and the real total above is
+                                 expected (chat-template rendering overhead
+                                 this can't see) and just shows as extra free
+                                 space, never as a contradiction. -->
+                            <Grid Height="10" Margin="0,0,0,4">
+                                <StackPanel Orientation="Horizontal">
+                                    <Border Width="{Binding ContextBreakdownInfo.SystemPromptWidth}" Background="{DynamicResource Accent}" CornerRadius="4,0,0,4" />
+                                    <Border Width="{Binding ContextBreakdownInfo.ToolsWidth}" Background="{DynamicResource Success}" />
+                                    <Border Width="{Binding ContextBreakdownInfo.HistoryWidth}" Background="{DynamicResource ChartPurple}" />
+                                    <Border Width="{Binding ContextBreakdownInfo.FreeWidth}" Background="{DynamicResource Surface3}" CornerRadius="0,4,4,0" />
+                                </StackPanel>
+                                <!-- Canvas overlay just for the threshold
+                                     line - Canvas.Left takes a plain double
+                                     directly, no Thickness/converter needed
+                                     the way a Margin binding would. -->
+                                <Canvas>
+                                    <Rectangle Canvas.Left="{Binding ContextBreakdownInfo.CompactionThresholdLeft}"
+                                               Width="2" Height="10" Fill="{DynamicResource Danger}"
+                                               ToolTip.Tip="Where auto-compaction (summarizing older history) kicks in" />
+                                </Canvas>
+                            </Grid>
+                            <TextBlock Text="composition via Lemonade's real tokenizer" FontSize="9" FontStyle="Italic" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,8"
+                                       IsVisible="{Binding ContextBreakdownInfo.UsedRealTokenizer}" />
+                            <TextBlock Text="composition estimated - Lemonade's tokenizer wasn't reachable" FontSize="9" FontStyle="Italic" Foreground="{DynamicResource TextMuted}" Margin="0,0,0,8"
+                                       IsVisible="{Binding !ContextBreakdownInfo.UsedRealTokenizer}" />
+
+                            <!-- Legend rows - one per segment, skipping
+                                 "free" (it's only there to fill the bar,
+                                 nothing to label). -->
+                            <Grid ColumnDefinitions="10,*,Auto" Margin="0,0,0,3">
+                                <Border Grid.Column="0" Width="8" Height="8" Background="{DynamicResource Accent}" CornerRadius="4" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="system prompt" FontSize="11" Margin="6,0,0,0" />
+                                <TextBlock Grid.Column="2" FontSize="11" Foreground="{DynamicResource TextMuted}"
+                                           Text="{Binding ContextBreakdownInfo.SystemPromptTokens, StringFormat='{}{0:N0} tokens'}" />
+                            </Grid>
+                            <Grid ColumnDefinitions="10,*,Auto" Margin="0,0,0,3">
+                                <Border Grid.Column="0" Width="8" Height="8" Background="{DynamicResource Success}" CornerRadius="4" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="tools" FontSize="11" Margin="6,0,0,0"
+                                           ToolTip.Tip="Includes an estimated ~2,200-token tool-use framework overhead on top of the tool schemas themselves - a cost Qwen's chat template adds whenever tools are present that can't be measured directly, only estimated from repeated testing." />
+                                <TextBlock Grid.Column="2" FontSize="11" Foreground="{DynamicResource TextMuted}">
+                                    <TextBlock.Text>
+                                        <MultiBinding StringFormat="{}{0} active | {1:N0} tokens">
+                                            <Binding Path="ContextBreakdownInfo.ToolsActiveCount" />
+                                            <Binding Path="ContextBreakdownInfo.ToolsTokens" />
+                                        </MultiBinding>
+                                    </TextBlock.Text>
+                                </TextBlock>
+                            </Grid>
+                            <Grid ColumnDefinitions="10,*,Auto" Margin="0,0,0,10">
+                                <Border Grid.Column="0" Width="8" Height="8" Background="{DynamicResource ChartPurple}" CornerRadius="4" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="message history" FontSize="11" Margin="6,0,0,0" />
+                                <TextBlock Grid.Column="2" FontSize="11" Foreground="{DynamicResource TextMuted}"
+                                           Text="{Binding ContextBreakdownInfo.HistoryTokens, StringFormat='{}{0:N0} tokens'}" />
+                            </Grid>
+
+                            <!-- Not a second total - an ADDITION on top of
+                                 "Context now" above, so it can never
+                                 visually contradict it: the real, tokenized
+                                 cost of the live turn-context preview
+                                 (time-awareness/memory/knowledge for the
+                                 message box's CURRENT text) plus the
+                                 message box's own text. -->
+                            <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource BorderBrushLight}" Padding="0,8,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="If you send now" FontWeight="Bold" FontSize="12" Margin="0,0,0,2" />
+                                    <TextBlock Text="{Binding ContextBreakdownInfo.PendingTokens, StringFormat='{}+{0:N0} tokens (your message + turn context)'}"
+                                               FontSize="11" Foreground="{DynamicResource TextMuted}" />
+                                    <TextBlock Text="⚠️ This likely won't fit in the current context window" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource Danger}" Margin="0,4,0,0"
+                                               IsVisible="{Binding ContextBreakdownInfo.WouldExceedLimit}" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                </Popup>
+                <!-- A clickable health indicator (retries
+                     immediately) rather than a plain dot+label, with the
+                     detailed connection error as a ToolTip - LastHealthCheckError
+                     is null while healthy, so the tooltip doesn't show at all. -->
+                <Button Grid.Column="4"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Padding="0"
+                        VerticalContentAlignment="Center"
+                        ToolTip.Tip="{Binding LastHealthCheckError}"
+                        Command="{Binding RetryConnectionCommand}">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse Width="12" Height="12"
+                                 Fill="{Binding IsHealthy, Converter={x:Static conv:BoolToHealthBrushConverter.Instance}}"
+                                 VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding IsHealthy, Converter={x:Static conv:BoolToHealthTextConverter.Instance}}"
+                                   VerticalAlignment="Center"
+                                   Margin="6,0,0,0"
+                                   Foreground="{DynamicResource TextMuted}" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+
+            <ScrollViewer Grid.Row="1" ScrollChanged="OnMessagesScrollChanged">
+                <ItemsControl ItemsSource="{Binding Messages}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ChatMessageViewModel">
+                            <!-- An outer StackPanel just to stack
+                                 the optional date divider above the
+                                 per-message content below - the divider
+                                 itself needs to be centered/full-width,
+                                 independent of the inner StackPanel's own
+                                 left/right IsUser alignment. -->
+                            <StackPanel>
+                                <Border HorizontalAlignment="Center"
+                                        Background="{DynamicResource Surface3}"
+                                        CornerRadius="10"
+                                        Padding="10,3"
+                                        Margin="0,12,0,8"
+                                        IsVisible="{Binding DateDividerText, Converter={x:Static avdc:ObjectConverters.IsNotNull}}">
+                                    <TextBlock Text="{Binding DateDividerText}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource TextMuted}" />
+                                </Border>
+
+                                <!-- ToolTip gives the exact send time on
+                                     hover, deliberately not shown as
+                                     always-visible text - a timestamp on
+                                     every bubble reads as cluttered. -->
+                                <!-- Assistant replies get a small round robot avatar to the left
+                                     (the WPF app does too). Drawn as a vector Path (Lucide "bot",
+                                     MIT), not the emoji - emoji glyphs render as "tofu" boxes on
+                                     some Linux setups, a vector can't. Hidden for user messages;
+                                     the row right-aligns for the user as before. -->
+                                <!-- A Grid (avatar column + a star column), not a horizontal StackPanel: a StackPanel offers its children
+                                     unlimited width, so a bubble kept its full MaxWidth even in a narrow window and ran under the right-hand
+                                     panel; in the star column the bubble wraps to the space actually available. -->
+                                <Grid ColumnDefinitions="Auto,*">
+                                <Border Grid.Column="0" IsVisible="{Binding !IsUser}"
+                                        Width="28" Height="28" CornerRadius="14"
+                                        Background="{DynamicResource AccentSoft}"
+                                        VerticalAlignment="Top"
+                                        Margin="4,8,0,0">
+                                    <ctl:Icon Kind="bot" Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              TextElement.Foreground="{DynamicResource Accent}" />
+                                </Border>
+                                <StackPanel Grid.Column="1" Margin="4"
+                                            MaxWidth="600"
+                                            HorizontalAlignment="{Binding IsUser, Converter={x:Static conv:BoolToAlignmentConverter.Instance}}"
+                                            ToolTip.Tip="{Binding CreatedAt, StringFormat='{}{0:dd/MM/yyyy HH:mm}'}">
+                                <!-- "Processing prompt: 62% (ETA: 8s)", only ever
+                                     non-null before real generation starts (see
+                                     ChatMessageViewModel.PromptProgressText's own comment) -
+                                     shown above the Thinking expander since that one's own
+                                     visibility gates on HasReasoning, which is still false the
+                                     entire time prompt processing is running. -->
+                                <TextBlock Text="{Binding PromptProgressText}"
+                                           IsVisible="{Binding PromptProgressText, Converter={x:Static avdc:ObjectConverters.IsNotNull}}"
+                                           FontSize="11"
+                                           FontStyle="Italic"
+                                           Foreground="{DynamicResource TextMuted}"
+                                           Margin="0,0,0,4" />
+
+                                <Expander Classes="thinking" Header="Thinking"
+                                          IsVisible="{Binding HasReasoning}"
+                                          IsExpanded="{Binding IsReasoningExpanded, Mode=TwoWay}"
+                                          Margin="0,0,0,4">
+                                    <TextBox Classes="bubble-text"
+                                             Text="{Binding ReasoningText}"
+                                             TextWrapping="Wrap"
+                                             IsReadOnly="True"
+                                             Padding="0"
+                                             MinHeight="0"
+                                             Foreground="{DynamicResource TextMuted}" />
+                                </Expander>
+
+                                <!-- Which file (if any) was attached to a user message this turn. The full extracted text went to the model in textForModel, never shown here - just the filename, so a multi-thousand-character PDF dump doesn't flood the visible transcript. -->
+                                <Border IsVisible="{Binding AttachedFileName, Converter={x:Static avdc:ObjectConverters.IsNotNull}}"
+                                        Background="{DynamicResource Surface3}"
+                                        CornerRadius="8"
+                                        Padding="6,2"
+                                        Margin="0,0,0,4"
+                                        HorizontalAlignment="{Binding IsUser, Converter={x:Static conv:BoolToAlignmentConverter.Instance}}">
+                                    <TextBlock Text="{Binding AttachedFileName, StringFormat='📎 {0}'}" FontSize="11" Foreground="{DynamicResource TextMuted}" />
+                                </Border>
+
+                                <!-- While actively streaming: a borderless, read-only TextBox rather
+                                     than a plain TextBlock - TextBlock has no built-in text selection
+                                     at all in Avalonia (the WPF app had the same gap and the same
+                                     fix), so reply text couldn't be selected
+                                     or copied. A TextBox supports drag-select and Ctrl+C/right-click-
+                                     Copy natively, styled here to be visually indistinguishable from
+                                     plain text. Once finished (or loaded from history, which never
+                                     streams), swapped for a real Markdown-rendered control - re-parsing
+                                     the whole string into a fresh control tree on every one of a long
+                                     reply's many streamed chunks would be needlessly heavy compared to
+                                     this plain text assignment (the WPF app makes the same trade-off with
+                                     Markdig.Wpf). -->
+                                <!-- The Markdown-rendered
+                                     content (once IsStreaming flips false) has
+                                     no built-in text selection at all, unlike
+                                     the plain TextBox used while streaming.
+                                     A right-click
+                                     Copy (raw Text, regardless of which of the
+                                     two is currently showing) restores it
+                                     without needing selection to work inside
+                                     Markdown.Avalonia's own control tree. -->
+                                <Border Padding="10,6"
+                                        CornerRadius="10"
+                                        Classes="bubble"
+                                        Classes.user="{Binding IsUser}">
+                                    <Border.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="Copy" Click="OnCopyMessageTextClick">
+                                                <MenuItem.Icon><ctl:Icon Kind="copy" Width="15" Height="15" /></MenuItem.Icon>
+                                            </MenuItem>
+                                        </ContextMenu>
+                                    </Border.ContextMenu>
+                                    <Grid>
+                                        <TextBox Classes="bubble-text"
+                                                 Text="{Binding Text}"
+                                                 TextWrapping="Wrap"
+                                                 IsReadOnly="True"
+                                                 Padding="0"
+                                                 MinHeight="0"
+                                                 IsVisible="{Binding IsStreaming}" />
+                                        <ContentControl Classes="bubble-md" IsVisible="{Binding !IsStreaming}">
+                                            <ContentControl.Content>
+                                                <MultiBinding Converter="{x:Static conv:MarkdownToControlConverter.Instance}">
+                                                    <Binding Path="Text" />
+                                                    <Binding Path="IsStreaming" />
+                                                </MultiBinding>
+                                            </ContentControl.Content>
+                                        </ContentControl>
+                                    </Grid>
+                                </Border>
+
+                                <!-- The resized copy of a user-attached image, restored on LoadSession too (unlike a document's chip, there's no text-extraction equivalent for an image, so this survives a reload). -->
+                                <Image Source="{Binding AttachedImagePath, Converter={x:Static conv:PathToBitmapConverter.Instance}}"
+                                       IsVisible="{Binding AttachedImagePath, Converter={x:Static avdc:ObjectConverters.IsNotNull}}"
+                                       MaxWidth="360"
+                                       MaxHeight="360"
+                                       Stretch="Uniform"
+                                       Margin="0,4,0,0"
+                                       HorizontalAlignment="{Binding IsUser, Converter={x:Static conv:BoolToAlignmentConverter.Instance}}" />
+
+                                <!-- Save/copy-image follow-up - Markdown.Avalonia
+                                     renders the actual image inline from the
+                                     reply text itself, but gives no way to
+                                     save/copy it out - these two small
+                                     buttons cover that, using the same real
+                                     local file GeneratedImagePath already
+                                     points at. Plain text labels, not icons -
+                                     this app's own recent, real lesson about
+                                     Unicode-emoji "tofu" rendering. -->
+                                <StackPanel Orientation="Horizontal"
+                                            Spacing="6"
+                                            Margin="0,4,0,0"
+                                            IsVisible="{Binding GeneratedImagePath, Converter={x:Static avdc:ObjectConverters.IsNotNull}}"
+                                            HorizontalAlignment="{Binding IsUser, Converter={x:Static conv:BoolToAlignmentConverter.Instance}}">
+                                    <Button Content="Save image..." FontSize="11" Padding="8,3" Click="OnSaveImageClick" />
+                                    <Button Content="Copy image" FontSize="11" Padding="8,3" Click="OnCopyImageClick" />
+                                </StackPanel>
+
+                                <!-- One chip per distinct tool
+                                     called this turn, each with a real
+                                     success/failure indicator (colored dot -
+                                     gray while pending, green/red once the
+                                     matching FunctionResultContent arrives),
+                                     not just a plain "a tool ran" name. -->
+                                <ItemsControl ItemsSource="{Binding ToolCalls}"
+                                              IsVisible="{Binding HasToolCalls}"
+                                              ItemTemplate="{StaticResource ToolCallChipTemplate}"
+                                              Margin="0,4,0,0">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                </ItemsControl>
+
+                                <!-- Compaction-visibility follow-up -
+                                     app-level housekeeping notices (currently
+                                     just compaction), same chip pattern as
+                                     ToolCalls above but visually distinct
+                                     (amber, no status dot) since these aren't
+                                     something the model did. -->
+                                <ItemsControl ItemsSource="{Binding SystemNotes}"
+                                              IsVisible="{Binding HasSystemNotes}"
+                                              Margin="0,4,0,0">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="x:String">
+                                            <Border Background="{DynamicResource ChipWarnBg}" CornerRadius="8" Padding="6,2" Margin="0,0,4,4">
+                                                <TextBlock Text="{Binding}" FontSize="11" Foreground="{DynamicResource ChipWarnFg}" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <!-- A queued attachment, shown above the input row until Send (or Remove) consumes it. -->
+            <Border Grid.Row="2"
+                    IsVisible="{Binding AttachedFileName, Converter={x:Static avdc:ObjectConverters.IsNotNull}}"
+                    Background="{DynamicResource Surface3}"
+                    CornerRadius="8"
+                    Padding="8,4"
+                    Margin="0,8,0,0"
+                    HorizontalAlignment="Left">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock Text="{Binding AttachedFileName, StringFormat='📎 {0}'}" VerticalAlignment="Center" FontSize="12" />
+                    <Button Command="{Binding RemoveAttachedFileCommand}" Padding="5" ToolTip.Tip="Remove attachment"><ctl:Icon Kind="x" Width="12" Height="12" /></Button>
+                </StackPanel>
+            </Border>
+
+            <!-- A queued image attachment - a real thumbnail
+                 rather than a filename chip (that's the whole point of
+                 attaching an image), plus an inline warning (blocking Send,
+                 see MainViewModel.CanSend) when the selected model isn't
+                 vision-labeled. -->
+            <Border Grid.Row="2"
+                    IsVisible="{Binding AttachedImagePath, Converter={x:Static avdc:ObjectConverters.IsNotNull}}"
+                    Background="{DynamicResource Surface3}"
+                    CornerRadius="8"
+                    Padding="8,4"
+                    Margin="0,8,0,0"
+                    HorizontalAlignment="Left">
+                <StackPanel Spacing="4">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Image Source="{Binding AttachedImagePath, Converter={x:Static conv:PathToBitmapConverter.Instance}}"
+                               Width="32" Height="32"
+                               Stretch="UniformToFill" />
+                        <TextBlock Text="Image attached" VerticalAlignment="Center" FontSize="12" />
+                        <Button Command="{Binding RemoveAttachedFileCommand}" Padding="5" ToolTip.Tip="Remove attachment"><ctl:Icon Kind="x" Width="12" Height="12" /></Button>
+                    </StackPanel>
+                    <TextBlock Text="{Binding AttachedImageVisionWarningText}"
+                               IsVisible="{Binding AttachedImageVisionWarningText, Converter={x:Static avdc:ObjectConverters.IsNotNull}}"
+                               FontSize="11"
+                               Foreground="{DynamicResource Warning}"
+                               TextWrapping="Wrap"
+                               MaxWidth="360" />
+                </StackPanel>
+            </Border>
+
+            <!-- VerticalAlignment="Bottom" on every element in this row
+                 (not "Center"): this is needed once the input box can grow past one line
+                 (AcceptsReturn="True" below): without it, the paperclip/KB
+                 dropdown/Send/Stop controls stretched and distorted to
+                 match the growing TextBox's own height, since nothing had
+                 an explicit VerticalAlignment set before and all defaulted
+                 to Stretch. The WPF app does the same. -->
+            <Grid Grid.Row="3" ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,8,0,0">
+                <Button Grid.Column="0"
+                        Width="38" Height="38" Padding="0"
+                        ToolTip.Tip="Attach a file or image"
+                        Click="OnAttachFileClick"
+                        Margin="0,0,8,0"
+                        VerticalAlignment="Bottom">
+                    <ctl:Icon Kind="paperclip" Width="18" Height="18" />
+                </Button>
+                <!-- Which knowledge base (if any) is attached to this chat. Moved here from the header (which got too cramped once this was added - see the header Grid's own comment) - hidden entirely when the Knowledge Bases module is off. -->
+                <ComboBox Grid.Column="1"
+                          IsVisible="{Binding IsKnowledgeModuleEnabled}"
+                          ItemsSource="{Binding KnowledgeBases}"
+                          SelectedItem="{Binding SelectedKnowledgeBase}"
+                          VerticalAlignment="Bottom"
+                          Margin="0,0,8,0"
+                          MinWidth="130">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="know:KnowledgeBaseSummary">
+                            <TextBlock Text="{Binding Name}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <!-- Grows with content, then scrolls, up to MaxHeight - Enter
+                     sends, Shift+Enter inserts a newline. The handler is
+                     wired up in code-behind (OnWindowOpened) at the Tunnel
+                     routing strategy, not via a plain KeyDown="..." XAML
+                     attribute here - see that wiring's own comment for why
+                     a Bubble-phase handler arrives too late to intercept
+                     TextBox's own AcceptsReturn newline insertion. -->
+                <TextBox Grid.Column="2"
+                         Name="InputTextBox"
+                         Text="{Binding InputText}"
+                         PlaceholderText="Type a message..."
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         MaxHeight="140"
+                         VerticalAlignment="Bottom" />
+                <!-- Send/Stop occupy the same slot, toggled by IsBusy - there was previously no way at all to escape a stuck/runaway generation from this app. -->
+                <Button Grid.Column="3"
+                        Classes="primary"
+                        Width="38" Height="38" Padding="0"
+                        ToolTip.Tip="Send (Enter)"
+                        Command="{Binding SendCommand}"
+                        IsVisible="{Binding !IsBusy}"
+                        Margin="8,0,0,0"
+                        VerticalAlignment="Bottom">
+                    <ctl:Icon Kind="send" Width="18" Height="18" HorizontalAlignment="Center" />
+                </Button>
+                <Button Grid.Column="3"
+                        Classes="danger"
+                        Width="38" Height="38" Padding="0"
+                        ToolTip.Tip="Stop"
+                        Command="{Binding StopCommand}"
+                        IsVisible="{Binding IsBusy}"
+                        Margin="8,0,0,0"
+                        VerticalAlignment="Bottom">
+                    <ctl:Icon Kind="stop" Width="16" Height="16" HorizontalAlignment="Center" />
+                </Button>
+            </Grid>
+        </Grid>
+
+        <!-- Right panel: Stats/Modules tab switch. Its width is set by the
+             splitter between it and the chat area. -->
+        <Border Grid.Column="4" Padding="8" Background="{DynamicResource PaneBg}">
+            <!-- Buttons anchored in their own fixed bottom row, not inside
+                 either scrollable tab's own StackPanel - otherwise they'd
+                 only be reachable after scrolling past everything else
+                 above them, confirmed as the wrong placement for the real
+                 WPF app's own equivalent panel too. Each one's Visibility
+                 switches with the active tab, same as the two ScrollViewers
+                 above them. -->
+            <Grid RowDefinitions="Auto,*,Auto">
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="4" Margin="0,0,0,8">
+                    <Button Content="Stats"
+                            Command="{Binding SelectRightPanelTabCommand}"
+                            CommandParameter="Stats"
+                            FontWeight="{Binding IsStatsTabActive, Converter={x:Static conv:BoolToTabFontWeightConverter.Instance}}" />
+                    <Button Content="Modules"
+                            Command="{Binding SelectRightPanelTabCommand}"
+                            CommandParameter="Modules"
+                            FontWeight="{Binding IsModulesTabActive, Converter={x:Static conv:BoolToTabFontWeightConverter.Instance}}" />
+                </StackPanel>
+
+                <!-- Stats tab - each section is its own card (matching the
+                     Modules tab's card treatment), with the actual numbers
+                     shown as big bold "stat tiles" (value + small caption
+                     underneath) rather than plain label: value text lines. -->
+                <ScrollViewer Grid.Row="1" IsVisible="{Binding IsStatsTabActive}">
+                    <StackPanel Spacing="10">
+                        <Border Background="{DynamicResource CardBg}" CornerRadius="8" Padding="10">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Last reply" FontWeight="Bold" FontSize="12" />
+                                <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto">
+                                    <StackPanel Grid.Row="0" Grid.Column="0">
+                                        <TextBlock Text="{Binding LastReplyInputTokens}" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource Accent}" />
+                                        <TextBlock Text="Input tokens" FontSize="10" Foreground="{DynamicResource TextMuted}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="0" Grid.Column="1">
+                                        <TextBlock Text="{Binding LastReplyOutputTokens}" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource Accent}" />
+                                        <TextBlock Text="Output tokens" FontSize="10" Foreground="{DynamicResource TextMuted}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,10,0,0">
+                                        <TextBlock Text="{Binding LastReplyTokensPerSecond, StringFormat='{}{0:0.0}'}" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource Accent}" />
+                                        <TextBlock Text="Tokens/sec" FontSize="10" Foreground="{DynamicResource TextMuted}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,10,0,0">
+                                        <TextBlock Text="{Binding LastReplyTimeToFirstToken, StringFormat='{}{0:0.00}s'}" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource Accent}" />
+                                        <TextBlock Text="Time to first token" FontSize="10" Foreground="{DynamicResource TextMuted}" />
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{DynamicResource CardBg}" CornerRadius="8" Padding="10">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Session" FontWeight="Bold" FontSize="12" />
+                                <Grid ColumnDefinitions="*,*">
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="{Binding SessionTotalInputTokens}" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource Success}" />
+                                        <TextBlock Text="Total input" FontSize="10" Foreground="{DynamicResource TextMuted}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="{Binding SessionTotalOutputTokens}" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource Success}" />
+                                        <TextBlock Text="Total output" FontSize="10" Foreground="{DynamicResource TextMuted}" />
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{DynamicResource CardBg}" CornerRadius="8" Padding="10">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Tool calls this turn" FontWeight="Bold" FontSize="12" />
+                                <ItemsControl ItemsSource="{Binding RightPanelToolCalls}"
+                                              ItemTemplate="{StaticResource ToolCallChipTemplate}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Modules tab - each module is its own small card (a
+                     colored status dot reusing the health indicator's own
+                     green/red convention, the module name, and its
+                     Enabled/Disabled label as a light pill) rather than
+                     plain text lines. -->
+                <ScrollViewer Grid.Row="1" IsVisible="{Binding IsModulesTabActive}">
+                    <ItemsControl ItemsSource="{Binding ModuleStatusItems}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ModuleStatusItem">
+                                <Border Background="{DynamicResource CardBg}" CornerRadius="8" Padding="8,6" Margin="0,0,0,6">
+                                    <StackPanel Spacing="2">
+                                        <Grid ColumnDefinitions="Auto,*,Auto">
+                                            <Ellipse Grid.Column="0"
+                                                     Width="8" Height="8"
+                                                     Fill="{Binding IsEnabled, Converter={x:Static conv:BoolToHealthBrushConverter.Instance}}"
+                                                     VerticalAlignment="Center"
+                                                     Margin="0,0,8,0" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12" FontWeight="Bold" VerticalAlignment="Center" />
+                                            <Border Grid.Column="2" Background="{DynamicResource Surface3}" CornerRadius="6" Padding="6,1">
+                                                <TextBlock Text="{Binding StatusText}" FontSize="10" Foreground="{DynamicResource TextMuted}" />
+                                            </Border>
+                                        </Grid>
+                                        <!-- Smaller gray description under the bold name, like the WPF app's module cards. -->
+                                        <TextBlock Text="{Binding Description}" FontSize="10" Foreground="{DynamicResource TextMuted}" TextWrapping="Wrap" Margin="16,0,0,0" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <StackPanel Grid.Row="2" Spacing="6" Margin="0,8,0,0" IsVisible="{Binding IsStatsTabActive}">
+                    <Button Command="{Binding OpenSystemPromptCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="10,12" FontSize="14"><StackPanel Orientation="Horizontal" Spacing="9" HorizontalAlignment="Center"><ctl:Icon Kind="file-text" Width="17" Height="17" /><TextBlock Text="View system prompt" VerticalAlignment="Center" /></StackPanel></Button>
+                    <Button Command="{Binding OpenTurnContextCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="10,12" FontSize="14"><StackPanel Orientation="Horizontal" Spacing="9" HorizontalAlignment="Center"><ctl:Icon Kind="layers" Width="17" Height="17" /><TextBlock Text="View turn context" VerticalAlignment="Center" /></StackPanel></Button>
+                    <Button Command="{Binding OpenToolsSentCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="10,12" FontSize="14"><StackPanel Orientation="Horizontal" Spacing="9" HorizontalAlignment="Center"><ctl:Icon Kind="wrench" Width="17" Height="17" /><TextBlock Text="View tools sent" VerticalAlignment="Center" /></StackPanel></Button>
+                    <Button Command="{Binding OpenLogViewerCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="10,12" FontSize="14"><StackPanel Orientation="Horizontal" Spacing="9" HorizontalAlignment="Center"><ctl:Icon Kind="terminal" Width="17" Height="17" /><TextBlock Text="View logs" VerticalAlignment="Center" /></StackPanel></Button>
+                </StackPanel>
+                <Button Grid.Row="2"
+                        Command="{Binding OpenSettingsCommand}"
+                        IsVisible="{Binding IsModulesTabActive}"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Center"
+                        Padding="10,12"
+                        FontSize="14"
+                        Margin="0,8,0,0">
+                    <StackPanel Orientation="Horizontal" Spacing="9" HorizontalAlignment="Center"><ctl:Icon Kind="settings" Width="17" Height="17" /><TextBlock Text="Manage in Settings" VerticalAlignment="Center" /></StackPanel>
+                </Button>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
