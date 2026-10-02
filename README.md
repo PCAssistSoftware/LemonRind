@@ -143,7 +143,9 @@ Each edition has its own page of screenshots:
 - **[Blazor screenshots](screenshots/Blazor.md)** - the browser edition (light, plus a dark-mode view)
 
 **Avalonia, dark mode**
+
 ![Avalonia in dark mode](<screenshots/Avalonia/Overview (dark).png>)
 
 **Blazor, light**
+
 ![Blazor in the browser](<screenshots/Blazor/Overview.png>)
