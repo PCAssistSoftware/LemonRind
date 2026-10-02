@@ -1,6 +1,12 @@
 .app-shell {
     display: flex;
     height: 100vh;
+    height: 100dvh;
+}
+
+/* The drawer toggle buttons and the backdrop only exist at narrow widths (see the media queries at the end). */
+.header-row > .drawer-toggle, .drawer-backdrop {
+    display: none;
 }
 
 /* Sidebar */
@@ -1324,4 +1330,97 @@ details.thinking > summary:hover {
 
 .resize-handle:hover::after, .resize-handle.dragging::after {
     background: var(--accent);
+}
+
+/* ---- Narrow windows: side panes become slide-in drawers ----
+   Below ~1100px the Stats/Modules panel is a drawer on the right (opened from the header's panel button); below
+   ~760px the chat list is a drawer on the left too (menu button), so the chat itself keeps the full width. */
+@media (max-width: 1100px) {
+    .right-panel {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: min(var(--rpanel-w, 277px), 88vw);
+        z-index: 40;
+        transform: translateX(100%);
+        transition: transform 0.2s ease;
+    }
+
+    .app-shell.stats-open .right-panel {
+        transform: none;
+        box-shadow: var(--shadow-lg);
+    }
+
+    .resize-handle[data-side="right"] {
+        display: none;
+    }
+
+    .header-row > .stats-toggle {
+        display: inline-flex;
+    }
+
+    .app-shell.stats-open .drawer-backdrop {
+        display: block;
+    }
+}
+
+@media (max-width: 760px) {
+    .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: min(var(--sidebar-w, 277px), 88vw);
+        z-index: 40;
+        transform: translateX(-100%);
+        transition: transform 0.2s ease;
+    }
+
+    .app-shell.nav-open .sidebar {
+        transform: none;
+        box-shadow: var(--shadow-lg);
+    }
+
+    .resize-handle[data-side="left"] {
+        display: none;
+    }
+
+    .header-row > .nav-toggle {
+        display: inline-flex;
+    }
+
+    .app-shell.nav-open .drawer-backdrop {
+        display: block;
+    }
+
+    .chat-container {
+        padding: 0 0.6rem;
+    }
+
+    .header-row {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    /* The message box gets its own full-width row; attach / knowledge base / send sit underneath. */
+    .input-row {
+        flex-wrap: wrap;
+    }
+
+    .input-row > .input-box {
+        order: -1;
+        flex: 1 1 100%;
+    }
+
+    .input-row > .send-button {
+        margin-left: auto;
+    }
+}
+
+.drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    background: var(--overlay);
 }

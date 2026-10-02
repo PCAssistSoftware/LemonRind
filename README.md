@@ -51,7 +51,7 @@ dotnet publish LemonRind_Avalonia/LemonRindAvalonia.csproj -c Debug -r linux-x64
 
 ### Blazor (`LemonRind_Blazor`) - runs in a browser
 
-The same app as a Blazor Server web app: start it, then open it in any browser - handy for a Linux box or a headless server. It has the same theme, resizable panes, icons and log-viewer controls as the Avalonia edition (theme and pane widths are remembered per browser).
+The same app as a Blazor Server web app: start it, then open it in any browser - handy for a Linux box or a headless server. It has the same theme, resizable panes, icons and log-viewer controls as the Avalonia edition (theme and pane widths are remembered per browser), and on a narrow window or phone the chat list and stats panel turn into slide-in drawers.
 
 ```
 cd LemonRind_Blazor

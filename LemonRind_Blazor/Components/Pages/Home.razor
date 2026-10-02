@@ -30,7 +30,9 @@
 
 <PageTitle>Lemon Rind (Blazor test)</PageTitle>
 
-<div class="app-shell">
+<div class="app-shell @(_sidebarOpen ? "nav-open" : "") @(_statsOpen ? "stats-open" : "")">
+    @* Narrow windows: the chat list and the Stats/Modules panel become slide-in drawers (see the media queries in Home.razor.css). *@
+    <div class="drawer-backdrop" @onclick="CloseDrawers"></div>
     <div class="sidebar">
         <button class="new-chat-btn" @onclick="NewChat"><Icon Name="plus" Size="15" /> New chat</button>
         <input class="search-box" placeholder="Search chats" @bind="_searchText" @bind:event="oninput" @bind:after="OnSearchChanged" />
@@ -143,6 +145,7 @@
 
     <div class="chat-container">
         <div class="header-row">
+            <button class="icon-btn drawer-toggle nav-toggle" title="Chats" @onclick="ToggleSidebar"><Icon Name="menu" Size="18" /></button>
             <select @bind="_selectedModel" @bind:after="OnModelChanged" disabled="@(_isLoadingModel || _isBusy)">
                 @foreach (var group in GroupedModels)
                 {
@@ -182,6 +185,7 @@
                 <span class="health-dot @(_isHealthy ? "healthy" : "unhealthy")"></span>
                 <span class="health-label">@(_isHealthy ? "Lemonade healthy" : "Lemonade unreachable")</span>
             </button>
+            <button class="icon-btn drawer-toggle stats-toggle" title="Stats and modules" @onclick="ToggleStats"><Icon Name="panel-right" Size="18" /></button>
         </div>
 
         <div class="messages">
@@ -1566,6 +1570,7 @@
 
     private void NewChat()
     {
+        _sidebarOpen = false;
         _currentSessionId = SessionRepository.CreateSession("New chat");
         _history.Clear();
         _messages.Clear();
@@ -1584,8 +1589,16 @@
     // a session's messages even when it's already the one open (a job's
     // "running in background" note, then its real reply, both land on a
     // session that was already current before either was saved).
+    // Narrow-window drawers: whether the chat list / the Stats panel is slid in.
+    private bool _sidebarOpen;
+    private bool _statsOpen;
+    private void ToggleSidebar() { _sidebarOpen = !_sidebarOpen; _statsOpen = false; }
+    private void ToggleStats() { _statsOpen = !_statsOpen; _sidebarOpen = false; }
+    private void CloseDrawers() { _sidebarOpen = false; _statsOpen = false; }
+
     private void LoadSession(string sessionId, bool forceReload = false)
     {
+        _sidebarOpen = false;
         if (sessionId == _currentSessionId && !forceReload) return;
 
         _currentSessionId = sessionId;
