@@ -26,9 +26,15 @@ public class LemonadeChatClientFactory(AppSettings settings)
     private readonly LemonadeSettings _settings = settings.Lemonade;
 
     // A single completion against a local model can legitimately take
-    // several minutes - the SDK's own default NetworkTimeout (100s) is
-    // tuned for a cloud API, not this.
-    private static readonly TimeSpan RequestNetworkTimeout = TimeSpan.FromMinutes(5);
+    // many minutes (a large prompt can need over a minute of prompt
+    // processing before the first token, and a long reply at ~60 tokens/s
+    // adds several more) - the SDK's own default NetworkTimeout (100s) is
+    // tuned for a cloud API, not this. Deliberately longer than a scheduled
+    // job's own overall limit (SchedulerModule.JobRunTimeoutSeconds), so that
+    // outer cancellation, not this per-request timeout, is the real backstop
+    // for a genuinely stuck request. (A 5 minute value cut off a healthy
+    // 16,000-token reply that needed almost 6 minutes.)
+    private static readonly TimeSpan RequestNetworkTimeout = TimeSpan.FromMinutes(30);
 
     public IChatClient CreateChatClient()
     {

@@ -25,13 +25,15 @@ Namespace Services
         End Sub
 
         ' A single completion against a local model can legitimately take
-        ' several minutes (a large tool-augmented prompt
-        ' can take over 300 seconds of prompt processing alone) - the SDK's own
-        ' default NetworkTimeout (100 seconds) is tuned for a cloud API, not
-        ' this. Generous but still bounded by ScheduledJobRunner/SendAsync's
-        ' own outer cancellation, which stays the real backstop for a
-        ' genuinely stuck request.
-        Private Shared ReadOnly RequestNetworkTimeout As TimeSpan = TimeSpan.FromMinutes(5)
+        ' many minutes (a large prompt can need over a minute of prompt
+        ' processing before the first token, and a long reply at ~60 tokens/s
+        ' adds several more) - the SDK's own default NetworkTimeout (100 seconds)
+        ' is tuned for a cloud API, not this. Deliberately longer than a scheduled
+        ' job's own overall limit (SchedulerModule.JobRunTimeoutSeconds), so that
+        ' outer cancellation, not this per-request timeout, is the real backstop
+        ' for a genuinely stuck request. (A 5 minute value cut off a healthy
+        ' 16,000-token reply that needed almost 6 minutes.)
+        Private Shared ReadOnly RequestNetworkTimeout As TimeSpan = TimeSpan.FromMinutes(30)
 
         Public Function CreateChatClient() As IChatClient
             ' RetryPolicy(maxRetries:=0) - the default retry is actively
