@@ -13,6 +13,8 @@ A local-first AI assistant backed by a locally-running [Lemonade Server](https:/
 
 This was built as a learning exercise and proof of concept - a way to explore agentic AI app design (tool calling, memory, context management, RAG) hands-on, not a polished commercial product. The WPF app came first; the Avalonia and Blazor editions were then ported from it, stage by stage, to see how the same design carries across UI frameworks and operating systems.
 
+I then decided to create a Python version as everything I read tells me that is the better route to take when programming for AI tools, and it was an area I wanted to learn about.
+
 ## Requirements
 
 - A running [Lemonade Server](https://lemonade-server.ai/) instance (local or on your network), with at least one chat model downloaded
