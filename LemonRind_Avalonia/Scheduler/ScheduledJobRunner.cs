@@ -34,7 +34,8 @@ public class ScheduledJobRunner(
     MemoryService memoryService,
     SchedulerNotifier notifier,
     FileWriteApprovalStore approvalStore,
-    AppSettings settings)
+    AppSettings settings,
+    RunningJobTracker runningJobs)
 {
     // What is sent to carry on a reply that stopped at the output limit.
     private const string ContinuePrompt =
@@ -53,6 +54,10 @@ public class ScheduledJobRunner(
         // pages needs far more than the library's default of 40, and an
         // unattended job has nobody to say "keep going". This runner's own
         // chat client is identical to the app's shared one apart from that.)
+        // Say so while this job works, with the model it uses (its own, else the default chat model), so the screen can
+        // show "Job running" and ask before another model is loaded.
+        using var running = runningJobs.Start(job.Name, string.IsNullOrWhiteSpace(job.ModelId) ? settings.Lemonade.ChatModel : job.ModelId);
+
         var limits = settings.Scheduler;
         var maxToolRounds = limits.MaxToolRounds;
         var chatClient = chatClientFactory.CreateChatClient(maxToolRounds);

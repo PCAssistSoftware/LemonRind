@@ -36,6 +36,7 @@ public partial class MainViewModel : ObservableObject
     private readonly KnowledgeService _knowledgeService;
     private readonly ModuleRegistry _moduleRegistry;
     private readonly SchedulerNotifier _schedulerNotifier;
+    private readonly RunningJobTracker _runningJobs;
     private readonly Func<SettingsWindow> _settingsWindowFactory;
     private readonly Func<LogViewerWindow> _logViewerWindowFactory;
     private readonly AppSettings _settings;
@@ -256,12 +257,59 @@ public partial class MainViewModel : ObservableObject
             ? "The selected model doesn't support image input - pick a vision-capable model or remove the attached image."
             : null;
 
+    // The header note while a scheduled job is running: "Job running: Weekly report (Qwen3-8B-GGUF)".
+    [ObservableProperty]
+    private string _jobRunningNote = "";
+
+    public bool HasJobRunningNote => !string.IsNullOrEmpty(JobRunningNote);
+
+    partial void OnJobRunningNoteChanged(string value) => OnPropertyChanged(nameof(HasJobRunningNote));
+
+    private void UpdateJobRunningNote()
+    {
+        var running = _runningJobs.Current;
+        JobRunningNote = running.Count == 0 ? "" : "Job running: " + RunningJobTracker.Describe(running);
+    }
+
+    private bool _modelSwitchApproved; // the person answered "Switch anyway" to the question below
+
+    /// <summary>
+    /// Loading another chat model while a scheduled job runs can push the job's model out of Lemonade's memory and
+    /// stop the job, so that is asked about first. The picker goes back to the model in use until the answer comes;
+    /// "Switch anyway" then makes the change as usual. Nothing is blocked: Lemonade may have room for both models,
+    /// which this app cannot know.
+    /// </summary>
+    private async Task AskBeforeSwitchingAsync(string model, List<RunningJob> affected)
+    {
+        var confirmed = await ConfirmDialog.ShowAsync(RunningJobTracker.SwitchQuestion(affected, model), "A scheduled job is running", "Switch anyway");
+        if (!confirmed) return;
+
+        _modelSwitchApproved = true;
+        try { SelectedModel = model; }
+        finally { _modelSwitchApproved = false; }
+    }
+
     private string _selectedModel = "";
     public string SelectedModel
     {
         get => _selectedModel;
         set
         {
+            // Only another CHAT model can push a job's model out of memory (an image or embedding model has its own
+            // slot), and picking the model the job itself uses changes nothing for it.
+            if (!_modelSwitchApproved && !string.IsNullOrWhiteSpace(value) && value != _selectedModel
+                && _modelCategories.GetValueOrDefault(value) == ModelCategoryChat)
+            {
+                var affected = _runningJobs.UsingOtherModel(value);
+                if (affected.Count > 0)
+                {
+                    _ = AskBeforeSwitchingAsync(value, affected);
+                    OnPropertyChanged(nameof(SelectedModel)); // the picker goes back until the question is answered
+                    OnPropertyChanged(nameof(SelectedModelRow));
+                    return;
+                }
+            }
+
             if (SetProperty(ref _selectedModel, value))
             {
                 OnPropertyChanged(nameof(AttachedImageVisionWarningText));
@@ -387,6 +435,7 @@ public partial class MainViewModel : ObservableObject
         KnowledgeService knowledgeService,
         ModuleRegistry moduleRegistry,
         SchedulerNotifier schedulerNotifier,
+        RunningJobTracker runningJobs,
         Func<SettingsWindow> settingsWindowFactory,
         Func<LogViewerWindow> logViewerWindowFactory,
         AppSettings settings,
@@ -404,6 +453,7 @@ public partial class MainViewModel : ObservableObject
         _knowledgeService = knowledgeService;
         _moduleRegistry = moduleRegistry;
         _schedulerNotifier = schedulerNotifier;
+        _runningJobs = runningJobs;
         _settingsWindowFactory = settingsWindowFactory;
         _logViewerWindowFactory = logViewerWindowFactory;
         _settings = settings;
@@ -423,6 +473,9 @@ public partial class MainViewModel : ObservableObject
                 RefreshSessions();
                 ReloadCurrentSessionIfMatching(sessionId);
             });
+
+        // Raised from the job's own thread, so the note is updated on the UI thread.
+        _runningJobs.Changed += () => Avalonia.Threading.Dispatcher.UIThread.Post(UpdateJobRunningNote);
 
         // Keeps retrying in the background while Lemonade is
         // unreachable, so coming back doesn't require clicking Retry

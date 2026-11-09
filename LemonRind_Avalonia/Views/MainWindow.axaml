@@ -359,6 +359,10 @@
                                  IsVisible="{Binding IsModelLoading}" />
                     <TextBlock Text="{Binding ModelLoadingText}" Foreground="{DynamicResource TextMuted}" FontSize="12" VerticalAlignment="Center"
                                TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding JobRunningNote}" IsVisible="{Binding HasJobRunningNote}"
+                               Foreground="{DynamicResource TextMuted}" FontSize="12" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" MaxWidth="320"
+                               ToolTip.Tip="A scheduled job is running. Loading a different model while it works may stop it." />
                 </StackPanel>
                 <!-- A hoverable
                      Border rather than a click target, since this is a
