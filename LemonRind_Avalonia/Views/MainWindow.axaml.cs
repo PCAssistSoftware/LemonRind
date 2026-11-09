@@ -282,6 +282,12 @@ public partial class MainWindow : Window
         }
     }
 
+    // The Continue button under a reply that stopped at the output limit.
+    private void OnContinueReplyClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel viewModel) viewModel.ContinueReplyCommand.Execute(null);
+    }
+
     // Avalonia 12's clipboard API (IClipboard.SetDataAsync(IAsyncDataTransfer))
     // has real, first-class cross-platform image support via DataFormat.Bitmap
     // - confirmed via reflection against the installed Avalonia.Base.dll

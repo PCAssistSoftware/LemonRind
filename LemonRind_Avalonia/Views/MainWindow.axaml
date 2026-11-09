@@ -687,6 +687,14 @@
                                     </ItemsControl.ItemsPanel>
                                 </ItemsControl>
 
+                                <!-- The reply stopped at the output limit (a model's thinking counts towards it), so it may stop part way:
+                                     say so, and offer to carry on (the button only on the newest reply). -->
+                                <StackPanel IsVisible="{Binding IsCutOff}" Spacing="4" Margin="0,4,0,0">
+                                    <TextBlock Text="The reply reached the output limit (thinking counts towards it), so it may be incomplete."
+                                               Foreground="{DynamicResource TextMuted}" FontSize="11" TextWrapping="Wrap" />
+                                    <Button Content="Continue" IsVisible="{Binding CanContinue}" HorizontalAlignment="Left" FontSize="11" Padding="8,3" Click="OnContinueReplyClick" />
+                                </StackPanel>
+
                                 <!-- Compaction-visibility follow-up -
                                      app-level housekeeping notices (currently
                                      just compaction), same chip pattern as

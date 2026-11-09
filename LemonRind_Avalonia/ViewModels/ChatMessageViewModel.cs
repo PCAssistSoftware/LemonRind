@@ -58,6 +58,14 @@ public partial class ChatMessageViewModel : ObservableObject
     // chip row's IsVisible can bind to directly.
     public bool HasToolCalls => ToolCalls.Count > 0;
 
+    /// <summary>The reply stopped at the output limit (a model's thinking counts towards it), so it may stop part way: the bubble says so.</summary>
+    [ObservableProperty]
+    private bool _isCutOff;
+
+    /// <summary>Whether the Continue button is offered under a cut-off reply - only on the newest reply, so it goes away once another message is sent.</summary>
+    [ObservableProperty]
+    private bool _canContinue;
+
     // Compaction-visibility follow-up - app-level housekeeping notices
     // attached to this reply (currently just "compacting.../compacted...",
     // see MainViewModel.CompactHistoryIfNeededAsync). Kept separate from

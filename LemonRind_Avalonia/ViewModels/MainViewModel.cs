@@ -1267,6 +1267,21 @@ public partial class MainViewModel : ObservableObject
             llamacppArgs);
     }
 
+    // What is sent to carry on a reply that stopped at the output limit.
+    private const string ContinuePrompt =
+        "Your last reply was cut off at the length limit. Continue exactly from where it stopped, without repeating what you already wrote.";
+
+    /// <summary>The Continue button: asks the model to carry on from where its cut-off reply stopped, as an ordinary message (anything typed in the box is kept).</summary>
+    [RelayCommand]
+    private async Task ContinueReplyAsync()
+    {
+        if (IsBusy) return;
+        var typed = InputText;
+        InputText = ContinuePrompt;
+        await SendAsync();
+        InputText = typed;
+    }
+
     private bool CanSend() => !IsBusy && !string.IsNullOrWhiteSpace(InputText) && !string.IsNullOrWhiteSpace(SelectedModel) && AttachedImageVisionWarningText is null;
 
     [RelayCommand(CanExecute = nameof(CanSend))]
@@ -1274,6 +1289,9 @@ public partial class MainViewModel : ObservableObject
     {
         var userText = InputText.Trim();
         InputText = "";
+
+        // A newer message makes any Continue button on an older cut-off reply stale.
+        foreach (var older in Messages) older.CanContinue = false;
 
         // Captured and cleared up front - a single-use attachment for this
         // one turn, not something that should silently carry over onto a
@@ -1406,6 +1424,7 @@ public partial class MainViewModel : ObservableObject
             var fullReply = new StringBuilder();
             var fullReasoning = new StringBuilder();
             var wasCancelled = false;
+            ChatFinishReason? finishReason = null; // how the reply ended: "length" means it hit the output limit
 
             try
             {
@@ -1423,6 +1442,7 @@ public partial class MainViewModel : ObservableObject
                 var hasStartedAnswering = false;
                 await foreach (var update in _chatClient.GetStreamingResponseAsync(outgoingMessages, options, cts.Token))
                 {
+                    if (update.FinishReason is { } reason) finishReason = reason;
                     fullReply.Append(update.Text);
                     assistantBubble.Text = fullReply.ToString();
 
@@ -1544,6 +1564,11 @@ public partial class MainViewModel : ObservableObject
             // bubble forever, since the two clear points above only fire
             // once real generation actually starts.
             assistantBubble.PromptProgressText = null;
+
+            // A reply that has text but stopped at the output limit may stop part way: say so, and offer to carry on.
+            var cutOff = !wasCancelled && finishReason == ChatFinishReason.Length && fullReply.Length > 0;
+            assistantBubble.IsCutOff = cutOff;
+            assistantBubble.CanContinue = cutOff;
 
             var replyText = fullReply.ToString();
             assistantBubble.GeneratedImagePath = TryExtractGeneratedImagePath(replyText);
