@@ -12,7 +12,7 @@ namespace LemonRindAvalonia.Modules;
 /// ReconcileEnabledModulesAsync applies live Settings toggles; IsToolFromModule
 /// supports auto-tagging.
 /// </summary>
-public class ModuleRegistry(IEnumerable<IAssistantModule> modules, ILogger<ModuleRegistry> logger)
+public class ModuleRegistry(IEnumerable<IAssistantModule> modules, ILogger<ModuleRegistry> logger, ToolResultHolder resultHolder)
 {
     private readonly IReadOnlyList<IAssistantModule> _modules = modules.ToList();
 
@@ -58,10 +58,16 @@ public class ModuleRegistry(IEnumerable<IAssistantModule> modules, ILogger<Modul
         }
     }
 
-    /// <summary>Every tool contributed by every currently-enabled module - what actually gets attached to a chat request.</summary>
+    /// <summary>
+    /// Every tool contributed by every currently-enabled module - what actually gets attached to a chat request.
+    /// Each tool is wrapped so that a long result is held and sent in pieces, and the built-in read_more tool
+    /// (which reads on through such a result) is offered whenever there is any tool at all.
+    /// </summary>
     public List<AITool> GetEnabledTools()
     {
-        return [.. _modules.Where(m => m.IsEnabled).SelectMany(m => m.GetTools())];
+        var tools = _modules.Where(m => m.IsEnabled).SelectMany(m => m.GetTools()).Select(resultHolder.Wrap).ToList();
+        if (tools.Count > 0) tools.Add(resultHolder.ReadMoreTool);
+        return tools;
     }
 
     /// <summary>

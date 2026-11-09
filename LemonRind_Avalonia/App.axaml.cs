@@ -150,6 +150,7 @@ public partial class App : Application
         // already has.
         builder.Services.AddSingleton<IAssistantModule, AutoBackupModule>();
 
+        builder.Services.AddSingleton<ToolResultHolder>();
         builder.Services.AddSingleton<ModuleRegistry>();
 
         builder.Services.AddSingleton<MainViewModel>();

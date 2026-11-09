@@ -16,7 +16,9 @@ public class WebPageContent
 /// </summary>
 public class WebReaderClient(SsrfSafeHttpFetcher fetcher)
 {
-    private const int MaxTextLength = 8000; // keeps one fetched page from dominating a single chat turn's context window.
+    // Only a safety bound against an absurdly large page: how much of a page the model sees at once is decided by
+    // the tool-result pieces (ToolResultHolder), which hold the whole text and let the model read on to the end.
+    private const int MaxTextLength = 2_000_000;
 
     public async Task<WebPageContent> ReadAsync(string url, CancellationToken cancellationToken, int maxLength = MaxTextLength)
     {

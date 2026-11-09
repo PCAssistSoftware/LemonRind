@@ -250,6 +250,9 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private double _schedulerMaxOutputTokens = 32768;
     [ObservableProperty] private double _schedulerMaxContinuations = 2;
 
+    // Modules: the longest piece of a tool result sent to the model in one go.
+    [ObservableProperty] private double _modulesMaxToolOutputChars = 40000;
+
     public SettingsViewModel(
         AppSettingsStore store,
         AppSettings liveSettings,
@@ -310,6 +313,7 @@ public partial class SettingsViewModel : ObservableObject
         SchedulerMaxToolRounds = _settings.Scheduler.MaxToolRounds;
         SchedulerMaxOutputTokens = _settings.Scheduler.MaxOutputTokens;
         SchedulerMaxContinuations = _settings.Scheduler.MaxContinuations;
+        ModulesMaxToolOutputChars = _settings.Modules.MaxToolOutputChars;
 
         ThinkingPanelOpenByDefault = _settings.Ui.ThinkingPanelOpenByDefault;
         Theme = string.IsNullOrWhiteSpace(_settings.Ui.Theme) ? "System" : _settings.Ui.Theme;
@@ -752,6 +756,7 @@ public partial class SettingsViewModel : ObservableObject
         _settings.Scheduler.MaxToolRounds = (int)Math.Clamp(SchedulerMaxToolRounds, 1, 500);
         _settings.Scheduler.MaxOutputTokens = (int)Math.Clamp(SchedulerMaxOutputTokens, 256, 131072);
         _settings.Scheduler.MaxContinuations = (int)Math.Clamp(SchedulerMaxContinuations, 0, 10);
+        _settings.Modules.MaxToolOutputChars = (int)Math.Clamp(ModulesMaxToolOutputChars, 500, 1_000_000);
 
         _settings.Ui.ThinkingPanelOpenByDefault = ThinkingPanelOpenByDefault;
         _settings.Ui.Theme = Theme;
