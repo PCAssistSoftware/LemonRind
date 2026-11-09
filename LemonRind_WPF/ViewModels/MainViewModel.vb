@@ -128,6 +128,8 @@ Namespace ViewModels
 
         Public ReadOnly Property Messages As New ObservableCollection(Of ChatMessageViewModel)()
 
+        Public ReadOnly Property ContinueReplyCommand As IAsyncRelayCommand
+
         Private _inputText As String = ""
         Public Property InputText As String
             Get
@@ -813,6 +815,7 @@ Namespace ViewModels
             ' Raised from the job's own thread, so the note is updated on the UI thread.
             AddHandler _runningJobs.Changed, Sub() Application.Current.Dispatcher.BeginInvoke(Sub() UpdateJobRunningNote())
             SendCommand = New AsyncRelayCommand(AddressOf SendAsync, AddressOf CanSend)
+            ContinueReplyCommand = New AsyncRelayCommand(AddressOf ContinueReplyAsync)
             NewChatCommand = New RelayCommand(AddressOf NewChat)
             AttachFileCommand = New RelayCommand(AddressOf AttachFile)
             RemoveAttachedFileCommand = New RelayCommand(AddressOf RemoveAttachedFile)
@@ -2323,10 +2326,27 @@ Namespace ViewModels
                 AttachedImageVisionWarning Is Nothing
         End Function
 
+        ' What is sent to carry on a reply that stopped at the output limit.
+        Private Const ContinuePrompt As String = "Your last reply was cut off at the length limit. Continue exactly from where it stopped, without repeating what you already wrote."
+
+        ''' <summary>The Continue button: asks the model to carry on from where its cut-off reply stopped, as an ordinary message (anything typed in the box is kept).</summary>
+        Private Async Function ContinueReplyAsync() As Task
+            If IsBusy Then Return
+            Dim typed = InputText
+            InputText = ContinuePrompt
+            Await SendAsync()
+            InputText = typed
+        End Function
+
         Private Async Function SendAsync() As Task
             Dim userText = InputText.Trim()
             InputText = ""
             IsBusy = True
+
+            ' A newer message makes any Continue button on an older cut-off reply stale.
+            For Each older In Messages
+                older.CanContinue = False
+            Next
 
             ' Captured and cleared up front - a single-use attachment for
             ' this one turn, not something that should silently carry over
@@ -2608,6 +2628,12 @@ Namespace ViewModels
                 ' when there's truly nothing else - keeps "[Stopped]" (a UI
                 ' decoration, not something the model said) out of what gets
                 ' fed back to the model on the next turn.
+                ' A reply that has text but stopped at the output limit may stop part way: say so, and offer to carry on.
+                Dim cutOff = Not wasCancelled AndAlso errorMessage Is Nothing AndAlso Not String.IsNullOrWhiteSpace(fullReplyText) AndAlso
+                    finishReason.HasValue AndAlso finishReason.Value = ChatFinishReason.Length
+                assistantBubble.IsCutOff = cutOff
+                assistantBubble.CanContinue = cutOff
+
                 Dim textToPersist = If(String.IsNullOrWhiteSpace(fullReplyText), assistantBubble.Text, fullReplyText)
                 _history.Add(New ChatMessage(ChatRole.Assistant, textToPersist))
                 _sessionRepository.SaveMessage(_currentSessionId, ChatRole.Assistant.Value, textToPersist, assistantBubble.ReasoningText,

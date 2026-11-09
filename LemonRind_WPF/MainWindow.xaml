@@ -991,6 +991,17 @@
                                                             Visibility="{Binding IsStreaming, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
                                 </Grid>
                             </Border>
+
+                            <!-- The reply stopped at the output limit (a model's thinking counts towards it), so it may stop part way:
+                                 say so, and offer to carry on (the button only on the newest reply). -->
+                            <StackPanel Margin="8,4,8,0" MaxWidth="500" HorizontalAlignment="Left"
+                                        Visibility="{Binding IsCutOff, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <TextBlock Text="The reply reached the output limit (thinking counts towards it), so it may be incomplete."
+                                           Foreground="Gray" FontSize="11" TextWrapping="Wrap" />
+                                <Button Content="Continue" HorizontalAlignment="Left" Padding="8,3" Margin="0,4,0,0" FontSize="11"
+                                        Visibility="{Binding CanContinue, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                        Command="{Binding DataContext.ContinueReplyCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
+                            </StackPanel>
                             </StackPanel>
                         </Grid>
                         </StackPanel>

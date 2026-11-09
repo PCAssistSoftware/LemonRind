@@ -205,6 +205,28 @@ Namespace ViewModels
         ' every one of a long reply's many streamed chunks freezes the UI
         ' thread. Always False for a user bubble and for
         ' anything rebuilt from stored history (LoadSession never streams).
+        ''' <summary>The reply stopped at the output limit (a model's thinking counts towards it), so it may stop part way: the bubble says so.</summary>
+        Private _isCutOff As Boolean
+        Public Property IsCutOff As Boolean
+            Get
+                Return _isCutOff
+            End Get
+            Set(value As Boolean)
+                SetProperty(_isCutOff, value)
+            End Set
+        End Property
+
+        ''' <summary>Whether the Continue button is offered under a cut-off reply - only on the newest reply, so it goes away once another message is sent.</summary>
+        Private _canContinue As Boolean
+        Public Property CanContinue As Boolean
+            Get
+                Return _canContinue
+            End Get
+            Set(value As Boolean)
+                SetProperty(_canContinue, value)
+            End Set
+        End Property
+
         Private _isStreaming As Boolean = False
         Public Property IsStreaming As Boolean
             Get
