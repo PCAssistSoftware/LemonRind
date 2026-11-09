@@ -179,3 +179,17 @@
 .kb-add-source .add-row {
     margin-bottom: 0.5rem;
 }
+
+/* A knowledge base built with a different embedding model than the one in use: explains it and offers Re-embed. */
+.kb-warning {
+    margin-top: 0.4rem;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--border-strong);
+    border-left: 3px solid #d98e04;
+    border-radius: 6px;
+    font-size: 0.85rem;
+}
+
+.kb-reembed {
+    margin-left: 0.5rem;
+}

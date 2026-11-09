@@ -20,6 +20,23 @@
                     {
                         <div class="kb-description">@kb.Description</div>
                     }
+                    @if (!string.IsNullOrEmpty(kb.EmbeddingModel))
+                    {
+                        <div class="kb-description">Embedding model: @kb.EmbeddingModel</div>
+                    }
+                    @{
+                        var problem = KnowledgeCompatibility.Check(kb, IngestionService.EmbeddingModelName);
+                    }
+                    @if (problem.Length > 0)
+                    {
+                        <div class="kb-warning">
+                            @problem
+                            @if (!KnowledgeCompatibility.IsReembedding(kb.Id))
+                            {
+                                <button class="kb-reembed" @onclick="() => ReembedKnowledgeBase(kb.Id)">Re-embed</button>
+                            }
+                        </div>
+                    }
                 </div>
                 <button class="kb-delete" @onclick="() => DeleteKnowledgeBase(kb.Id)">Delete knowledge base</button>
             </div>
@@ -131,6 +148,25 @@
         RefreshKnowledgeBases();
     }
 
+    // Embeds every chunk of one knowledge base again with the current embedding model (its stored text is used, so
+    // the original documents are not needed). Takes a while for a big one, and the page shows that it is working.
+    private async Task ReembedKnowledgeBase(string kbId)
+    {
+        _statusText[kbId] = "Re-embedding... this takes a while for a big knowledge base.";
+        StateHasChanged();
+        try
+        {
+            var count = await IngestionService.ReembedAsync(kbId, CancellationToken.None);
+            _statusText[kbId] = $"Re-embedded {count:N0} chunks with {IngestionService.EmbeddingModelName}.";
+        }
+        catch (Exception ex)
+        {
+            _statusText[kbId] = $"Couldn't re-embed: {ex.Message}";
+        }
+        _knowledgeBases = Repository.ListKnowledgeBases();
+        StateHasChanged();
+    }
+
     private void DeleteKnowledgeBase(string id)
     {
         Repository.DeleteKnowledgeBase(id);
@@ -141,6 +177,7 @@
     {
         Repository.DeleteSource(sourceId);
         _sourcesByKb.Remove(kbId);
+        _knowledgeBases = Repository.ListKnowledgeBases();
     }
 
     private async Task AddFileSource(string kbId, Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs e)
@@ -180,6 +217,7 @@
         }
 
         _sourcesByKb.Remove(kbId);
+        _knowledgeBases = Repository.ListKnowledgeBases();
         StateHasChanged();
     }
 
@@ -234,6 +272,7 @@
         }
 
         _sourcesByKb.Remove(kbId);
+        _knowledgeBases = Repository.ListKnowledgeBases();
         StateHasChanged();
     }
 
@@ -254,6 +293,7 @@
             _statusText[kbId] = $"Couldn't add {url}: {ex.Message}";
         }
         _sourcesByKb.Remove(kbId);
+        _knowledgeBases = Repository.ListKnowledgeBases();
     }
 
     private async Task AddTextSource(string kbId)
@@ -276,5 +316,6 @@
             _statusText[kbId] = $"Couldn't add text: {ex.Message}";
         }
         _sourcesByKb.Remove(kbId);
+        _knowledgeBases = Repository.ListKnowledgeBases();
     }
 }

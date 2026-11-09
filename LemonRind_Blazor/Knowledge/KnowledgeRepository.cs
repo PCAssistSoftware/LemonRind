@@ -9,6 +9,12 @@ public class KnowledgeBaseSummary
     public string Name { get; set; } = "";
     public string Description { get; set; } = "";
     public DateTime CreatedAt { get; set; }
+
+    /// <summary>The embedding model that built this knowledge base's vectors ("" if not recorded - built before it was kept).</summary>
+    public string EmbeddingModel { get; set; } = "";
+
+    /// <summary>How many numbers each stored vector has (0 if not recorded).</summary>
+    public int EmbeddingDimensions { get; set; }
 }
 
 /// <summary>One ingested source within a Knowledge Base - a file, folder, website, or pasted text.</summary>
@@ -82,7 +88,7 @@ public class KnowledgeRepository(AppDatabase database)
         var results = new List<KnowledgeBaseSummary>();
         using var connection = database.OpenConnection();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT Id, Name, Description, CreatedAt FROM KnowledgeBases ORDER BY CreatedAt ASC;";
+        command.CommandText = "SELECT Id, Name, Description, CreatedAt, EmbeddingModel, EmbeddingDimensions FROM KnowledgeBases ORDER BY CreatedAt ASC;";
         using var reader = command.ExecuteReader();
         while (reader.Read())
         {
@@ -92,9 +98,81 @@ public class KnowledgeRepository(AppDatabase database)
                 Name = reader.GetString(1),
                 Description = reader.IsDBNull(2) ? "" : reader.GetString(2),
                 CreatedAt = DateTimeHelpers.ParseUtc(reader.GetString(3)),
+                EmbeddingModel = reader.IsDBNull(4) ? "" : reader.GetString(4),
+                EmbeddingDimensions = reader.IsDBNull(5) ? 0 : reader.GetInt32(5),
             });
         }
         return results;
+    }
+
+    public KnowledgeBaseSummary? GetKnowledgeBase(string id) => ListKnowledgeBases().FirstOrDefault(kb => kb.Id == id);
+
+    /// <summary>Records which embedding model built a knowledge base's vectors, and how many numbers each has.</summary>
+    public void SetEmbeddingModel(string knowledgeBaseId, string model, int dimensions)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE KnowledgeBases SET EmbeddingModel = @model, EmbeddingDimensions = @dimensions WHERE Id = @id;";
+        command.Parameters.AddWithValue("@model", string.IsNullOrWhiteSpace(model) ? DBNull.Value : model);
+        command.Parameters.AddWithValue("@dimensions", dimensions > 0 ? dimensions : DBNull.Value);
+        command.Parameters.AddWithValue("@id", knowledgeBaseId);
+        command.ExecuteNonQuery();
+    }
+
+    /// <summary>How many numbers each stored vector has, read from the first stored chunk (0 if there are no chunks) - the way to compare a knowledge base that never recorded its model.</summary>
+    public int StoredVectorDimensions(string knowledgeBaseId)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT length(Embedding) FROM KnowledgeChunks WHERE KnowledgeBaseId = @kbId LIMIT 1;";
+        command.Parameters.AddWithValue("@kbId", knowledgeBaseId);
+        var bytes = command.ExecuteScalar();
+        return bytes is long length ? (int)(length / sizeof(float)) : 0;
+    }
+
+    /// <summary>Every chunk's id and text, in order - the text is what gets embedded again when a knowledge base is re-embedded, so the original documents are not needed.</summary>
+    public List<(string Id, string Content)> ListChunkContents(string knowledgeBaseId)
+    {
+        var results = new List<(string, string)>();
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT Id, Content FROM KnowledgeChunks WHERE KnowledgeBaseId = @kbId ORDER BY SourceId, ChunkIndex;";
+        command.Parameters.AddWithValue("@kbId", knowledgeBaseId);
+        using var reader = command.ExecuteReader();
+        while (reader.Read()) results.Add((reader.GetString(0), reader.GetString(1)));
+        return results;
+    }
+
+    /// <summary>
+    /// Swaps in new vectors for chunks and records the model that made them, all in one transaction: a failure part way
+    /// leaves the knowledge base exactly as it was, never half old vectors and half new.
+    /// </summary>
+    public void ReplaceEmbeddings(string knowledgeBaseId, IReadOnlyList<(string ChunkId, float[] Vector)> vectors, string model)
+    {
+        using var connection = database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        foreach (var (chunkId, vector) in vectors)
+        {
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = "UPDATE KnowledgeChunks SET Embedding = @embedding WHERE Id = @id;";
+            command.Parameters.AddWithValue("@embedding", VectorMath.ToBytes(vector));
+            command.Parameters.AddWithValue("@id", chunkId);
+            command.ExecuteNonQuery();
+        }
+
+        using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = "UPDATE KnowledgeBases SET EmbeddingModel = @model, EmbeddingDimensions = @dimensions WHERE Id = @id;";
+            command.Parameters.AddWithValue("@model", string.IsNullOrWhiteSpace(model) ? DBNull.Value : model);
+            command.Parameters.AddWithValue("@dimensions", vectors.Count > 0 ? vectors[0].Vector.Length : DBNull.Value);
+            command.Parameters.AddWithValue("@id", knowledgeBaseId);
+            command.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
     }
 
     /// <summary>Creates a source row up front (Status="Ingesting") so it shows in the UI immediately, before extraction/embedding finishes - see KnowledgeIngestionService.</summary>
@@ -222,6 +300,9 @@ public class KnowledgeRepository(AppDatabase database)
         {
             var content = reader.GetString(0);
             var embeddingBytes = (byte[])reader[1];
+            // A chunk whose vector has a different size was made by a different embedding model: comparing it would
+            // be meaningless (or read past the end), so it is left out.
+            if (embeddingBytes.Length != queryEmbedding.Length * sizeof(float)) continue;
             var similarity = VectorMath.CosineSimilarity(queryEmbedding, VectorMath.FromBytes(embeddingBytes));
             results.Add((content, similarity));
         }
