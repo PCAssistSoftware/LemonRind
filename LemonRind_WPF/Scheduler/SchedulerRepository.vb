@@ -15,6 +15,12 @@ Namespace Scheduler
 
         ''' <summary>Nothing/empty means "use whatever model is currently selected/default" - not every job needs to pin one.</summary>
         Public Property ModelId As String
+
+        ''' <summary>How the last run ended: "ok", "failed", "timed out" or "cut short". Nothing until a run has finished since this was recorded.</summary>
+        Public Property LastStatus As String
+
+        ''' <summary>How long the last run took, in seconds. Nothing for runs from before this was recorded.</summary>
+        Public Property LastDurationSeconds As Double?
     End Class
 
     ''' <summary>Data access for scheduled jobs - an in-process, app-must-be-running design (see SchedulerModule).</summary>
@@ -74,11 +80,13 @@ Namespace Scheduler
             End Using
         End Sub
 
-        ''' <summary>Called by the poller right after a job fires - records when it ran and when it's due next (Nothing if the schedule has no future occurrence).</summary>
-        Public Sub RecordRun(id As String, ranAt As DateTime, nextRunAt As DateTime?)
+        ''' <summary>Called by the poller right after a job fires - records when it ran, how it ended, how long it took, and when it's due next (Nothing if the schedule has no future occurrence).</summary>
+        Public Sub RecordRun(id As String, ranAt As DateTime, nextRunAt As DateTime?, status As String, seconds As Double)
             Using connection = _database.OpenConnection()
                 Using command = connection.CreateCommand()
-                    command.CommandText = "UPDATE ScheduledJobs SET LastRunAt = @ranAt, NextRunAt = @nextRunAt WHERE Id = @id;"
+                    command.CommandText = "UPDATE ScheduledJobs SET LastRunAt = @ranAt, NextRunAt = @nextRunAt, LastStatus = @status, LastDurationSeconds = @seconds WHERE Id = @id;"
+                    command.Parameters.AddWithValue("@status", status)
+                    command.Parameters.AddWithValue("@seconds", seconds)
                     command.Parameters.AddWithValue("@ranAt", ranAt.ToString("o"))
                     command.Parameters.AddWithValue("@nextRunAt", If(nextRunAt Is Nothing, CObj(DBNull.Value), nextRunAt.Value.ToString("o")))
                     command.Parameters.AddWithValue("@id", id)
@@ -101,7 +109,7 @@ Namespace Scheduler
             Dim results As New List(Of ScheduledJob)
             Using connection = _database.OpenConnection()
                 Using command = connection.CreateCommand()
-                    command.CommandText = "SELECT Id, Name, CronExpression, Prompt, IsEnabled, LastRunAt, NextRunAt, CreatedAt, ModelId FROM ScheduledJobs ORDER BY CreatedAt ASC;"
+                    command.CommandText = "SELECT Id, Name, CronExpression, Prompt, IsEnabled, LastRunAt, NextRunAt, CreatedAt, ModelId, LastStatus, LastDurationSeconds FROM ScheduledJobs ORDER BY CreatedAt ASC;"
                     Using reader = command.ExecuteReader()
                         While reader.Read()
                             results.Add(New ScheduledJob With {
@@ -113,7 +121,9 @@ Namespace Scheduler
                                 .LastRunAt = If(reader.IsDBNull(5), CType(Nothing, DateTime?), ParseUtc(reader.GetString(5))),
                                 .NextRunAt = If(reader.IsDBNull(6), CType(Nothing, DateTime?), ParseUtc(reader.GetString(6))),
                                 .CreatedAt = ParseUtc(reader.GetString(7)),
-                                .ModelId = If(reader.IsDBNull(8), Nothing, reader.GetString(8))
+                                .ModelId = If(reader.IsDBNull(8), Nothing, reader.GetString(8)),
+                                .LastStatus = If(reader.IsDBNull(9), Nothing, reader.GetString(9)),
+                                .LastDurationSeconds = If(reader.IsDBNull(10), CType(Nothing, Double?), reader.GetDouble(10))
                             })
                         End While
                     End Using

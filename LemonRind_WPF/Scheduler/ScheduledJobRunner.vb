@@ -1,7 +1,9 @@
+Imports System.Diagnostics
 Imports System.Text.Json
 Imports System.Text.RegularExpressions
 Imports System.Threading
 Imports Microsoft.Extensions.AI
+Imports LemonRind.Configuration
 Imports LemonRind.Data
 Imports LemonRind.Memories
 Imports LemonRind.Modules
@@ -9,6 +11,17 @@ Imports LemonRind.Modules.FileSystem
 Imports LemonRind.Services
 
 Namespace Scheduler
+
+    ''' <summary>How a run ended ("ok", "failed", "timed out" or "cut short") and how long it took.</summary>
+    Public NotInheritable Class JobRunResult
+        Public ReadOnly Property Status As String
+        Public ReadOnly Property Seconds As Double
+
+        Public Sub New(status As String, seconds As Double)
+            Me.Status = status
+            Me.Seconds = seconds
+        End Sub
+    End Class
 
     ''' <summary>
     ''' Runs one scheduled job's prompt through the normal tool-enabled chat
@@ -25,12 +38,11 @@ Namespace Scheduler
         ' user-edited System Prompt from Settings.
         Private Const SystemPrompt As String = "You are a helpful local AI assistant running on the user's own machine."
 
-        ' How many tool-call rounds (model round-trips) one job may use. A research
-        ' job that searches and reads many pages needs far more than the library's
-        ' default of 40, and an unattended job has nobody to say "keep going".
-        Private Const MaxToolRounds As Integer = 100
+        ' What is sent to carry on a reply that stopped at the output limit.
+        Private Const ContinuePrompt As String = "Your last reply was cut off at the length limit. Continue exactly from where it stopped, without repeating what you already wrote."
 
-        Private ReadOnly _chatClient As IChatClient
+        Private ReadOnly _chatClientFactory As LemonadeChatClientFactory
+        Private ReadOnly _settings As AppSettings
 
         ' Func(Of ModuleRegistry), not ModuleRegistry directly -
         ' ModuleRegistry's own constructor needs every IAssistantModule
@@ -50,10 +62,9 @@ Namespace Scheduler
         Private ReadOnly _notifier As SchedulerNotifier
         Private ReadOnly _approvalStore As FileWriteApprovalStore
 
-        Public Sub New(chatClientFactory As LemonadeChatClientFactory, moduleRegistry As Func(Of ModuleRegistry), sessionRepository As ChatSessionRepository, memoryService As MemoryService, notifier As SchedulerNotifier, approvalStore As FileWriteApprovalStore)
-            ' This runner's own chat client, identical to the app's shared one except
-            ' for the higher tool-round limit above.
-            _chatClient = chatClientFactory.CreateChatClient(MaxToolRounds)
+        Public Sub New(chatClientFactory As LemonadeChatClientFactory, moduleRegistry As Func(Of ModuleRegistry), sessionRepository As ChatSessionRepository, memoryService As MemoryService, notifier As SchedulerNotifier, approvalStore As FileWriteApprovalStore, settings As AppSettings)
+            _chatClientFactory = chatClientFactory
+            _settings = settings
             _moduleRegistry = moduleRegistry
             _sessionRepository = sessionRepository
             _memoryService = memoryService
@@ -61,7 +72,19 @@ Namespace Scheduler
             _approvalStore = approvalStore
         End Sub
 
-        Public Async Function RunJobAsync(job As ScheduledJob, cancellationToken As CancellationToken) As Task
+        Public Async Function RunJobAsync(job As ScheduledJob, cancellationToken As CancellationToken) As Task(Of JobRunResult)
+            ' Read fresh on every run, so a change made in Settings applies
+            ' from the next run without a restart. (How many tool-call
+            ' rounds one job may use matters because a research job that
+            ' searches and reads many pages needs far more than the
+            ' library's default of 40, and an unattended job has nobody to
+            ' say "keep going". This runner's own chat client is identical
+            ' to the app's shared one apart from that.)
+            Dim limits = _settings.Scheduler
+            Dim maxToolRounds = limits.MaxToolRounds
+            Dim chatClient = _chatClientFactory.CreateChatClient(maxToolRounds)
+            Dim stopwatch = Diagnostics.Stopwatch.StartNew()
+
             ' Plain job.Name, not a "SCHEDULED: " prefix - the "scheduled"
             ' tag (below) is what identifies a scheduled session in the
             ' sidebar, rather than baking it into the title text.
@@ -125,14 +148,15 @@ Namespace Scheduler
             ' SendAsync's own MaxOutputTokens comment): a single stuck/looping
             ' generation has produced over 12,000 output tokens on its own, eating most of
             ' JobRunTimeoutSeconds and getting the whole job cancelled.
-            ' 16384 matches SendAsync's own generous cap ceiling - plenty
-            ' for a real report, but bounded so one runaway completion can't
-            ' consume the entire job.
-            Const MaxOutputTokensPerReply As Integer = 16384
+            ' It is a setting now (Settings > Scheduler), bounded so one runaway
+            ' completion can't consume the entire job. A model's thinking
+            ' counts towards it, so it needs room for both the thinking and
+            ' the report that follows.
+            Dim maxOutputTokensPerReply = limits.MaxOutputTokens
 
             Dim options As New ChatOptions With {
                 .Tools = _moduleRegistry().GetEnabledTools().ToList(),
-                .MaxOutputTokens = MaxOutputTokensPerReply
+                .MaxOutputTokens = maxOutputTokensPerReply
             }
             ' Same override mechanism as a live chat turn's SelectedModel
             ' (MainViewModel.SendAsync) - Nothing/empty ModelId just means
@@ -159,13 +183,17 @@ Namespace Scheduler
             ' own writes, which still get asked every time as normal.
             Dim replyText = ""
             Dim jobFailed = False
+            Dim status = "ok"
+            Dim continues = 0
+            Dim usedUpLimitThinking = False ' the reply ended at the limit with no text at all
+            Dim notes As New List(Of String) ' saved as their own messages, after the reply
             _approvalStore.IsRunningScheduledJob = True
             Try
                 Try
                     Const maxAttempts = 2
                     Dim attempt = 1
                     While attempt <= maxAttempts
-                        Dim response = Await _chatClient.GetResponseAsync(history, options, cancellationToken)
+                        Dim response = Await chatClient.GetResponseAsync(history, options, cancellationToken)
                         replyText = response.Text
                         
                         ' The tool-calling loop stops quietly once it reaches its round
@@ -173,14 +201,44 @@ Namespace Scheduler
                         ' truncated-looking reply (and don't retry: a second attempt would
                         ' just burn through the same number of rounds again).
                         Dim toolRounds = response.Messages.Where(Function(m) m.Role = ChatRole.Assistant AndAlso m.Contents.OfType(Of FunctionCallContent)().Any()).Count()
-                        If toolRounds >= MaxToolRounds - 1 Then
+                        If toolRounds >= maxToolRounds - 1 Then
                             replyText = (replyText & Environment.NewLine & Environment.NewLine &
-                                $"⚠️ This job used its maximum of {MaxToolRounds} tool-call rounds, so it may have stopped before finishing. Try splitting it into smaller jobs, or ask it to search and read less.").Trim()
+                                $"⚠️ This job used its maximum of {maxToolRounds} tool-call rounds, so it may have stopped before finishing. Try splitting it into smaller jobs, or ask it to search and read less.").Trim()
                             Exit While
                         End If
-                        
-                        If Not String.IsNullOrWhiteSpace(replyText) Then Exit While
-                        attempt += 1
+
+                        If String.IsNullOrWhiteSpace(replyText) Then
+                            usedUpLimitThinking = (response.FinishReason = ChatFinishReason.Length)
+                            attempt += 1
+                            Continue While
+                        End If
+                        usedUpLimitThinking = False
+
+                        ' A reply that stopped at the output limit is carried
+                        ' on, so a long report arrives whole. The model has to
+                        ' see what it wrote (and any tool results behind it),
+                        ' so the whole response goes back into the history first.
+                        While response.FinishReason = ChatFinishReason.Length AndAlso continues < limits.MaxContinuations
+                            continues += 1
+                            history.AddMessages(response)
+                            history.Add(New ChatMessage(ChatRole.User, ContinuePrompt))
+                            response = Await chatClient.GetResponseAsync(history, options, cancellationToken)
+                            If String.IsNullOrWhiteSpace(response.Text) Then Exit While ' it used the whole limit thinking again: nothing to add
+                            replyText &= response.Text
+                        End While
+
+                        ' Still at the limit: what was written stops part way
+                        ' (a report cut off in the middle of a table, say).
+                        ' Calling that "ok" would hide it.
+                        Dim continuesPlural = If(continues = 1, "", "s")
+                        If response.FinishReason = ChatFinishReason.Length Then
+                            status = "cut short"
+                            Dim tried = If(continues > 0, $" even after {continues} automatic continue{continuesPlural}", "")
+                            notes.Add($"⚠️ The model's reply was cut off at the output limit ({maxOutputTokensPerReply:N0} tokens, which includes its thinking){tried}, so it is probably incomplete. Raise 'Longest reply' in Settings > Scheduler, use a model that thinks less, or ask for a shorter report.")
+                        ElseIf continues > 0 Then
+                            notes.Add($"Note: the reply reached the output limit and was continued automatically {continues} time{continuesPlural}, so it arrives in {continues + 1} parts.")
+                        End If
+                        Exit While
                     End While
                 Catch ex As OperationCanceledException When cancellationToken.IsCancellationRequested
                     ' Distinguished from a generic Exception below by the
@@ -197,6 +255,7 @@ Namespace Scheduler
                     ' unhelpful "Check Lemonade is running a real chat
                     ' model..." hint, which has nothing to do with a job
                     ' simply running out of time.
+                    status = "timed out"
                     replyText = "⚠️ This scheduled job didn't finish before its own time limit and was cancelled." &
                         Environment.NewLine & Environment.NewLine &
                         "This usually means the model got stuck reasoning in a loop, or the job's prompt/tools made it take unusually long. Try simplifying the prompt, disabling tools it doesn't need, or asking it to keep its answer shorter."
@@ -283,6 +342,7 @@ Namespace Scheduler
                             "This usually means the request grew very large before Lemonade could respond - often a slow or overly broad tool call (e.g. the wrong web search provider pulling in too much content). Check this job's tools/settings, or increase Lemonade's network timeout.",
                             "Check Lemonade is running a real chat model, and that any modules this job depends on (e.g. which web search provider is selected) are configured correctly."))
                     replyText = $"⚠️ This scheduled job failed to complete: {rawMessage.TrimEnd("."c, " "c)}." & Environment.NewLine & Environment.NewLine & hint
+                    status = "failed"
                     jobFailed = True
                 End Try
             Finally
@@ -290,10 +350,30 @@ Namespace Scheduler
             End Try
 
             If String.IsNullOrWhiteSpace(replyText) Then
-                replyText = "(No response - the model's reasoning didn't lead to an answer.)"
+                If usedUpLimitThinking Then
+                    replyText = $"(No response - the model used up its output limit ({maxOutputTokensPerReply:N0} tokens) while thinking, so there is no answer. Raise 'Longest reply' in Settings > Scheduler or use a model that thinks less.)"
+                    status = "cut short"
+                Else
+                    replyText = "(No response - the model's reasoning didn't lead to an answer.)"
+                    status = "failed"
+                End If
+                jobFailed = True
             End If
 
             _sessionRepository.SaveMessage(sessionId, ChatRole.Assistant.Value, replyText, reasoningContent:="")
+            _notifier.RaiseSessionUpdated(sessionId)
+
+            For Each note In notes
+                _sessionRepository.SaveMessage(sessionId, ChatRole.Assistant.Value, note, reasoningContent:="")
+            Next
+
+            ' When the run ended and how long it took, as the last line of
+            ' its chat - whatever the outcome, so a slow or timed-out job
+            ' shows it too.
+            Dim seconds = stopwatch.Elapsed.TotalSeconds
+            Dim endedAt = DateTime.Now
+            _sessionRepository.SaveMessage(sessionId, ChatRole.Assistant.Value,
+                $"This run ended at {endedAt:HH:mm} on {endedAt:dd/MM/yyyy} and took {RunDuration.Format(seconds)}.", reasoningContent:="")
             _notifier.RaiseSessionUpdated(sessionId)
 
             ' Best-effort, same as a live turn's fact extraction - a
@@ -309,6 +389,8 @@ Namespace Scheduler
                 End If
             Catch
             End Try
+
+            Return New JobRunResult(status, seconds)
         End Function
 
     End Class

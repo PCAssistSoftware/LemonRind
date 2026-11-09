@@ -601,6 +601,26 @@
                         <TextBlock Text="Runs a saved prompt through the assistant on a recurring schedule, with full tool access (search, files, email, knowledge bases). You can also ask the assistant to create one for you in chat, e.g. &quot;remind me every Monday at 9am to...&quot;. Cron times and the times shown below are your own local time, not UTC. Only fires while the app is running."
                                    Foreground="Gray" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,14" />
 
+                        <TextBlock Text="Limits for one run" FontWeight="Bold" Margin="0,0,0,6" />
+                        <TextBlock Text="Time limit (minutes)" Style="{StaticResource FieldLabel}" Margin="0,0,0,2" />
+                        <TextBox Text="{Binding SchedulerTimeLimitMinutes, UpdateSourceTrigger=PropertyChanged}" Padding="6" Width="80" HorizontalAlignment="Left" />
+                        <TextBlock Text="A run that takes longer than this is stopped. Allowed: 1 to 1440 minutes (a day). The default is 30."
+                                   Foreground="Gray" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,8" />
+                        <TextBlock Text="Most tool rounds" Style="{StaticResource FieldLabel}" Margin="0,0,0,2" />
+                        <TextBox Text="{Binding SchedulerMaxToolRounds, UpdateSourceTrigger=PropertyChanged}" Padding="6" Width="80" HorizontalAlignment="Left" />
+                        <TextBlock Text="Each time the model uses tools and then carries on is one round. A run that reaches this many stops and says so. Allowed: 1 to 500. The default is 100."
+                                   Foreground="Gray" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,8" />
+                        <TextBlock Text="Longest reply (tokens)" Style="{StaticResource FieldLabel}" Margin="0,0,0,2" />
+                        <TextBox Text="{Binding SchedulerMaxOutputTokens, UpdateSourceTrigger=PropertyChanged}" Padding="6" Width="100" HorizontalAlignment="Left" />
+                        <TextBlock Text="The most the model may write in one go, counting its thinking too. A reply that reaches it is cut off, and the run is marked 'cut short'. A model that thinks a lot needs a bigger number, and a longer reply takes longer to write. Allowed: 256 to 131,072. The default is 32,768."
+                                   Foreground="Gray" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,8" />
+                        <TextBlock Text="Automatic continues" Style="{StaticResource FieldLabel}" Margin="0,0,0,2" />
+                        <TextBox Text="{Binding SchedulerMaxContinuations, UpdateSourceTrigger=PropertyChanged}" Padding="6" Width="80" HorizontalAlignment="Left" />
+                        <TextBlock Text="When a reply is cut off at the longest reply, the run asks the model to carry on from where it stopped, up to this many times. 0 turns it off. Allowed: 0 to 10. The default is 2."
+                                   Foreground="Gray" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,4" />
+                        <TextBlock Text="Changes are saved with the Save button below and apply from the next run."
+                                   Foreground="Gray" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,14" />
+
                         <TextBlock Text="New scheduled job" FontWeight="Bold" Margin="0,0,0,6" />
                         <TextBlock Text="Name" Style="{StaticResource FieldLabel}" Margin="0,0,0,2" />
                         <TextBox Text="{Binding NewJobName, UpdateSourceTrigger=PropertyChanged}" Padding="6" />

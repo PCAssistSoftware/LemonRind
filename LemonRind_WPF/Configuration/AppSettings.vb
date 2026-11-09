@@ -224,6 +224,33 @@ Namespace Configuration
     End Class
 
     ''' <summary>
+    ''' Limits for one scheduled run, editable in Settings > Scheduler (saved
+    ''' with the Save button, applied from the next run). They used to be
+    ''' constants inside the scheduler classes, so changing one meant
+    ''' rebuilding the app.
+    ''' </summary>
+    Public Class SchedulerSettings
+        ''' <summary>The whole run, including every tool call, is stopped after this long.</summary>
+        Public Property JobTimeoutSeconds As Integer = 1800
+
+        ''' <summary>How many tool-call rounds (model round trips) one run may use.</summary>
+        Public Property MaxToolRounds As Integer = 100
+
+        ''' <summary>
+        ''' The most one reply may write, counting a model's thinking as well. A
+        ''' model that thinks at length and then writes a long report needs room
+        ''' for both, or the report is cut off part way.
+        ''' </summary>
+        Public Property MaxOutputTokens As Integer = 32768
+
+        ''' <summary>
+        ''' When a reply is cut off at that limit, the run asks the model to
+        ''' carry on from where it stopped, up to this many times (0 = never).
+        ''' </summary>
+        Public Property MaxContinuations As Integer = 2
+    End Class
+
+    ''' <summary>
     ''' Root settings object bound from appsettings.json. Registered as a
     ''' singleton in DI so any service can ask for exactly the section it needs.
     ''' </summary>
@@ -238,6 +265,7 @@ Namespace Configuration
         Public Property Assistant As New AssistantSettings()
         Public Property Persona As New PersonaSettings()
         Public Property Backup As New BackupSettings()
+        Public Property Scheduler As New SchedulerSettings()
 
         ''' <summary>
         ''' Copies every field's value from Me into target's SAME nested
@@ -299,6 +327,11 @@ Namespace Configuration
             target.Backup.IntervalDays = Backup.IntervalDays
             target.Backup.BackupFolder = Backup.BackupFolder
             target.Backup.KeepCount = Backup.KeepCount
+
+            target.Scheduler.JobTimeoutSeconds = Scheduler.JobTimeoutSeconds
+            target.Scheduler.MaxToolRounds = Scheduler.MaxToolRounds
+            target.Scheduler.MaxOutputTokens = Scheduler.MaxOutputTokens
+            target.Scheduler.MaxContinuations = Scheduler.MaxContinuations
         End Sub
     End Class
 

@@ -1,3 +1,4 @@
+Imports System.Diagnostics
 Imports System.Threading
 Imports Cronos
 Imports Microsoft.Extensions.AI
@@ -27,24 +28,19 @@ Namespace Scheduler
         ' once a minute anyway (standard cron has no finer resolution).
         Private Const PollIntervalSeconds = 30
 
-        ' Generous - a real job prompt can chain several tool calls (search,
-        ' then search again, then compose, then send an email), each a real
-        ' round-trip. Still bounded, not CancellationToken.None - a stuck
-        ' scheduled job (e.g. the model stuck in a non-terminating generation
-        ' loop) would otherwise run forever with no visible chat turn to
-        ' even notice it's happening, same risk as fact extraction/
-        ' compaction (see MainViewModel's BackgroundModelCallTimeout).
-        ' Raised from 600: a genuinely legitimate job
-        ' (research, then writing out an ~11,000-token HTML report TWICE -
-        ' once to save it, once again as an email body, per that job's own
-        ' prompt) routinely needs more than 10 minutes on local hardware,
-        ' with no single step actually stuck - it just didn't fit the old
-        ' budget.
-        Private Const JobRunTimeoutSeconds = 1500
+        ' How long one run may take is a setting (Settings > Scheduler),
+        ' read at the start of each run: _settings.Scheduler.JobTimeoutSeconds.
+        ' Generous by default - a real job prompt can chain several tool
+        ' calls (search, then search again, then compose, then send an
+        ' email), each a real round-trip - but still bounded, not
+        ' CancellationToken.None: a stuck scheduled job (e.g. the model
+        ' stuck in a non-terminating generation loop) would otherwise run
+        ' forever with no visible chat turn to even notice it's happening.
 
         Private ReadOnly _repository As SchedulerRepository
         Private ReadOnly _runner As ScheduledJobRunner
         Private ReadOnly _moduleSettings As ModuleSettings
+        Private ReadOnly _settings As AppSettings
 
         Private _pollTimer As Timer
         ' Guards against a poll tick starting while the previous one (a real
@@ -57,6 +53,7 @@ Namespace Scheduler
             _repository = repository
             _runner = runner
             _moduleSettings = settings.Modules
+            _settings = settings
         End Sub
 
         Public ReadOnly Property Name As String Implements IAssistantModule.Name
@@ -174,19 +171,22 @@ Namespace Scheduler
                 ' contend with each other and any real user request in
                 ' flight, not actually finish faster.
                 For Each job In dueJobs
+                    Dim stopwatch = Diagnostics.Stopwatch.StartNew()
+                    Dim result As New JobRunResult("failed", 0)
                     Try
-                        Using jobTimeoutCts As New CancellationTokenSource(TimeSpan.FromSeconds(JobRunTimeoutSeconds))
-                            Await _runner.RunJobAsync(job, jobTimeoutCts.Token)
+                        Using jobTimeoutCts As New CancellationTokenSource(TimeSpan.FromSeconds(_settings.Scheduler.JobTimeoutSeconds))
+                            result = Await _runner.RunJobAsync(job, jobTimeoutCts.Token)
                         End Using
                     Catch
                         ' Best-effort - one job failing (a bad prompt, a tool
                         ' erroring, Lemonade briefly unreachable) shouldn't
                         ' stop the others from running this tick or break the
                         ' poller for future ticks.
+                        result = New JobRunResult("failed", stopwatch.Elapsed.TotalSeconds)
                     Finally
                         ' TimeZoneInfo.Local here too - see ScheduleJob's comment.
                         Dim parsed = CronExpression.Parse(job.CronExpression)
-                        _repository.RecordRun(job.Id, now, parsed.GetNextOccurrence(now, TimeZoneInfo.Local, inclusive:=False))
+                        _repository.RecordRun(job.Id, now, parsed.GetNextOccurrence(now, TimeZoneInfo.Local, inclusive:=False), result.Status, result.Seconds)
                     End Try
                 Next
             Finally

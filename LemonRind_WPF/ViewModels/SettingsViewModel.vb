@@ -685,6 +685,48 @@ Namespace ViewModels
             End Set
         End Property
 
+        ' Scheduler limits for one run (saved with the Save button, applied
+        ' from the next run): the time limit is shown in minutes, stored in seconds.
+        Private _schedulerTimeLimitMinutes As Integer
+        Public Property SchedulerTimeLimitMinutes As Integer
+            Get
+                Return _schedulerTimeLimitMinutes
+            End Get
+            Set(value As Integer)
+                SetProperty(_schedulerTimeLimitMinutes, value)
+            End Set
+        End Property
+
+        Private _schedulerMaxToolRounds As Integer
+        Public Property SchedulerMaxToolRounds As Integer
+            Get
+                Return _schedulerMaxToolRounds
+            End Get
+            Set(value As Integer)
+                SetProperty(_schedulerMaxToolRounds, value)
+            End Set
+        End Property
+
+        Private _schedulerMaxOutputTokens As Integer
+        Public Property SchedulerMaxOutputTokens As Integer
+            Get
+                Return _schedulerMaxOutputTokens
+            End Get
+            Set(value As Integer)
+                SetProperty(_schedulerMaxOutputTokens, value)
+            End Set
+        End Property
+
+        Private _schedulerMaxContinuations As Integer
+        Public Property SchedulerMaxContinuations As Integer
+            Get
+                Return _schedulerMaxContinuations
+            End Get
+            Set(value As Integer)
+                SetProperty(_schedulerMaxContinuations, value)
+            End Set
+        End Property
+
         Public ReadOnly Property PinnedMemories As New ObservableCollection(Of MemoryItemViewModel)()
         Public ReadOnly Property SearchableMemories As New ObservableCollection(Of MemoryItemViewModel)()
 
@@ -1043,6 +1085,10 @@ Namespace ViewModels
             _backupIntervalDays = _settings.Backup.IntervalDays
             _backupFolder = _settings.Backup.BackupFolder
             _backupKeepCount = _settings.Backup.KeepCount
+            _schedulerTimeLimitMinutes = _settings.Scheduler.JobTimeoutSeconds \ 60
+            _schedulerMaxToolRounds = _settings.Scheduler.MaxToolRounds
+            _schedulerMaxOutputTokens = _settings.Scheduler.MaxOutputTokens
+            _schedulerMaxContinuations = _settings.Scheduler.MaxContinuations
             _lemonadeBaseUrl = _settings.Lemonade.BaseUrl
             _lemonadeChatModel = _settings.Lemonade.ChatModel
             _lemonadeEmbeddingModel = _settings.Lemonade.EmbeddingModel
@@ -1447,13 +1493,20 @@ Namespace ViewModels
             Next
         End Sub
 
+        ''' <summary>" - ok, took 12 min 40 s" after the time of the last run - empty for runs from before this was recorded.</summary>
+        Private Shared Function LastRunDetail(job As ScheduledJob) As String
+            If job.LastStatus Is Nothing Then Return ""
+            Dim took = If(job.LastDurationSeconds.HasValue, $", took {RunDuration.Format(job.LastDurationSeconds.Value)}", "")
+            Return $" - {job.LastStatus}{took}"
+        End Function
+
         Private Function ToScheduledJobViewModel(job As ScheduledJob) As ScheduledJobViewModel
             Dim row As New ScheduledJobViewModel With {
                 .Id = job.Id,
                 .Name = job.Name,
                 .CronExpressionText = job.CronExpression,
                 .Prompt = job.Prompt,
-                .LastRunDisplay = If(job.LastRunAt.HasValue, $"{job.LastRunAt.Value.ToLocalTime():dd/MM/yyyy HH:mm}", "Never run"),
+                .LastRunDisplay = If(job.LastRunAt.HasValue, $"{job.LastRunAt.Value.ToLocalTime():dd/MM/yyyy HH:mm}", "Never run") & LastRunDetail(job),
                 .NextRunDisplay = If(job.NextRunAt.HasValue, $"{job.NextRunAt.Value.ToLocalTime():dd/MM/yyyy HH:mm}", "Never (invalid schedule)"),
                 .IsEnabled = job.IsEnabled,
                 .ModelId = If(String.IsNullOrEmpty(job.ModelId), UseCurrentModelSentinel, job.ModelId)
@@ -1623,6 +1676,14 @@ Namespace ViewModels
             _settings.Backup.IntervalDays = If(BackupIntervalDays > 0, BackupIntervalDays, New BackupSettings().IntervalDays)
             _settings.Backup.BackupFolder = If(String.IsNullOrWhiteSpace(BackupFolder), New BackupSettings().BackupFolder, BackupFolder)
             _settings.Backup.KeepCount = If(BackupKeepCount > 0, BackupKeepCount, New BackupSettings().KeepCount)
+
+            ' Each box is kept inside its own range (an empty or odd box
+            ' falls back to the default), so a nonsense limit cannot be saved.
+            Dim defaults As New SchedulerSettings()
+            _settings.Scheduler.JobTimeoutSeconds = If(SchedulerTimeLimitMinutes >= 1 AndAlso SchedulerTimeLimitMinutes <= 1440, SchedulerTimeLimitMinutes * 60, defaults.JobTimeoutSeconds)
+            _settings.Scheduler.MaxToolRounds = If(SchedulerMaxToolRounds >= 1 AndAlso SchedulerMaxToolRounds <= 500, SchedulerMaxToolRounds, defaults.MaxToolRounds)
+            _settings.Scheduler.MaxOutputTokens = If(SchedulerMaxOutputTokens >= 256 AndAlso SchedulerMaxOutputTokens <= 131072, SchedulerMaxOutputTokens, defaults.MaxOutputTokens)
+            _settings.Scheduler.MaxContinuations = If(SchedulerMaxContinuations >= 0 AndAlso SchedulerMaxContinuations <= 10, SchedulerMaxContinuations, defaults.MaxContinuations)
 
             _settings.Lemonade.BaseUrl = LemonadeBaseUrl
             _settings.Lemonade.ChatModel = LemonadeChatModel

@@ -335,6 +335,21 @@ Namespace Data
                         End Using
                     End If
                 End Using
+
+                ' How the last run ended ("ok", "failed", "timed out", "cut
+                ' short") and how long it took, in seconds - same guarded
+                ' migration pattern as above.
+                For Each columnInfo In {("LastStatus", "TEXT NULL"), ("LastDurationSeconds", "REAL NULL")}
+                    Using checkCommand = connection.CreateCommand()
+                        checkCommand.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('ScheduledJobs') WHERE name = '{columnInfo.Item1}';"
+                        If CLng(checkCommand.ExecuteScalar()) = 0 Then
+                            Using alterCommand = connection.CreateCommand()
+                                alterCommand.CommandText = $"ALTER TABLE ScheduledJobs ADD COLUMN {columnInfo.Item1} {columnInfo.Item2};"
+                                alterCommand.ExecuteNonQuery()
+                            End Using
+                        End If
+                    End Using
+                Next
             End Using
 
             _logger.LogInformation("App database ready at {ConnectionString}", _connectionString)
