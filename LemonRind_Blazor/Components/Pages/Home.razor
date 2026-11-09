@@ -238,11 +238,11 @@
                     @if (!message.IsUser && message.ToolCalls.Count > 0)
                     {
                         <div class="tool-chips">
-                            @foreach (var toolCall in message.ToolCalls)
+                            @foreach (var group in GroupToolCalls(message.ToolCalls))
                             {
-                                <span class="tool-chip" title="@(toolCall.ErrorMessage ?? (toolCall.Succeeded == true ? "Succeeded" : toolCall.Succeeded == false ? "Failed" : "Pending"))">
-                                    <span class="tool-chip-dot @(toolCall.Succeeded == true ? "succeeded" : toolCall.Succeeded == false ? "failed" : "pending")"></span>
-                                    @toolCall.Name
+                                <span class="tool-chip" title="@group.Tooltip">
+                                    <span class="tool-chip-dot @(group.Succeeded == true ? "succeeded" : group.Succeeded == false ? "failed" : "pending")"></span>
+                                    @(group.Name + (group.Count > 1 ? $" x {group.Count}" : ""))
                                 </span>
                             }
                         </div>
@@ -351,11 +351,11 @@
                 @if (LastAssistantMessage is { ToolCalls.Count: > 0 } lastMessage)
                 {
                     <div class="tool-chips">
-                        @foreach (var toolCall in lastMessage.ToolCalls)
+                        @foreach (var group in GroupToolCalls(lastMessage.ToolCalls))
                         {
-                            <span class="tool-chip" title="@(toolCall.ErrorMessage ?? (toolCall.Succeeded == true ? "Succeeded" : toolCall.Succeeded == false ? "Failed" : "Pending"))">
-                                <span class="tool-chip-dot @(toolCall.Succeeded == true ? "succeeded" : toolCall.Succeeded == false ? "failed" : "pending")"></span>
-                                @toolCall.Name
+                            <span class="tool-chip" title="@group.Tooltip">
+                                <span class="tool-chip-dot @(group.Succeeded == true ? "succeeded" : group.Succeeded == false ? "failed" : "pending")"></span>
+                                @(group.Name + (group.Count > 1 ? $" x {group.Count}" : ""))
                             </span>
                         }
                     </div>
@@ -852,6 +852,47 @@
         return sections.Count == 0 ? "(no modules with tools are currently enabled)" : string.Join("\n\n---\n\n", sections);
     }
     private void CloseToolsSent() => _isToolsSentOpen = false;
+
+    // Many calls to the same tool (a long scheduled job can make dozens of searches and page reads) are shown as
+    // ONE badge with a count - "web_search x 12" - instead of a row per call. Calls that succeeded and calls that
+    // failed stay separate badges, so one failure among twelve is never hidden in a green total. Badges follow the
+    // order each tool was first used.
+    private sealed record ToolCallGroup(string Name, bool? Succeeded, int Count, string Tooltip);
+
+    private static List<ToolCallGroup> GroupToolCalls(IEnumerable<ToolCallResult> calls)
+    {
+        var all = calls.ToList();
+        var firstUse = all.Select(c => c.Name).Distinct().Select((name, index) => (name, index)).ToDictionary(x => x.name, x => x.index);
+        return all
+            .GroupBy(c => (c.Name, c.Succeeded))
+            .OrderBy(g => firstUse[g.Key.Name])
+            .Select(g => new ToolCallGroup(g.Key.Name, g.Key.Succeeded, g.Count(), ToolCallTooltip(g.Key.Succeeded, g.ToList())))
+            .ToList();
+    }
+
+    // What you see on hover: short versions of the real errors for failed calls (up to three kinds), else how the calls ended.
+    private static string ToolCallTooltip(bool? succeeded, List<ToolCallResult> calls)
+    {
+        var errors = calls.Select(c => ShortError(c.ErrorMessage)).Where(e => e.Length > 0).Distinct().ToList();
+        if (errors.Count > 0)
+        {
+            var lines = errors.Take(3).ToList();
+            if (errors.Count > 3) lines.Add($"(and {errors.Count - 3} more kinds of error)");
+            return string.Join("\n", lines);
+        }
+        var title = succeeded == true ? "Succeeded" : succeeded == false ? "Failed" : "Pending";
+        return calls.Count > 1 ? $"{title} ({calls.Count} calls)" : title;
+    }
+
+    // An error boiled down for a tooltip: one line, web-address query strings removed (the long signed part is never
+    // the useful part), cut to a readable length.
+    private static string ShortError(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return "";
+        var oneLine = string.Join(" ", text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        var plain = System.Text.RegularExpressions.Regex.Replace(oneLine, @"\?[^\s'""]+", "?...");
+        return plain.Length > 140 ? plain[..137].TrimEnd() + "..." : plain;
+    }
 
     // Real tool-call success/failure tracking, replacing Stage
     // 4's plain tool-name strings. Succeeded is a nullable bool, starting
