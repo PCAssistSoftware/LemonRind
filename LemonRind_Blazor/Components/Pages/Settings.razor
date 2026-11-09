@@ -3,6 +3,7 @@
 @using LemonRindBlazor.Configuration
 @using LemonRindBlazor.Modules
 @using LemonRindBlazor.Components.SettingsSections
+@using LemonRindBlazor.Services
 @inject AppSettingsStore SettingsStore
 @inject AppSettings LiveSettings
 @inject ModuleRegistry ModuleRegistry
@@ -108,6 +109,14 @@
                         Data folder (requires restart) - holds the database, generated/attached images, workspace files, and this settings file itself
                         <input @bind="_edited.AppData.DataFolder" />
                     </label>
+                    <h4>What is using the space</h4>
+                    <ul class="storage-lines">
+                        @foreach (var line in _storageLines ??= StorageUsage.BuildLines(LiveSettings.AppData.ResolvedDataFolder()))
+                        {
+                            <li>@line</li>
+                        }
+                    </ul>
+                    <p class="settings-help">These add up to the whole data folder. Sizes are shown in the units your computer's file manager uses. <button class="storage-refresh" @onclick="() => _storageLines = null">Refresh</button></p>
                 </section>
             }
             else if (_selectedSection == "Web search")
@@ -281,6 +290,9 @@
     // into the singleton every already-constructed service holds a
     // reference to; only Save pushes it across, via AppSettings.CopyInto.
     private AppSettings _edited = new();
+
+    // What is using the space (Storage section): measured the first time the section is shown, and again on Refresh.
+    private List<string>? _storageLines;
     private string _allowedRootsText = "";
     private string _statusText = "";
     private bool _restartRequired;
