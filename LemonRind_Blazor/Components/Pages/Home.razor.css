@@ -1436,3 +1436,14 @@ details.thinking > summary:hover {
     min-width: 7rem;
     flex-shrink: 0;
 }
+
+/* Under a reply that stopped at the output limit. */
+.cutoff-note {
+    margin-top: 0.4rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.cutoff-continue {
+    margin-left: 0.5rem;
+}

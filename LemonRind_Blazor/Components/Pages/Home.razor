@@ -254,6 +254,18 @@
                         </div>
                     }
                     <div class="bubble-text">@RenderMarkdown(message.Text)</div>
+                    @if (message.IsCutOff)
+                    {
+                        // The reply stopped at the output limit (a model's thinking counts towards it), so it may stop
+                        // part way. The button asks the model to carry on; it is only offered on the newest reply.
+                        <div class="cutoff-note">
+                            The reply reached the output limit (thinking counts towards it), so it may be incomplete.
+                            @if (!_isBusy && ReferenceEquals(message, _messages.LastOrDefault()))
+                            {
+                                <button class="cutoff-continue" @onclick="ContinueReplyAsync">Continue</button>
+                            }
+                        </div>
+                    }
                     @if (!string.IsNullOrEmpty(message.GeneratedImageUrl))
                     {
                         <img class="generated-image" src="@message.GeneratedImageUrl" alt="Generated image" />
@@ -953,6 +965,9 @@
     private class DisplayMessage
     {
         public required bool IsUser { get; init; }
+
+        /// <summary>The reply stopped at the output limit, so it may stop part way (the bubble says so and offers Continue).</summary>
+        public bool IsCutOff { get; set; }
         public string Text { get; set; } = "";
         public string ReasoningText { get; set; } = "";
 
@@ -2217,6 +2232,7 @@
         var fullReasoning = new System.Text.StringBuilder();
         var wasCancelled = false;
         var hadError = false;
+        ChatFinishReason? finishReason = null; // how the reply ended: "length" means it hit the output limit
         var options = new ChatOptions { ModelId = _selectedModel, Tools = ModuleRegistry.GetEnabledTools(), MaxOutputTokens = maxOutputTokensPerReply };
 
         // Prompt-processing progress indicator. llama.cpp's own
@@ -2258,6 +2274,7 @@
         {
             await foreach (var update in ChatClient.GetStreamingResponseAsync(outgoingMessages, options, cts.Token))
             {
+                if (update.FinishReason is { } reason) finishReason = reason;
                 fullReply.Append(update.Text);
                 assistantMessage.Text = fullReply.ToString();
 
@@ -2348,6 +2365,9 @@
         // clear, so a stuck "43%" could otherwise linger forever.
         assistantMessage.PromptProgressText = null;
 
+        // A reply that has text but stopped at the output limit may stop part way: say so, and offer to carry on.
+        assistantMessage.IsCutOff = !wasCancelled && !hadError && finishReason == ChatFinishReason.Length && fullReply.Length > 0;
+
         var replyText = fullReply.ToString();
         assistantMessage.GeneratedImageUrl = TryExtractGeneratedImageUrl(replyText);
         if (assistantMessage.GeneratedImageUrl is not null)
@@ -2413,6 +2433,21 @@
     }
 
     private void StopGeneration() => _sendCts?.Cancel();
+
+    // What is sent to carry on a reply that stopped at the output limit.
+    private const string ContinuePrompt =
+        "Your last reply was cut off at the length limit. Continue exactly from where it stopped, without repeating what you already wrote.";
+
+    /// <summary>The Continue button: asks the model to carry on from where its cut-off reply stopped, as an ordinary message (anything typed in the box is kept).</summary>
+    private async Task ContinueReplyAsync()
+    {
+        if (_isBusy) return;
+        var typed = _inputText;
+        _inputText = ContinuePrompt;
+        await SendAsync();
+        _inputText = typed;
+        StateHasChanged();
+    }
 
     /// <summary>
     /// The direct-image-model-selection path (an image-labeled model picked in
