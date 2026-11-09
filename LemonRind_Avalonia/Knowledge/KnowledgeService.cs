@@ -27,11 +27,13 @@ public class KnowledgeService
 
     private readonly KnowledgeRepository _repository;
     private readonly IEmbeddingGenerator<string, Embedding<float>> _embeddingGenerator;
+    private readonly string _embeddingModel;
 
     public KnowledgeService(KnowledgeRepository repository, EmbeddingClientFactory embeddingClientFactory)
     {
         _repository = repository;
         _embeddingGenerator = embeddingClientFactory.CreateEmbeddingGenerator();
+        _embeddingModel = embeddingClientFactory.ModelName;
     }
 
     /// <summary>
@@ -59,6 +61,17 @@ public class KnowledgeService
 
         var manifestText = GetSourceManifestText(knowledgeBaseId);
         if (!string.IsNullOrEmpty(manifestText)) sections.Add(manifestText);
+
+        // Vectors from another embedding model cannot be compared with this one's, so such a knowledge base is not
+        // searched. Say so (the model passes it on) rather than quietly giving answers without its content.
+        var kb = _repository.GetKnowledgeBase(knowledgeBaseId);
+        var problem = kb is null ? "" : KnowledgeCompatibility.Check(kb, _embeddingModel);
+        if (problem.Length > 0)
+        {
+            sections.Add("The content of the attached knowledge base could not be searched for this message, so none of it is included. " +
+                $"Reason: {problem} Tell the user this, and do not guess at what the knowledge base contains.");
+            return string.Join(Environment.NewLine + Environment.NewLine, sections);
+        }
 
         try
         {

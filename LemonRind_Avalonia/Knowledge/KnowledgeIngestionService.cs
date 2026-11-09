@@ -23,11 +23,16 @@ public class KnowledgeIngestionService
     private readonly KnowledgeRepository _repository;
     private readonly IEmbeddingGenerator<string, Embedding<float>> _embeddingGenerator;
     private readonly WebReaderClient _webReaderClient;
+    private readonly string _embeddingModel;
+
+    /// <summary>The embedding model in use (the one this service's generator was built with) - what a knowledge base is checked against.</summary>
+    public string EmbeddingModelName => _embeddingModel;
 
     public KnowledgeIngestionService(KnowledgeRepository repository, EmbeddingClientFactory embeddingClientFactory, WebReaderClient webReaderClient)
     {
         _repository = repository;
         _embeddingGenerator = embeddingClientFactory.CreateEmbeddingGenerator();
+        _embeddingModel = embeddingClientFactory.ModelName;
         _webReaderClient = webReaderClient;
     }
 
@@ -73,6 +78,10 @@ public class KnowledgeIngestionService
                     var text = FileTextExtractor.ExtractTextUncapped(filePath);
                     totalChunkCount += await EmbedAndSaveChunksAsync(knowledgeBaseId, sourceId, text, totalChunkCount, cancellationToken);
                     readableFileCount++;
+                }
+                catch (KnowledgeModelMismatchException)
+                {
+                    throw; // not one bad file: the whole knowledge base cannot take this model, so stop and say why
                 }
                 catch
                 {
@@ -126,12 +135,73 @@ public class KnowledgeIngestionService
         var chunks = TextChunker.ChunkText(text);
         if (chunks.Count == 0) return 0;
 
+        // Refuse before spending time embedding: mixing models in one knowledge base would ruin its search.
+        var kb = _repository.GetKnowledgeBase(knowledgeBaseId);
+        if (kb is not null)
+        {
+            var problem = KnowledgeCompatibility.Check(kb, _embeddingModel);
+            if (problem.Length > 0) throw new KnowledgeModelMismatchException(problem);
+        }
+
         var embeddingResults = await _embeddingGenerator.GenerateAsync(chunks, cancellationToken: cancellationToken);
+        var dimensions = embeddingResults[0].Vector.Length;
+
+        // A knowledge base that never recorded its model is checked by the size of its vectors instead.
+        if (kb is not null)
+        {
+            var storedSize = kb.EmbeddingDimensions > 0 ? kb.EmbeddingDimensions : _repository.StoredVectorDimensions(knowledgeBaseId);
+            if (storedSize > 0 && storedSize != dimensions)
+            {
+                throw new KnowledgeModelMismatchException(KnowledgeCompatibility.DimensionMessage(kb, storedSize, dimensions));
+            }
+        }
+
         for (var i = 0; i < chunks.Count; i++)
         {
             _repository.SaveChunk(knowledgeBaseId, sourceId, startingChunkIndex + i, chunks[i], embeddingResults[i].Vector.ToArray());
         }
 
+        // The first time vectors are stored (or the first since this was recorded), remember which model made them.
+        if (kb is not null && string.IsNullOrWhiteSpace(kb.EmbeddingModel))
+        {
+            _repository.SetEmbeddingModel(knowledgeBaseId, _embeddingModel, dimensions);
+        }
+
         return chunks.Count;
+    }
+
+    /// <summary>
+    /// Embeds every chunk of a knowledge base again with the current embedding model. Returns how many chunks were
+    /// done. The chunk text is stored, so the original documents are not needed. The new vectors are all computed
+    /// first and swapped in together, so a failure part way leaves the knowledge base as it was.
+    /// </summary>
+    public async Task<int> ReembedAsync(string knowledgeBaseId, CancellationToken cancellationToken)
+    {
+        if (!KnowledgeCompatibility.TryStartReembedding(knowledgeBaseId)) return 0;
+        try
+        {
+            var chunks = _repository.ListChunkContents(knowledgeBaseId);
+            if (chunks.Count == 0)
+            {
+                _repository.SetEmbeddingModel(knowledgeBaseId, _embeddingModel, 0); // nothing stored: just adopt the current model
+                return 0;
+            }
+
+            const int batchSize = 32;
+            var vectors = new List<(string ChunkId, float[] Vector)>(chunks.Count);
+            for (var start = 0; start < chunks.Count; start += batchSize)
+            {
+                var batch = chunks.Skip(start).Take(batchSize).ToList();
+                var results = await _embeddingGenerator.GenerateAsync(batch.Select(c => c.Content).ToList(), cancellationToken: cancellationToken);
+                for (var i = 0; i < batch.Count; i++) vectors.Add((batch[i].Id, results[i].Vector.ToArray()));
+            }
+
+            _repository.ReplaceEmbeddings(knowledgeBaseId, vectors, _embeddingModel);
+            return chunks.Count;
+        }
+        finally
+        {
+            KnowledgeCompatibility.FinishReembedding(knowledgeBaseId);
+        }
     }
 }

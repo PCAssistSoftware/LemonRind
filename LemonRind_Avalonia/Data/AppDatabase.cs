@@ -222,6 +222,12 @@ public class AppDatabase
         AddColumnIfMissing(connection, "ScheduledJobs", "LastStatus", "TEXT NULL");
         AddColumnIfMissing(connection, "ScheduledJobs", "LastDurationSeconds", "REAL NULL");
 
+        // The embedding model that built a knowledge base's vectors, and how many numbers each vector has, so a later
+        // change of embedding model is noticed instead of silently ruining its search. Null for knowledge bases built
+        // before this was recorded.
+        AddColumnIfMissing(connection, "KnowledgeBases", "EmbeddingModel", "TEXT NULL");
+        AddColumnIfMissing(connection, "KnowledgeBases", "EmbeddingDimensions", "INTEGER NULL");
+
         _logger.LogInformation("App database ready at {ConnectionString}", _connectionString);
     }
 

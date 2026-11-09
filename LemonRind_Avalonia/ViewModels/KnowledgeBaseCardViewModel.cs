@@ -30,6 +30,13 @@ public partial class KnowledgeBaseCardViewModel : ObservableObject
     [ObservableProperty] private string _statusText = "";
     [ObservableProperty] private bool _isBusy;
 
+    // The embedding model that built this knowledge base's vectors, and - when it differs from the one in use now -
+    // why it cannot be searched (with a Re-embed button), see KnowledgeCompatibility.
+    [ObservableProperty] private string _modelInfoText = "";
+    [ObservableProperty] private string _warningText = "";
+    [ObservableProperty] private bool _hasWarning;
+    [ObservableProperty] private bool _canReembed;
+
     public KnowledgeBaseCardViewModel(KnowledgeBaseSummary summary, KnowledgeRepository repository, KnowledgeIngestionService ingestionService, Action onDeleted)
     {
         Id = summary.Id;
@@ -39,6 +46,36 @@ public partial class KnowledgeBaseCardViewModel : ObservableObject
         _ingestionService = ingestionService;
         _onDeleted = onDeleted;
         RefreshSources();
+        RefreshCompatibility();
+    }
+
+    /// <summary>Reads the knowledge base again (the model is recorded the first time something is embedded) and works out whether it can be used with the embedding model in use now.</summary>
+    public void RefreshCompatibility()
+    {
+        var kb = _repository.GetKnowledgeBase(Id);
+        ModelInfoText = kb is not null && !string.IsNullOrEmpty(kb.EmbeddingModel) ? $"Embedding model: {kb.EmbeddingModel}" : "";
+        WarningText = kb is null ? "" : KnowledgeCompatibility.Check(kb, _ingestionService.EmbeddingModelName);
+        HasWarning = WarningText.Length > 0;
+        CanReembed = HasWarning && !KnowledgeCompatibility.IsReembedding(Id);
+    }
+
+    /// <summary>Embeds every chunk again with the current embedding model - its stored text is used, so the original documents are not needed. Takes a while for a big knowledge base.</summary>
+    [RelayCommand]
+    private async Task ReembedAsync()
+    {
+        IsBusy = true;
+        StatusText = "Re-embedding... this takes a while for a big knowledge base.";
+        try
+        {
+            var count = await _ingestionService.ReembedAsync(Id, CancellationToken.None);
+            StatusText = $"Re-embedded {count:N0} chunks with {_ingestionService.EmbeddingModelName}.";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Couldn't re-embed: {ex.Message}";
+        }
+        finally { IsBusy = false; }
+        RefreshCompatibility();
     }
 
     public void RefreshSources()
@@ -56,6 +93,7 @@ public partial class KnowledgeBaseCardViewModel : ObservableObject
         {
             await _ingestionService.AddFileSourceAsync(Id, filePath, CancellationToken.None);
             RefreshSources();
+            RefreshCompatibility();
             StatusText = "";
         }
         finally { IsBusy = false; }
@@ -70,6 +108,7 @@ public partial class KnowledgeBaseCardViewModel : ObservableObject
         {
             await _ingestionService.AddFolderSourceAsync(Id, folderPath, CancellationToken.None);
             RefreshSources();
+            RefreshCompatibility();
             StatusText = "";
         }
         finally { IsBusy = false; }
@@ -88,6 +127,7 @@ public partial class KnowledgeBaseCardViewModel : ObservableObject
         {
             await _ingestionService.AddWebsiteSourceAsync(Id, url, CancellationToken.None);
             RefreshSources();
+            RefreshCompatibility();
             StatusText = "";
         }
         finally { IsBusy = false; }
@@ -108,6 +148,7 @@ public partial class KnowledgeBaseCardViewModel : ObservableObject
         {
             await _ingestionService.AddTextSourceAsync(Id, content, name, CancellationToken.None);
             RefreshSources();
+            RefreshCompatibility();
             StatusText = "";
         }
         finally { IsBusy = false; }

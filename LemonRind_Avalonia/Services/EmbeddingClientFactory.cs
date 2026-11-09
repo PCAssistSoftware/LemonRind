@@ -16,6 +16,9 @@ public class EmbeddingClientFactory(AppSettings settings)
 {
     private readonly LemonadeSettings _settings = settings.Lemonade;
 
+    /// <summary>The embedding model's name as configured now ("" if none yet) - what a knowledge base records as the model that built it.</summary>
+    public string ModelName => string.IsNullOrWhiteSpace(_settings.EmbeddingModel) ? "" : _settings.EmbeddingModel.Trim();
+
     public IEmbeddingGenerator<string, Embedding<float>> CreateEmbeddingGenerator()
     {
         var options = new OpenAIClientOptions { Endpoint = new Uri(_settings.BaseUrl) };

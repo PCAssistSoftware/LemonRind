@@ -274,9 +274,17 @@
                                                 <StackPanel Grid.Column="0">
                                                     <TextBlock Text="{Binding Name}" FontWeight="Bold" />
                                                     <TextBlock Text="{Binding Description}" Foreground="{DynamicResource TextMuted}" FontSize="12" IsVisible="{Binding Description, Converter={x:Static avdc:StringConverters.IsNotNullOrEmpty}}" />
+                                                    <TextBlock Text="{Binding ModelInfoText}" Foreground="{DynamicResource TextMuted}" FontSize="12" IsVisible="{Binding ModelInfoText, Converter={x:Static avdc:StringConverters.IsNotNullOrEmpty}}" />
                                                 </StackPanel>
                                                 <Button Grid.Column="1" Content="Delete knowledge base" Command="{Binding DeleteCommand}" Padding="8,2" />
                                             </Grid>
+
+                                            <Border IsVisible="{Binding HasWarning}" Background="{DynamicResource ChipWarnBg}" BorderBrush="{DynamicResource Warning}" BorderThickness="1" CornerRadius="4" Padding="8">
+                                                <StackPanel Spacing="6">
+                                                    <TextBlock Text="{Binding WarningText}" TextWrapping="Wrap" FontSize="12" />
+                                                    <Button Content="Re-embed" Command="{Binding ReembedCommand}" IsVisible="{Binding CanReembed}" IsEnabled="{Binding !IsBusy}" HorizontalAlignment="Left" Padding="8,2" />
+                                                </StackPanel>
+                                            </Border>
 
                                             <ItemsControl ItemsSource="{Binding Sources}">
                                                 <ItemsControl.ItemTemplate>
