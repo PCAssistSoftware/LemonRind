@@ -727,6 +727,9 @@ Namespace ViewModels
             End Set
         End Property
 
+        ' What is using the space, measured when the Settings window opens.
+        Public ReadOnly Property StorageSummaryText As String
+
         ' Modules: the longest piece of a tool result sent to the model in one go.
         Private _moduleMaxToolOutputChars As Integer
         Public Property ModuleMaxToolOutputChars As Integer
@@ -1101,6 +1104,7 @@ Namespace ViewModels
             _schedulerMaxOutputTokens = _settings.Scheduler.MaxOutputTokens
             _schedulerMaxContinuations = _settings.Scheduler.MaxContinuations
             _moduleMaxToolOutputChars = _settings.Modules.MaxToolOutputChars
+            StorageSummaryText = String.Join(Environment.NewLine, StorageUsage.BuildLines(_settings.AppData.ResolvedDataFolder()))
             _lemonadeBaseUrl = _settings.Lemonade.BaseUrl
             _lemonadeChatModel = _settings.Lemonade.ChatModel
             _lemonadeEmbeddingModel = _settings.Lemonade.EmbeddingModel

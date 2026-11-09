@@ -90,6 +90,9 @@
                         </TextBlock>
                         <TextBlock Text="Changing this points the app at a different (or new, empty) database after restart - it does not move your existing data."
                                    Foreground="Gray" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0" FontStyle="Italic" />
+                        <TextBlock Text="What is using the space" FontWeight="Bold" Margin="0,16,0,4" />
+                        <TextBlock Text="{Binding StorageSummaryText, Mode=OneWay}" TextWrapping="Wrap" />
+                        <TextBlock Text="These add up to the whole data folder. Sizes are shown in the units your computer's file manager uses." Foreground="Gray" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" />
                     </StackPanel>
 
                     <StackPanel Style="{StaticResource SectionPanelStyle}"
