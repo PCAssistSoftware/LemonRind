@@ -125,11 +125,30 @@ Namespace Services
     ''' counters - not needed yet.
     ''' </summary>
     Public Class LemonadeStatsInfo
+        ' A newer Lemonade reports the speed or first-token time as null
+        ' (instead of leaving it out) when a backend has no timing to give. A
+        ' plain Double property throws on that, and the stats for the reply
+        ' were then silently lost - so the JSON is read into a nullable
+        ' number, and the Double the rest of the app uses treats null as 0.
         <JsonPropertyName("time_to_first_token")>
-        Public Property TimeToFirstToken As Double
+        Public Property TimeToFirstTokenOrNull As Double?
 
         <JsonPropertyName("tokens_per_second")>
-        Public Property TokensPerSecond As Double
+        Public Property TokensPerSecondOrNull As Double?
+
+        <System.Text.Json.Serialization.JsonIgnore>
+        Public ReadOnly Property TimeToFirstToken As Double
+            Get
+                Return If(TimeToFirstTokenOrNull, 0.0)
+            End Get
+        End Property
+
+        <System.Text.Json.Serialization.JsonIgnore>
+        Public ReadOnly Property TokensPerSecond As Double
+            Get
+                Return If(TokensPerSecondOrNull, 0.0)
+            End Get
+        End Property
 
         ''' <summary>
         ''' Tokens actually PROCESSED this request - excludes anything

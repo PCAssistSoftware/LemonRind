@@ -117,15 +117,34 @@ internal class LemonadeTokenizeResponse
 }
 
 /// <summary>
+/// Reads a JSON number as a double, and a JSON null as 0. A newer Lemonade reports
+/// the speed or first-token time as null (instead of leaving it out) when a backend
+/// has no timing to give; a plain double property throws on that, and the stats for
+/// the reply were then silently lost.
+/// </summary>
+public class NullAsZeroDoubleConverter : System.Text.Json.Serialization.JsonConverter<double>
+{
+    public override bool HandleNull => true;
+
+    public override double Read(ref System.Text.Json.Utf8JsonReader reader, Type typeToConvert, System.Text.Json.JsonSerializerOptions options)
+        => reader.TokenType == System.Text.Json.JsonTokenType.Null ? 0 : reader.GetDouble();
+
+    public override void Write(System.Text.Json.Utf8JsonWriter writer, double value, System.Text.Json.JsonSerializerOptions options)
+        => writer.WriteNumberValue(value);
+}
+
+/// <summary>
 /// GET /v1/stats - performance figures for the last request, measured
 /// server-side by Lemonade itself.
 /// </summary>
 public class LemonadeStatsInfo
 {
     [JsonPropertyName("time_to_first_token")]
+    [System.Text.Json.Serialization.JsonConverter(typeof(NullAsZeroDoubleConverter))]
     public double TimeToFirstToken { get; set; }
 
     [JsonPropertyName("tokens_per_second")]
+    [System.Text.Json.Serialization.JsonConverter(typeof(NullAsZeroDoubleConverter))]
     public double TokensPerSecond { get; set; }
 
     /// <summary>Tokens actually PROCESSED this request - excludes anything served from the prefix cache. Legitimate for a per-turn "tokens in" figure, NOT for the context-usage bar (use PromptTokens for that).</summary>
