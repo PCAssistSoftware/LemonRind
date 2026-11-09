@@ -727,6 +727,17 @@ Namespace ViewModels
             End Set
         End Property
 
+        ' Modules: the longest piece of a tool result sent to the model in one go.
+        Private _moduleMaxToolOutputChars As Integer
+        Public Property ModuleMaxToolOutputChars As Integer
+            Get
+                Return _moduleMaxToolOutputChars
+            End Get
+            Set(value As Integer)
+                SetProperty(_moduleMaxToolOutputChars, value)
+            End Set
+        End Property
+
         Public ReadOnly Property PinnedMemories As New ObservableCollection(Of MemoryItemViewModel)()
         Public ReadOnly Property SearchableMemories As New ObservableCollection(Of MemoryItemViewModel)()
 
@@ -1089,6 +1100,7 @@ Namespace ViewModels
             _schedulerMaxToolRounds = _settings.Scheduler.MaxToolRounds
             _schedulerMaxOutputTokens = _settings.Scheduler.MaxOutputTokens
             _schedulerMaxContinuations = _settings.Scheduler.MaxContinuations
+            _moduleMaxToolOutputChars = _settings.Modules.MaxToolOutputChars
             _lemonadeBaseUrl = _settings.Lemonade.BaseUrl
             _lemonadeChatModel = _settings.Lemonade.ChatModel
             _lemonadeEmbeddingModel = _settings.Lemonade.EmbeddingModel
@@ -1684,6 +1696,7 @@ Namespace ViewModels
             _settings.Scheduler.MaxToolRounds = If(SchedulerMaxToolRounds >= 1 AndAlso SchedulerMaxToolRounds <= 500, SchedulerMaxToolRounds, defaults.MaxToolRounds)
             _settings.Scheduler.MaxOutputTokens = If(SchedulerMaxOutputTokens >= 256 AndAlso SchedulerMaxOutputTokens <= 131072, SchedulerMaxOutputTokens, defaults.MaxOutputTokens)
             _settings.Scheduler.MaxContinuations = If(SchedulerMaxContinuations >= 0 AndAlso SchedulerMaxContinuations <= 10, SchedulerMaxContinuations, defaults.MaxContinuations)
+            _settings.Modules.MaxToolOutputChars = If(ModuleMaxToolOutputChars >= 500 AndAlso ModuleMaxToolOutputChars <= 1000000, ModuleMaxToolOutputChars, New ModuleSettings().MaxToolOutputChars)
 
             _settings.Lemonade.BaseUrl = LemonadeBaseUrl
             _settings.Lemonade.ChatModel = LemonadeChatModel

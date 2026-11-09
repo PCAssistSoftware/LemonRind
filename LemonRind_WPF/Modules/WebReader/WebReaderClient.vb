@@ -17,7 +17,9 @@ Namespace Modules.WebReader
     ''' </summary>
     Public Class WebReaderClient
 
-        Private Const MaxTextLength = 8000 ' keeps one fetched page from dominating a single chat turn's context window.
+        ' Only a safety bound against an absurdly large page: how much of a page the model sees at once is decided by
+        ' the tool-result pieces (ToolResultHolder), which hold the whole text and let the model read on to the end.
+        Private Const MaxTextLength = 2000000
 
         Private ReadOnly _fetcher As SsrfSafeHttpFetcher
 

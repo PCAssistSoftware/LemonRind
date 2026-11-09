@@ -146,6 +146,7 @@ Class Application
         ' since it does no Lemonade/network setup in its constructor at all.
         builder.Services.AddSingleton(Of ImageAttachmentService)()
 
+        builder.Services.AddSingleton(Of ToolResultHolder)()
         builder.Services.AddSingleton(Of ModuleRegistry)()
         ' Lazy factory, not ModuleRegistry directly - ScheduledJobRunner
         ' needs to resolve it without creating a circular DI dependency,

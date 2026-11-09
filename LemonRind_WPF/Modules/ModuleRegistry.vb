@@ -17,6 +17,7 @@ Namespace Modules
 
         Private ReadOnly _modules As IReadOnlyList(Of IAssistantModule)
         Private ReadOnly _logger As ILogger(Of ModuleRegistry)
+        Private ReadOnly _resultHolder As ToolResultHolder
 
         ''' <summary>
         ''' Which modules currently have real startup work in effect (a poll
@@ -30,9 +31,10 @@ Namespace Modules
         ''' </summary>
         Private ReadOnly _startedModules As New HashSet(Of IAssistantModule)()
 
-        Public Sub New(modules As IEnumerable(Of IAssistantModule), logger As ILogger(Of ModuleRegistry))
+        Public Sub New(modules As IEnumerable(Of IAssistantModule), logger As ILogger(Of ModuleRegistry), resultHolder As ToolResultHolder)
             _modules = modules.ToList()
             _logger = logger
+            _resultHolder = resultHolder
         End Sub
 
         ''' <summary>All registered modules, enabled or not - e.g. for the Settings screen's toggle list.</summary>
@@ -134,8 +136,15 @@ Namespace Modules
         ''' Every tool from every enabled module, flattened into one list -
         ''' this is what gets handed to the chat client as its tool set.
         ''' </summary>
+        ''' <remarks>
+        ''' Each tool is wrapped so that a long result is held and sent in
+        ''' pieces, and the built-in read_more tool (which reads on through
+        ''' such a result) is offered whenever there is any tool at all.
+        ''' </remarks>
         Public Function GetEnabledTools() As IReadOnlyList(Of AITool)
-            Return _modules.Where(Function(m) m.IsEnabled).SelectMany(Function(m) m.GetTools()).ToList()
+            Dim tools = _modules.Where(Function(m) m.IsEnabled).SelectMany(Function(m) m.GetTools()).Select(Function(t) _resultHolder.Wrap(t)).ToList()
+            If tools.Count > 0 Then tools.Add(_resultHolder.ReadMoreTool)
+            Return tools
         End Function
 
         ''' <summary>

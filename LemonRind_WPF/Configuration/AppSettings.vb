@@ -221,6 +221,13 @@ Namespace Configuration
     ''' </summary>
     Public Class ModuleSettings
         Public Property Enabled As New Dictionary(Of String, Boolean)(StringComparer.OrdinalIgnoreCase)
+
+        ''' <summary>
+        ''' The longest piece of a tool result sent to the model in one go (characters).
+        ''' A longer result is held and read on piece by piece with the read_more tool.
+        ''' About four characters make a token, so 40,000 is roughly 10,000 tokens.
+        ''' </summary>
+        Public Property MaxToolOutputChars As Integer = 40000
     End Class
 
     ''' <summary>
@@ -307,6 +314,7 @@ Namespace Configuration
             target.Memory.CompactionTriggerPercent = Memory.CompactionTriggerPercent
 
             target.Modules.Enabled = New Dictionary(Of String, Boolean)(Modules.Enabled, StringComparer.OrdinalIgnoreCase)
+            target.Modules.MaxToolOutputChars = Modules.MaxToolOutputChars
 
             target.ImageGen.ModelId = ImageGen.ModelId
             target.ImageGen.DefaultWidth = ImageGen.DefaultWidth
