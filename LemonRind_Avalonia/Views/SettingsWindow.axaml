@@ -222,6 +222,9 @@
                         <TextBlock Text="Data folder (requires restart) - holds the database, generated/attached images, workspace files, and the settings file itself. Relative paths are resolved against the app's own folder."
                                    Foreground="{DynamicResource TextMuted}" FontSize="12" TextWrapping="Wrap" />
                         <TextBox Text="{Binding DataFolder}" Margin="0,0,0,8" />
+                        <TextBlock Text="What is using the space" FontWeight="Bold" Margin="0,8,0,0" />
+                        <TextBlock Text="{Binding StorageSummaryText}" TextWrapping="Wrap" />
+                        <TextBlock Text="These add up to the whole data folder. Sizes are shown in the units your computer's file manager uses." Foreground="{DynamicResource TextMuted}" FontSize="11" TextWrapping="Wrap" />
                     </StackPanel>
 
                     <StackPanel Spacing="4" IsVisible="{Binding SelectedSection, Converter={x:Static conv:SectionVisibilityConverter.Instance}, ConverterParameter=Modules}">

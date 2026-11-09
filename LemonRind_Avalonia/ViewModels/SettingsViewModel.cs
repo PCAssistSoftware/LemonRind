@@ -250,6 +250,9 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private double _schedulerMaxOutputTokens = 32768;
     [ObservableProperty] private double _schedulerMaxContinuations = 2;
 
+    // What is using the space, measured when the Settings window opens.
+    [ObservableProperty] private string _storageSummaryText = "";
+
     // Modules: the longest piece of a tool result sent to the model in one go.
     [ObservableProperty] private double _modulesMaxToolOutputChars = 40000;
 
@@ -314,6 +317,7 @@ public partial class SettingsViewModel : ObservableObject
         SchedulerMaxOutputTokens = _settings.Scheduler.MaxOutputTokens;
         SchedulerMaxContinuations = _settings.Scheduler.MaxContinuations;
         ModulesMaxToolOutputChars = _settings.Modules.MaxToolOutputChars;
+        StorageSummaryText = string.Join(Environment.NewLine, StorageUsage.BuildLines(_settings.AppData.ResolvedDataFolder()));
 
         ThinkingPanelOpenByDefault = _settings.Ui.ThinkingPanelOpenByDefault;
         Theme = string.IsNullOrWhiteSpace(_settings.Ui.Theme) ? "System" : _settings.Ui.Theme;
