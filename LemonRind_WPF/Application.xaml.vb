@@ -182,6 +182,7 @@ Class Application
         ' itself is enabled).
         builder.Services.AddSingleton(Of SchedulerRepository)()
         builder.Services.AddSingleton(Of SchedulerNotifier)()
+        builder.Services.AddSingleton(Of RunningJobTracker)()
         builder.Services.AddSingleton(Of ScheduledJobRunner)()
         builder.Services.AddSingleton(Of IAssistantModule, SchedulerModule)()
 

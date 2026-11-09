@@ -544,6 +544,30 @@ Namespace ViewModels
         ' SelectedModel is what triggers a real Lemonade /v1/load call.
         Private _currentlyLoadedModel As String = ""
 
+        ' The header note while a scheduled job is running: "Job running: Weekly report (Qwen3-8B-GGUF)".
+        Private _jobRunningNote As String = ""
+        Public Property JobRunningNote As String
+            Get
+                Return _jobRunningNote
+            End Get
+            Set(value As String)
+                If SetProperty(_jobRunningNote, value) Then OnPropertyChanged(NameOf(HasJobRunningNote))
+            End Set
+        End Property
+
+        Public ReadOnly Property HasJobRunningNote As Boolean
+            Get
+                Return Not String.IsNullOrEmpty(_jobRunningNote)
+            End Get
+        End Property
+
+        Private Sub UpdateJobRunningNote()
+            Dim running = _runningJobs.Current
+            JobRunningNote = If(running.Count = 0, "", "Job running: " & RunningJobTracker.Describe(running))
+        End Sub
+
+        Private _modelSwitchApproved As Boolean ' the person answered "Switch anyway" to the question in the setter below
+
         Private _selectedModel As String = ""
         Public Property SelectedModel As String
             Get
@@ -558,6 +582,35 @@ Namespace ViewModels
                 ' call site assumes a string, and Dictionary throws
                 ' ArgumentNullException on a null key.
                 Dim normalizedValue = If(value, "")
+
+                ' Loading another chat model while a scheduled job runs can push the job's model out of Lemonade's
+                ' memory and stop the job, so that is asked about first (only another CHAT model: an image or
+                ' embedding model has its own slot, and picking the job's own model changes nothing for it). The
+                ' picker goes back to the model in use until the answer comes; "Switch anyway" then makes the change
+                ' as usual. Nothing is blocked: Lemonade may have room for both, which this app cannot know. The
+                ' question is asked after this setter returns, so the dialog never opens in the middle of a binding update.
+                If Not _modelSwitchApproved AndAlso normalizedValue <> "" AndAlso normalizedValue <> _selectedModel AndAlso
+                   _modelCategories.GetValueOrDefault(normalizedValue) = ModelSelectorItem.ChatCategory Then
+                    Dim affected = _runningJobs.UsingOtherModel(normalizedValue)
+                    If affected.Count > 0 Then
+                        Dim question = RunningJobTracker.SwitchQuestion(affected, normalizedValue)
+                        Application.Current.Dispatcher.BeginInvoke(Sub()
+                                                                       If ConfirmDialog.Show(question, "A scheduled job is running", confirmText:="Switch anyway") Then
+                                                                           _modelSwitchApproved = True
+                                                                           Try
+                                                                               SelectedModel = normalizedValue
+                                                                           Finally
+                                                                               _modelSwitchApproved = False
+                                                                           End Try
+                                                                       Else
+                                                                           OnPropertyChanged(NameOf(SelectedModel))
+                                                                       End If
+                                                                   End Sub)
+                        OnPropertyChanged(NameOf(SelectedModel)) ' the picker goes back until the question is answered
+                        Exit Property
+                    End If
+                End If
+
                 If SetProperty(_selectedModel, normalizedValue) Then
                     ' CanSend depends on SelectedModel now (see its comment) -
                     ' SendCommand is Nothing the very first time this setter
@@ -714,12 +767,13 @@ Namespace ViewModels
         Private ReadOnly _settingsWindowFactory As Func(Of SettingsWindow)
         Private ReadOnly _logViewerWindowFactory As Func(Of LogViewerWindow)
         Private ReadOnly _schedulerNotifier As SchedulerNotifier
+        Private ReadOnly _runningJobs As RunningJobTracker
         Private ReadOnly _imageGenerationService As ImageGenerationService
         Private ReadOnly _imageGenSettings As ImageGenSettings
         Private ReadOnly _imageAttachmentService As ImageAttachmentService
         Private ReadOnly _connectionRetryTimer As DispatcherTimer
 
-        Public Sub New(chatClient As IChatClient, moduleRegistry As ModuleRegistry, managementClient As LemonadeManagementClient, sessionRepository As ChatSessionRepository, memoryService As MemoryService, compactionService As ConversationCompactionService, knowledgeRepository As KnowledgeRepository, knowledgeService As KnowledgeService, appSettings As AppSettings, settingsWindowFactory As Func(Of SettingsWindow), schedulerNotifier As SchedulerNotifier, imageGenerationService As ImageGenerationService, logViewerWindowFactory As Func(Of LogViewerWindow), imageAttachmentService As ImageAttachmentService)
+        Public Sub New(chatClient As IChatClient, moduleRegistry As ModuleRegistry, managementClient As LemonadeManagementClient, sessionRepository As ChatSessionRepository, memoryService As MemoryService, compactionService As ConversationCompactionService, knowledgeRepository As KnowledgeRepository, knowledgeService As KnowledgeService, appSettings As AppSettings, settingsWindowFactory As Func(Of SettingsWindow), schedulerNotifier As SchedulerNotifier, runningJobs As RunningJobTracker, imageGenerationService As ImageGenerationService, logViewerWindowFactory As Func(Of LogViewerWindow), imageAttachmentService As ImageAttachmentService)
             _chatClient = chatClient
             _moduleRegistry = moduleRegistry
             _managementClient = managementClient
@@ -734,6 +788,7 @@ Namespace ViewModels
             _personaSettings = appSettings.Persona
             _settingsWindowFactory = settingsWindowFactory
             _schedulerNotifier = schedulerNotifier
+            _runningJobs = runningJobs
             _imageGenerationService = imageGenerationService
             _imageGenSettings = appSettings.ImageGen
             _logViewerWindowFactory = logViewerWindowFactory
@@ -755,6 +810,8 @@ Namespace ViewModels
                 RefreshSessions()
                 ReloadCurrentSessionIfMatching(sessionId)
             End Sub)
+            ' Raised from the job's own thread, so the note is updated on the UI thread.
+            AddHandler _runningJobs.Changed, Sub() Application.Current.Dispatcher.BeginInvoke(Sub() UpdateJobRunningNote())
             SendCommand = New AsyncRelayCommand(AddressOf SendAsync, AddressOf CanSend)
             NewChatCommand = New RelayCommand(AddressOf NewChat)
             AttachFileCommand = New RelayCommand(AddressOf AttachFile)

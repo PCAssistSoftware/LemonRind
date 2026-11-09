@@ -43,6 +43,7 @@ Namespace Scheduler
 
         Private ReadOnly _chatClientFactory As LemonadeChatClientFactory
         Private ReadOnly _settings As AppSettings
+        Private ReadOnly _runningJobs As RunningJobTracker
 
         ' Func(Of ModuleRegistry), not ModuleRegistry directly -
         ' ModuleRegistry's own constructor needs every IAssistantModule
@@ -62,9 +63,10 @@ Namespace Scheduler
         Private ReadOnly _notifier As SchedulerNotifier
         Private ReadOnly _approvalStore As FileWriteApprovalStore
 
-        Public Sub New(chatClientFactory As LemonadeChatClientFactory, moduleRegistry As Func(Of ModuleRegistry), sessionRepository As ChatSessionRepository, memoryService As MemoryService, notifier As SchedulerNotifier, approvalStore As FileWriteApprovalStore, settings As AppSettings)
+        Public Sub New(chatClientFactory As LemonadeChatClientFactory, moduleRegistry As Func(Of ModuleRegistry), sessionRepository As ChatSessionRepository, memoryService As MemoryService, notifier As SchedulerNotifier, approvalStore As FileWriteApprovalStore, settings As AppSettings, runningJobs As RunningJobTracker)
             _chatClientFactory = chatClientFactory
             _settings = settings
+            _runningJobs = runningJobs
             _moduleRegistry = moduleRegistry
             _sessionRepository = sessionRepository
             _memoryService = memoryService
@@ -72,7 +74,17 @@ Namespace Scheduler
             _approvalStore = approvalStore
         End Sub
 
+        ''' <summary>
+        ''' Says so while the job works, with the model it uses (its own, else the default chat model), so the screen can
+        ''' show "Job running" and ask before another model is loaded.
+        ''' </summary>
         Public Async Function RunJobAsync(job As ScheduledJob, cancellationToken As CancellationToken) As Task(Of JobRunResult)
+            Using running = _runningJobs.Start(job.Name, If(String.IsNullOrWhiteSpace(job.ModelId), _settings.Lemonade.ChatModel, job.ModelId))
+                Return Await RunJobCoreAsync(job, cancellationToken)
+            End Using
+        End Function
+
+        Private Async Function RunJobCoreAsync(job As ScheduledJob, cancellationToken As CancellationToken) As Task(Of JobRunResult)
             ' Read fresh on every run, so a change made in Settings applies
             ' from the next run without a restart. (How many tool-call
             ' rounds one job may use matters because a research job that

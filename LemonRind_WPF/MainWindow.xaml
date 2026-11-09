@@ -755,6 +755,11 @@
                              Visibility="{Binding IsModelLoading, Converter={StaticResource BooleanToVisibilityConverter}}" />
                 <TextBlock Text="{Binding StatusText}" Foreground="Gray"
                            VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                <!-- A scheduled job is working: which, and with what model (loading another can stop it). -->
+                <TextBlock Text="{Binding JobRunningNote}" Foreground="Gray" Margin="12,0,0,0" MaxWidth="320"
+                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                           ToolTip="A scheduled job is running. Loading a different model while it works may stop it."
+                           Visibility="{Binding HasJobRunningNote, Converter={StaticResource BooleanToVisibilityConverter}}" />
             </StackPanel>
 
             <!-- Health dot + label: green/"healthy" when Lemonade's
