@@ -19,6 +19,13 @@ Namespace Services
             _settings = settings.Lemonade
         End Sub
 
+        ''' <summary>The embedding model's name as configured now ("" if none yet) - what a knowledge base records as the model that built it.</summary>
+        Public ReadOnly Property ModelName As String
+            Get
+                Return If(String.IsNullOrWhiteSpace(_settings.EmbeddingModel), "", _settings.EmbeddingModel.Trim())
+            End Get
+        End Property
+
         Public Function CreateEmbeddingGenerator() As IEmbeddingGenerator(Of String, Embedding(Of Single))
             Dim options As New OpenAIClientOptions With {
                 .Endpoint = New Uri(_settings.BaseUrl)

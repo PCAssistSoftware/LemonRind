@@ -23,10 +23,19 @@ Namespace Knowledge
         Private ReadOnly _repository As KnowledgeRepository
         Private ReadOnly _embeddingGenerator As IEmbeddingGenerator(Of String, Embedding(Of Single))
         Private ReadOnly _webReaderClient As WebReaderClient
+        Private ReadOnly _embeddingModel As String
+
+        ''' <summary>The embedding model in use (the one this service's generator was built with) - what a knowledge base is checked against.</summary>
+        Public ReadOnly Property EmbeddingModelName As String
+            Get
+                Return _embeddingModel
+            End Get
+        End Property
 
         Public Sub New(repository As KnowledgeRepository, embeddingClientFactory As EmbeddingClientFactory, webReaderClient As WebReaderClient)
             _repository = repository
             _embeddingGenerator = embeddingClientFactory.CreateEmbeddingGenerator()
+            _embeddingModel = embeddingClientFactory.ModelName
             _webReaderClient = webReaderClient
         End Sub
 
@@ -72,6 +81,8 @@ Namespace Knowledge
                         Dim text = FileTextExtractor.ExtractTextUncapped(filePath)
                         totalChunkCount += Await EmbedAndSaveChunksAsync(knowledgeBaseId, sourceId, text, totalChunkCount, cancellationToken)
                         readableFileCount += 1
+                    Catch ex As KnowledgeModelMismatchException
+                        Throw ' not one bad file: the whole knowledge base cannot take this model, so stop and say why
                     Catch
                         ' Skipped - see this method's summary. One bad file
                         ' (corrupt PDF, permission error, ...) shouldn't sink
@@ -110,12 +121,65 @@ Namespace Knowledge
             Dim chunks = TextChunker.ChunkText(text)
             If chunks.Count = 0 Then Return 0
 
+            ' Refuse before spending time embedding: mixing models in one knowledge base would ruin its search.
+            Dim kb = _repository.GetKnowledgeBase(knowledgeBaseId)
+            If kb IsNot Nothing Then
+                Dim problem = KnowledgeCompatibility.Check(kb, _embeddingModel)
+                If problem.Length > 0 Then Throw New KnowledgeModelMismatchException(problem)
+            End If
+
             Dim embeddingResults = Await _embeddingGenerator.GenerateAsync(chunks, cancellationToken:=cancellationToken)
+            Dim dimensions = embeddingResults(0).Vector.Length
+
+            ' A knowledge base that never recorded its model is checked by the size of its vectors instead.
+            If kb IsNot Nothing Then
+                Dim storedSize = If(kb.EmbeddingDimensions > 0, kb.EmbeddingDimensions, _repository.StoredVectorDimensions(knowledgeBaseId))
+                If storedSize > 0 AndAlso storedSize <> dimensions Then
+                    Throw New KnowledgeModelMismatchException(KnowledgeCompatibility.DimensionMessage(kb, storedSize, dimensions))
+                End If
+            End If
+
             For i = 0 To chunks.Count - 1
                 _repository.SaveChunk(knowledgeBaseId, sourceId, startingChunkIndex + i, chunks(i), embeddingResults(i).Vector.ToArray())
             Next
 
+            ' The first time vectors are stored (or the first since this was recorded), remember which model made them.
+            If kb IsNot Nothing AndAlso String.IsNullOrWhiteSpace(kb.EmbeddingModel) Then
+                _repository.SetEmbeddingModel(knowledgeBaseId, _embeddingModel, dimensions)
+            End If
+
             Return chunks.Count
+        End Function
+
+        ''' <summary>
+        ''' Embeds every chunk of a knowledge base again with the current embedding model. Returns how many chunks were
+        ''' done. The chunk text is stored, so the original documents are not needed. The new vectors are all computed
+        ''' first and swapped in together, so a failure part way leaves the knowledge base as it was.
+        ''' </summary>
+        Public Async Function ReembedAsync(knowledgeBaseId As String, cancellationToken As CancellationToken) As Task(Of Integer)
+            If Not KnowledgeCompatibility.TryStartReembedding(knowledgeBaseId) Then Return 0
+            Try
+                Dim chunks = _repository.ListChunkContents(knowledgeBaseId)
+                If chunks.Count = 0 Then
+                    _repository.SetEmbeddingModel(knowledgeBaseId, _embeddingModel, 0) ' nothing stored: just adopt the current model
+                    Return 0
+                End If
+
+                Const batchSize = 32
+                Dim vectors As New List(Of (ChunkId As String, Vector As Single()))(chunks.Count)
+                For start = 0 To chunks.Count - 1 Step batchSize
+                    Dim batch = chunks.Skip(start).Take(batchSize).ToList()
+                    Dim results = Await _embeddingGenerator.GenerateAsync(batch.Select(Function(c) c.Content).ToList(), cancellationToken:=cancellationToken)
+                    For i = 0 To batch.Count - 1
+                        vectors.Add((batch(i).Id, results(i).Vector.ToArray()))
+                    Next
+                Next
+
+                _repository.ReplaceEmbeddings(knowledgeBaseId, vectors, _embeddingModel)
+                Return chunks.Count
+            Finally
+                KnowledgeCompatibility.FinishReembedding(knowledgeBaseId)
+            End Try
         End Function
 
     End Class

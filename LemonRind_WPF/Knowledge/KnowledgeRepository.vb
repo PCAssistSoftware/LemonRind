@@ -9,6 +9,12 @@ Namespace Knowledge
         Public Property Name As String
         Public Property Description As String
         Public Property CreatedAt As DateTime
+
+        ''' <summary>The embedding model that built this knowledge base's vectors ("" if not recorded - built before it was kept).</summary>
+        Public Property EmbeddingModel As String = ""
+
+        ''' <summary>How many numbers each stored vector has (0 if not recorded).</summary>
+        Public Property EmbeddingDimensions As Integer
     End Class
 
     ''' <summary>One ingested source within a Knowledge Base - a file, folder, website, or pasted text.</summary>
@@ -95,14 +101,16 @@ Namespace Knowledge
             Dim results As New List(Of KnowledgeBaseSummary)
             Using connection = _database.OpenConnection()
                 Using command = connection.CreateCommand()
-                    command.CommandText = "SELECT Id, Name, Description, CreatedAt FROM KnowledgeBases ORDER BY CreatedAt ASC;"
+                    command.CommandText = "SELECT Id, Name, Description, CreatedAt, EmbeddingModel, EmbeddingDimensions FROM KnowledgeBases ORDER BY CreatedAt ASC;"
                     Using reader = command.ExecuteReader()
                         While reader.Read()
                             results.Add(New KnowledgeBaseSummary With {
                                 .Id = reader.GetString(0),
                                 .Name = reader.GetString(1),
                                 .Description = If(reader.IsDBNull(2), "", reader.GetString(2)),
-                                .CreatedAt = ParseUtc(reader.GetString(3))
+                                .CreatedAt = ParseUtc(reader.GetString(3)),
+                                .EmbeddingModel = If(reader.IsDBNull(4), "", reader.GetString(4)),
+                                .EmbeddingDimensions = If(reader.IsDBNull(5), 0, reader.GetInt32(5))
                             })
                         End While
                     End Using
@@ -110,6 +118,84 @@ Namespace Knowledge
             End Using
             Return results
         End Function
+
+        Public Function GetKnowledgeBase(id As String) As KnowledgeBaseSummary
+            Return ListKnowledgeBases().FirstOrDefault(Function(kb) kb.Id = id)
+        End Function
+
+        ''' <summary>Records which embedding model built a knowledge base's vectors, and how many numbers each has.</summary>
+        Public Sub SetEmbeddingModel(knowledgeBaseId As String, model As String, dimensions As Integer)
+            Using connection = _database.OpenConnection()
+                Using command = connection.CreateCommand()
+                    command.CommandText = "UPDATE KnowledgeBases SET EmbeddingModel = @model, EmbeddingDimensions = @dimensions WHERE Id = @id;"
+                    command.Parameters.AddWithValue("@model", If(String.IsNullOrWhiteSpace(model), CObj(DBNull.Value), model))
+                    command.Parameters.AddWithValue("@dimensions", If(dimensions > 0, CObj(dimensions), CObj(DBNull.Value)))
+                    command.Parameters.AddWithValue("@id", knowledgeBaseId)
+                    command.ExecuteNonQuery()
+                End Using
+            End Using
+        End Sub
+
+        ''' <summary>How many numbers each stored vector has, read from the first stored chunk (0 if there are no chunks) - the way to compare a knowledge base that never recorded its model.</summary>
+        Public Function StoredVectorDimensions(knowledgeBaseId As String) As Integer
+            Using connection = _database.OpenConnection()
+                Using command = connection.CreateCommand()
+                    command.CommandText = "SELECT length(Embedding) FROM KnowledgeChunks WHERE KnowledgeBaseId = @kbId LIMIT 1;"
+                    command.Parameters.AddWithValue("@kbId", knowledgeBaseId)
+                    Dim bytes = command.ExecuteScalar()
+                    If TypeOf bytes Is Long Then Return CInt(CLng(bytes) \ 4)
+                    Return 0
+                End Using
+            End Using
+        End Function
+
+        ''' <summary>Every chunk's id and text, in order - the text is what gets embedded again when a knowledge base is re-embedded, so the original documents are not needed.</summary>
+        Public Function ListChunkContents(knowledgeBaseId As String) As List(Of (Id As String, Content As String))
+            Dim results As New List(Of (Id As String, Content As String))
+            Using connection = _database.OpenConnection()
+                Using command = connection.CreateCommand()
+                    command.CommandText = "SELECT Id, Content FROM KnowledgeChunks WHERE KnowledgeBaseId = @kbId ORDER BY SourceId, ChunkIndex;"
+                    command.Parameters.AddWithValue("@kbId", knowledgeBaseId)
+                    Using reader = command.ExecuteReader()
+                        While reader.Read()
+                            results.Add((reader.GetString(0), reader.GetString(1)))
+                        End While
+                    End Using
+                End Using
+            End Using
+            Return results
+        End Function
+
+        ''' <summary>
+        ''' Swaps in new vectors for chunks and records the model that made them, all in one transaction: a failure part
+        ''' way leaves the knowledge base exactly as it was, never half old vectors and half new.
+        ''' </summary>
+        Public Sub ReplaceEmbeddings(knowledgeBaseId As String, vectors As IReadOnlyList(Of (ChunkId As String, Vector As Single())), model As String)
+            Using connection = _database.OpenConnection()
+                Using transaction = connection.BeginTransaction()
+                    For Each entry In vectors
+                        Using command = connection.CreateCommand()
+                            command.Transaction = transaction
+                            command.CommandText = "UPDATE KnowledgeChunks SET Embedding = @embedding WHERE Id = @id;"
+                            command.Parameters.AddWithValue("@embedding", VectorMath.ToBytes(entry.Vector))
+                            command.Parameters.AddWithValue("@id", entry.ChunkId)
+                            command.ExecuteNonQuery()
+                        End Using
+                    Next
+
+                    Using command = connection.CreateCommand()
+                        command.Transaction = transaction
+                        command.CommandText = "UPDATE KnowledgeBases SET EmbeddingModel = @model, EmbeddingDimensions = @dimensions WHERE Id = @id;"
+                        command.Parameters.AddWithValue("@model", If(String.IsNullOrWhiteSpace(model), CObj(DBNull.Value), model))
+                        command.Parameters.AddWithValue("@dimensions", If(vectors.Count > 0, CObj(vectors(0).Vector.Length), CObj(DBNull.Value)))
+                        command.Parameters.AddWithValue("@id", knowledgeBaseId)
+                        command.ExecuteNonQuery()
+                    End Using
+
+                    transaction.Commit()
+                End Using
+            End Using
+        End Sub
 
         ''' <summary>Creates a source row up front (Status="Ingesting") so it shows in the UI immediately, before extraction/embedding finishes - see KnowledgeIngestionService.</summary>
         Public Function CreateSource(knowledgeBaseId As String, sourceType As String, reference As String, displayName As String) As String
@@ -234,6 +320,9 @@ Namespace Knowledge
                         While reader.Read()
                             Dim content = reader.GetString(0)
                             Dim embeddingBytes = CType(reader(1), Byte())
+                            ' A chunk whose vector has a different size was made by a different embedding model:
+                            ' comparing it would be meaningless (or read past the end), so it is left out.
+                            If embeddingBytes.Length <> queryEmbedding.Length * 4 Then Continue While
                             Dim similarity = VectorMath.CosineSimilarity(queryEmbedding, VectorMath.FromBytes(embeddingBytes))
                             results.Add((content, similarity))
                         End While

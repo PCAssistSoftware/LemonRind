@@ -119,6 +119,38 @@ Namespace ViewModels
             End Set
         End Property
 
+        ' The embedding model that built this knowledge base's vectors, and - when it differs from the one in use now -
+        ' why it cannot be searched (with a Re-embed button), see KnowledgeCompatibility. Empty text hides each line.
+        Private _modelInfoText As String = ""
+        Public Property ModelInfoText As String
+            Get
+                Return _modelInfoText
+            End Get
+            Set(value As String)
+                SetProperty(_modelInfoText, value)
+            End Set
+        End Property
+
+        Private _warningText As String = ""
+        Public Property WarningText As String
+            Get
+                Return _warningText
+            End Get
+            Set(value As String)
+                SetProperty(_warningText, value)
+            End Set
+        End Property
+
+        Private _canReembed As Boolean
+        Public Property CanReembed As Boolean
+            Get
+                Return _canReembed
+            End Get
+            Set(value As Boolean)
+                SetProperty(_canReembed, value)
+            End Set
+        End Property
+
         Private _statusText As String = ""
         Public Property StatusText As String
             Get
@@ -1041,6 +1073,7 @@ Namespace ViewModels
         Public ReadOnly Property AddFolderSourceCommand As IAsyncRelayCommand(Of KnowledgeBaseViewModel)
         Public ReadOnly Property AddWebsiteSourceCommand As IAsyncRelayCommand(Of KnowledgeBaseViewModel)
         Public ReadOnly Property AddTextSourceCommand As IAsyncRelayCommand(Of KnowledgeBaseViewModel)
+        Public ReadOnly Property ReembedKnowledgeBaseCommand As IAsyncRelayCommand(Of KnowledgeBaseViewModel)
         Public ReadOnly Property RemoveSourceCommand As IRelayCommand(Of KnowledgeSourceViewModel)
 
         Public ReadOnly Property ImportMcpServerConfigJsonCommand As IAsyncRelayCommand
@@ -1178,6 +1211,7 @@ Namespace ViewModels
             AddFolderSourceCommand = New AsyncRelayCommand(Of KnowledgeBaseViewModel)(AddressOf AddFolderSourceAsync)
             AddWebsiteSourceCommand = New AsyncRelayCommand(Of KnowledgeBaseViewModel)(AddressOf AddWebsiteSourceAsync)
             AddTextSourceCommand = New AsyncRelayCommand(Of KnowledgeBaseViewModel)(AddressOf AddTextSourceAsync)
+            ReembedKnowledgeBaseCommand = New AsyncRelayCommand(Of KnowledgeBaseViewModel)(AddressOf ReembedKnowledgeBaseAsync)
             RemoveSourceCommand = New RelayCommand(Of KnowledgeSourceViewModel)(AddressOf RemoveSource)
 
             ImportMcpServerConfigJsonCommand = New AsyncRelayCommand(AddressOf ImportMcpServerConfigJsonAsync)
@@ -1256,9 +1290,35 @@ Namespace ViewModels
                     .Description = kb.Description
                 }
                 RefreshSources(kbViewModel)
+                RefreshKnowledgeBaseHealth(kbViewModel)
                 KnowledgeBases.Add(kbViewModel)
             Next
         End Sub
+
+        ''' <summary>Reads the knowledge base again (the model is recorded the first time something is embedded) and works out whether it can be used with the embedding model in use now.</summary>
+        Private Sub RefreshKnowledgeBaseHealth(kbViewModel As KnowledgeBaseViewModel)
+            Dim kb = _knowledgeRepository.GetKnowledgeBase(kbViewModel.Id)
+            kbViewModel.ModelInfoText = If(kb IsNot Nothing AndAlso Not String.IsNullOrEmpty(kb.EmbeddingModel), $"Embedding model: {kb.EmbeddingModel}", "")
+            kbViewModel.WarningText = If(kb Is Nothing, "", KnowledgeCompatibility.Check(kb, _knowledgeIngestionService.EmbeddingModelName))
+            kbViewModel.CanReembed = kbViewModel.WarningText.Length > 0 AndAlso Not KnowledgeCompatibility.IsReembedding(kbViewModel.Id)
+        End Sub
+
+        ''' <summary>Embeds every chunk again with the current embedding model - its stored text is used, so the original documents are not needed. Takes a while for a big knowledge base.</summary>
+        Private Async Function ReembedKnowledgeBaseAsync(kbViewModel As KnowledgeBaseViewModel) As Task
+            If kbViewModel Is Nothing Then Return
+
+            kbViewModel.IsBusy = True
+            kbViewModel.StatusText = "Re-embedding... this takes a while for a big knowledge base."
+            Try
+                Dim count = Await _knowledgeIngestionService.ReembedAsync(kbViewModel.Id, CancellationToken.None)
+                kbViewModel.StatusText = $"Re-embedded {count:N0} chunks with {_knowledgeIngestionService.EmbeddingModelName}."
+            Catch ex As Exception
+                kbViewModel.StatusText = $"Couldn't re-embed: {ex.Message}"
+            Finally
+                kbViewModel.IsBusy = False
+            End Try
+            RefreshKnowledgeBaseHealth(kbViewModel)
+        End Function
 
         Private Sub RefreshSources(kbViewModel As KnowledgeBaseViewModel)
             kbViewModel.Sources.Clear()
@@ -1320,6 +1380,7 @@ Namespace ViewModels
                     Await _knowledgeIngestionService.AddFileSourceAsync(kbViewModel.Id, filePath, CancellationToken.None)
                 Next
                 RefreshSources(kbViewModel)
+                RefreshKnowledgeBaseHealth(kbViewModel)
                 kbViewModel.StatusText = ""
             Finally
                 kbViewModel.IsBusy = False
@@ -1339,6 +1400,7 @@ Namespace ViewModels
             Try
                 Await _knowledgeIngestionService.AddFolderSourceAsync(kbViewModel.Id, dialog.FolderName, CancellationToken.None)
                 RefreshSources(kbViewModel)
+                RefreshKnowledgeBaseHealth(kbViewModel)
                 kbViewModel.StatusText = ""
             Finally
                 kbViewModel.IsBusy = False
@@ -1354,6 +1416,7 @@ Namespace ViewModels
             Try
                 Await _knowledgeIngestionService.AddWebsiteSourceAsync(kbViewModel.Id, url, CancellationToken.None)
                 RefreshSources(kbViewModel)
+                RefreshKnowledgeBaseHealth(kbViewModel)
                 kbViewModel.PendingWebsiteUrl = ""
                 kbViewModel.StatusText = ""
             Finally
@@ -1370,6 +1433,7 @@ Namespace ViewModels
             Try
                 Await _knowledgeIngestionService.AddTextSourceAsync(kbViewModel.Id, kbViewModel.PendingTextContent, displayName, CancellationToken.None)
                 RefreshSources(kbViewModel)
+                RefreshKnowledgeBaseHealth(kbViewModel)
                 kbViewModel.PendingTextName = ""
                 kbViewModel.PendingTextContent = ""
                 kbViewModel.StatusText = ""

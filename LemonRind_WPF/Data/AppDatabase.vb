@@ -350,6 +350,21 @@ Namespace Data
                         End If
                     End Using
                 Next
+
+                ' The embedding model that built a knowledge base's vectors, and how many numbers each vector has, so
+                ' a later change of embedding model is noticed instead of silently ruining its search. Nothing for
+                ' knowledge bases built before this was recorded.
+                For Each columnInfo In {("EmbeddingModel", "TEXT NULL"), ("EmbeddingDimensions", "INTEGER NULL")}
+                    Using checkCommand = connection.CreateCommand()
+                        checkCommand.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('KnowledgeBases') WHERE name = '{columnInfo.Item1}';"
+                        If CLng(checkCommand.ExecuteScalar()) = 0 Then
+                            Using alterCommand = connection.CreateCommand()
+                                alterCommand.CommandText = $"ALTER TABLE KnowledgeBases ADD COLUMN {columnInfo.Item1} {columnInfo.Item2};"
+                                alterCommand.ExecuteNonQuery()
+                            End Using
+                        End If
+                    End Using
+                Next
             End Using
 
             _logger.LogInformation("App database ready at {ConnectionString}", _connectionString)

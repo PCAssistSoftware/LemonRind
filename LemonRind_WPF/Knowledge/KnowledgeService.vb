@@ -31,10 +31,12 @@ Namespace Knowledge
 
         Private ReadOnly _repository As KnowledgeRepository
         Private ReadOnly _embeddingGenerator As IEmbeddingGenerator(Of String, Embedding(Of Single))
+        Private ReadOnly _embeddingModel As String
 
         Public Sub New(repository As KnowledgeRepository, embeddingClientFactory As EmbeddingClientFactory)
             _repository = repository
             _embeddingGenerator = embeddingClientFactory.CreateEmbeddingGenerator()
+            _embeddingModel = embeddingClientFactory.ModelName
         End Sub
 
         ''' <summary>
@@ -63,6 +65,16 @@ Namespace Knowledge
 
             Dim manifestText = GetSourceManifestText(knowledgeBaseId)
             If Not String.IsNullOrEmpty(manifestText) Then sections.Add(manifestText)
+
+            ' Vectors from another embedding model cannot be compared with this one's, so such a knowledge base is not
+            ' searched. Say so (the model passes it on) rather than quietly giving answers without its content.
+            Dim kb = _repository.GetKnowledgeBase(knowledgeBaseId)
+            Dim problem = If(kb Is Nothing, "", KnowledgeCompatibility.Check(kb, _embeddingModel))
+            If problem.Length > 0 Then
+                sections.Add("The content of the attached knowledge base could not be searched for this message, so none of it is included. " &
+                    $"Reason: {problem} Tell the user this, and do not guess at what the knowledge base contains.")
+                Return String.Join(Environment.NewLine & Environment.NewLine, sections)
+            End If
 
             Try
                 Dim queryEmbeddingResult = Await _embeddingGenerator.GenerateAsync({userMessage}, cancellationToken:=cancellationToken)
