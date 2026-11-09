@@ -174,6 +174,16 @@ Namespace ViewModels
         ''' </summary>
         Public ReadOnly Property ToolCalls As New ObservableCollection(Of ToolCallResult)()
 
+        Private _toolCallSummary As ToolCallGroups
+
+        ''' <summary>The same calls as badges: one per tool and outcome, with a count ("web_search x 12").</summary>
+        Public ReadOnly Property ToolCallSummary As ToolCallGroups
+            Get
+                If _toolCallSummary Is Nothing Then _toolCallSummary = New ToolCallGroups(ToolCalls)
+                Return _toolCallSummary
+            End Get
+        End Property
+
         ''' <summary>
         ''' App-level housekeeping notices attached to this reply - currently
         ''' just "compacted older messages" (see

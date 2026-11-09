@@ -349,6 +349,16 @@ Namespace ViewModels
         ''' </summary>
         Public ReadOnly Property CurrentTurnToolCalls As New ObservableCollection(Of ToolCallResult)()
 
+        Private _currentTurnToolCallSummary As ToolCallGroups
+
+        ''' <summary>Those calls as badges, one per tool and outcome ("web_search x 12"), for the right panel.</summary>
+        Public ReadOnly Property CurrentTurnToolCallSummary As ToolCallGroups
+            Get
+                If _currentTurnToolCallSummary Is Nothing Then _currentTurnToolCallSummary = New ToolCallGroups(CurrentTurnToolCalls)
+                Return _currentTurnToolCallSummary
+            End Get
+        End Property
+
         ''' <summary>Which right-panel tab is showing - "Stats" or "Modules".</summary>
         Private _rightPanelTab As String = "Stats"
         Public Property RightPanelTab As String

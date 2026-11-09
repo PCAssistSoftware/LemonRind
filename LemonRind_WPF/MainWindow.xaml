@@ -911,7 +911,7 @@
                                  would stretch and visibly reflow as more
                                  same-named chips (e.g. several search_web
                                  calls) stream in. -->
-                            <ItemsControl ItemsSource="{Binding ToolCalls}" Margin="8,4,8,0" MaxWidth="500" HorizontalAlignment="Left">
+                            <ItemsControl ItemsSource="{Binding ToolCallSummary.Groups}" Margin="8,4,8,0" MaxWidth="500" HorizontalAlignment="Left">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <WrapPanel />
@@ -920,10 +920,10 @@
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <Border Background="#E5E5EA" CornerRadius="10" Padding="8,2" Margin="0,0,6,0"
-                                                ToolTip="{Binding ErrorMessage}">
+                                                ToolTip="{Binding Tooltip}">
                                             <TextBlock FontSize="11" Foreground="#3C3C43">
                                                 <Run Text="&#128295; " />
-                                                <Run Text="{Binding Name, Mode=OneWay}" />
+                                                <Run Text="{Binding Label, Mode=OneWay}" />
                                                 <Run Text=" " />
                                                 <Run>
                                                     <Run.Style>
@@ -1392,7 +1392,7 @@
                         </Border>
 
                         <TextBlock Text="Tool calls this turn" Foreground="Gray" FontSize="12" Margin="0,16,0,8" />
-                        <ItemsControl ItemsSource="{Binding CurrentTurnToolCalls}">
+                        <ItemsControl ItemsSource="{Binding CurrentTurnToolCallSummary.Groups}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <!-- A real ✓/✗ (Succeeded), not
@@ -1401,7 +1401,7 @@
                                          ToolTip carries the real
                                          error on a failure. -->
                                     <Border Background="#F5F5F5" CornerRadius="6" Padding="8,6" Margin="0,0,0,4"
-                                            ToolTip="{Binding ErrorMessage}">
+                                            ToolTip="{Binding Tooltip}">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
@@ -1409,7 +1409,7 @@
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Grid.Column="0" FontSize="12">
                                                 <Run Text="&#128295; " />
-                                                <Run Text="{Binding Name, Mode=OneWay}" />
+                                                <Run Text="{Binding Label, Mode=OneWay}" />
                                             </TextBlock>
                                             <TextBlock Grid.Column="1" FontSize="12">
                                                 <TextBlock.Style>
