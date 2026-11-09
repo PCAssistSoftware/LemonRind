@@ -21,6 +21,7 @@
 @inject KnowledgeRepository KnowledgeRepository
 @inject KnowledgeService KnowledgeService
 @inject SchedulerNotifier SchedulerNotifier
+@inject RunningJobTracker RunningJobs
 @inject ImageSizeGate ImageSizeGate
 @inject ImageAttachmentService ImageAttachmentService
 @inject AppSettings Settings
@@ -172,6 +173,11 @@
             else if (!string.IsNullOrEmpty(_modelLoadError))
             {
                 <span class="model-load-error">@_modelLoadError</span>
+            }
+            @if (RunningJobs.Current is { Count: > 0 } runningNow)
+            {
+                // A scheduled job is working: say which, and with what model (loading another can stop it).
+                <span class="job-running-note" title="@($"A scheduled job is running: {RunningJobTracker.Describe(runningNow)}. Loading a different model while it works may stop it.")">Job running: @RunningJobTracker.Describe(runningNow)</span>
             }
             <span class="spacer"></span>
             @if (_contextUsageCurrent is not null && _contextUsageMax > 0)
@@ -419,6 +425,21 @@
             <div class="approval-preview system-prompt-text">@BuildPrettyToolsText(ModuleRegistry.GetEnabledTools())</div>
             <div class="approval-buttons">
                 <button @onclick="CloseToolsSent">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_modelSwitchQuestion is not null)
+{
+    // Asked before a different model is loaded while a scheduled job is running (see OnModelChanged).
+    <div class="approval-overlay">
+        <div class="approval-dialog">
+            <h3>A scheduled job is running</h3>
+            <div class="approval-path">@_modelSwitchQuestion</div>
+            <div class="approval-buttons">
+                <button class="approval-deny" @onclick="CancelModelSwitch">Cancel</button>
+                <button class="btn-primary" @onclick="ConfirmModelSwitchAsync">Switch anyway</button>
             </div>
         </div>
     </div>
@@ -1366,6 +1387,7 @@
     {
         ApprovalGate.OnPendingRequestChanged += OnPendingApprovalChanged;
         SchedulerNotifier.SessionUpdated += OnSchedulerSessionUpdated;
+        RunningJobs.Changed += OnRunningJobsChanged;
         ImageSizeGate.OnPendingRequestChanged += OnPendingImageSizeChanged;
 
         _knowledgeBases = KnowledgeRepository.ListKnowledgeBases();
@@ -1404,6 +1426,7 @@
                 ?? _availableModels[0];
         }
         _contextUsageMax = _modelContextWindows.GetValueOrDefault(_selectedModel, 0);
+        _modelBeforePick = _selectedModel;
 
         RefreshFolders();
         RefreshSessions();
@@ -1826,9 +1849,54 @@
         }
     }
 
+    // A scheduled job running now can lose its model if another chat model is loaded, so that is asked about first.
+    private string _modelBeforePick = "";      // the model in use before the picker was changed (put back on Cancel)
+    private string? _pendingModelSwitch;       // the model picked, waiting for the answer
+    private string? _modelSwitchQuestion;      // the question being shown (null = none)
+    private bool _modelSwitchApproved;         // the answer was "Switch anyway"
+
+    private void OnRunningJobsChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void CancelModelSwitch()
+    {
+        _modelSwitchQuestion = null;
+        _pendingModelSwitch = null;
+    }
+
+    private async Task ConfirmModelSwitchAsync()
+    {
+        var picked = _pendingModelSwitch;
+        _modelSwitchQuestion = null;
+        _pendingModelSwitch = null;
+        if (string.IsNullOrEmpty(picked)) return;
+
+        _selectedModel = picked;
+        _modelSwitchApproved = true;
+        await OnModelChanged();
+    }
+
     private async Task OnModelChanged()
     {
         if (string.IsNullOrWhiteSpace(_selectedModel)) return;
+
+        // Only another CHAT model can push a job's model out of memory (an image or embedding model has its own slot),
+        // and picking the model the job itself uses changes nothing for it. Nothing is blocked: Lemonade may have room
+        // for both, which this app cannot know - so ask, and let the person decide.
+        if (!_modelSwitchApproved && _modelCategories.GetValueOrDefault(_selectedModel) == ModelCategoryChat)
+        {
+            var affected = RunningJobs.UsingOtherModel(_selectedModel);
+            if (affected.Count > 0)
+            {
+                _pendingModelSwitch = _selectedModel;
+                _selectedModel = _modelBeforePick; // the picker goes back until the question is answered
+                _modelSwitchQuestion = RunningJobTracker.SwitchQuestion(affected, _pendingModelSwitch);
+                StateHasChanged();
+                return;
+            }
+        }
+        _modelSwitchApproved = false;
+        _modelBeforePick = _selectedModel;
+
         _isLoadingModel = true;
         _modelLoadError = null;
         _modelLoadSeconds = 0;
@@ -2565,6 +2633,7 @@
         _connectionRetryTimer?.Dispose();
         ApprovalGate.OnPendingRequestChanged -= OnPendingApprovalChanged;
         SchedulerNotifier.SessionUpdated -= OnSchedulerSessionUpdated;
+        RunningJobs.Changed -= OnRunningJobsChanged;
         ImageSizeGate.OnPendingRequestChanged -= OnPendingImageSizeChanged;
         _selfReference?.Dispose();
     }

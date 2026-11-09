@@ -1424,3 +1424,15 @@ details.thinking > summary:hover {
     z-index: 30;
     background: var(--overlay);
 }
+
+/* Shown in the header while a scheduled job is running. */
+.job-running-note {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 22rem;
+    min-width: 7rem;
+    flex-shrink: 0;
+}

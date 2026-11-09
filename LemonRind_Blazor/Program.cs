@@ -99,6 +99,7 @@ builder.Services.AddSingleton<IAssistantModule, McpModule>();
 builder.Services.AddSingleton<Func<ModuleRegistry>>(sp => () => sp.GetRequiredService<ModuleRegistry>());
 builder.Services.AddSingleton<SchedulerRepository>();
 builder.Services.AddSingleton<SchedulerNotifier>();
+builder.Services.AddSingleton<RunningJobTracker>();
 builder.Services.AddSingleton<ScheduledJobRunner>();
 builder.Services.AddSingleton<IAssistantModule, SchedulerModule>();
 
