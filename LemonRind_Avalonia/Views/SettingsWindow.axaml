@@ -372,6 +372,24 @@
                         </Border>
                         <Border BorderBrush="{DynamicResource BorderBrushLight}" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,8">
                             <StackPanel Spacing="4">
+                                <TextBlock Text="Limits for one run" FontSize="12" Foreground="{DynamicResource TextMuted}" />
+                                <TextBlock Text="Time limit (minutes)" Margin="0,4,0,0" />
+                                <NumericUpDown Value="{Binding SchedulerTimeLimitMinutes}" Minimum="1" Maximum="1440" Increment="5" FormatString="0" HorizontalAlignment="Left" MinWidth="160" />
+                                <TextBlock Text="A run that takes longer than this is stopped. Allowed: 1 to 1440 minutes (a day). The default is 30." Foreground="{DynamicResource TextMuted}" FontSize="11" TextWrapping="Wrap" />
+                                <TextBlock Text="Most tool rounds" Margin="0,4,0,0" />
+                                <NumericUpDown Value="{Binding SchedulerMaxToolRounds}" Minimum="1" Maximum="500" Increment="10" FormatString="0" HorizontalAlignment="Left" MinWidth="160" />
+                                <TextBlock Text="Each time the model uses tools and then carries on is one round. A run that reaches this many stops and says so. Allowed: 1 to 500. The default is 100." Foreground="{DynamicResource TextMuted}" FontSize="11" TextWrapping="Wrap" />
+                                <TextBlock Text="Longest reply (tokens)" Margin="0,4,0,0" />
+                                <NumericUpDown Value="{Binding SchedulerMaxOutputTokens}" Minimum="256" Maximum="131072" Increment="4096" FormatString="0" HorizontalAlignment="Left" MinWidth="160" />
+                                <TextBlock Text="The most the model may write in one go, counting its thinking too. A reply that reaches it is cut off, and the run is marked 'cut short'. A model that thinks a lot needs a bigger number, and a longer reply takes longer to write. Allowed: 256 to 131,072. The default is 32,768." Foreground="{DynamicResource TextMuted}" FontSize="11" TextWrapping="Wrap" />
+                                <TextBlock Text="Automatic continues" Margin="0,4,0,0" />
+                                <NumericUpDown Value="{Binding SchedulerMaxContinuations}" Minimum="0" Maximum="10" Increment="1" FormatString="0" HorizontalAlignment="Left" MinWidth="160" />
+                                <TextBlock Text="When a reply is cut off at the longest reply, the run asks the model to carry on from where it stopped, up to this many times. 0 turns it off. Allowed: 0 to 10. The default is 2." Foreground="{DynamicResource TextMuted}" FontSize="11" TextWrapping="Wrap" />
+                                <TextBlock Text="Changes are saved with the Save button below and apply from the next run." Foreground="{DynamicResource TextMuted}" FontSize="11" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+                        <Border BorderBrush="{DynamicResource BorderBrushLight}" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,8">
+                            <StackPanel Spacing="4">
                                 <TextBlock Text="New scheduled job" FontSize="12" Foreground="{DynamicResource TextMuted}" />
                                 <TextBox Text="{Binding NewJobName}" PlaceholderText="Name" />
 

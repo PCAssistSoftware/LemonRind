@@ -16,6 +16,12 @@ public class ScheduledJob
 
     /// <summary>Null/empty means "use whatever model is currently selected/default" - not every job needs to pin one.</summary>
     public string? ModelId { get; set; }
+
+    /// <summary>How the last run ended: "ok", "failed", "timed out" or "cut short". Null until a run has finished since this was recorded.</summary>
+    public string? LastStatus { get; set; }
+
+    /// <summary>How long the last run took, in seconds. Null for runs from before this was recorded.</summary>
+    public double? LastDurationSeconds { get; set; }
 }
 
 /// <summary>
@@ -71,12 +77,14 @@ public class SchedulerRepository(AppDatabase database)
         command.ExecuteNonQuery();
     }
 
-    /// <summary>Called by the poller right after a job fires - records when it ran and when it's due next (null if the schedule has no future occurrence).</summary>
-    public void RecordRun(string id, DateTime ranAt, DateTime? nextRunAt)
+    /// <summary>Called by the poller right after a job fires - records when it ran, how it ended, how long it took, and when it's due next (null if the schedule has no future occurrence).</summary>
+    public void RecordRun(string id, DateTime ranAt, DateTime? nextRunAt, string status, double seconds)
     {
         using var connection = database.OpenConnection();
         using var command = connection.CreateCommand();
-        command.CommandText = "UPDATE ScheduledJobs SET LastRunAt = @ranAt, NextRunAt = @nextRunAt WHERE Id = @id;";
+        command.CommandText = "UPDATE ScheduledJobs SET LastRunAt = @ranAt, NextRunAt = @nextRunAt, LastStatus = @status, LastDurationSeconds = @seconds WHERE Id = @id;";
+        command.Parameters.AddWithValue("@status", status);
+        command.Parameters.AddWithValue("@seconds", seconds);
         command.Parameters.AddWithValue("@ranAt", ranAt.ToString("o"));
         command.Parameters.AddWithValue("@nextRunAt", (object?)nextRunAt?.ToString("o") ?? DBNull.Value);
         command.Parameters.AddWithValue("@id", id);
@@ -97,7 +105,7 @@ public class SchedulerRepository(AppDatabase database)
         var results = new List<ScheduledJob>();
         using var connection = database.OpenConnection();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT Id, Name, CronExpression, Prompt, IsEnabled, LastRunAt, NextRunAt, CreatedAt, ModelId FROM ScheduledJobs ORDER BY CreatedAt ASC;";
+        command.CommandText = "SELECT Id, Name, CronExpression, Prompt, IsEnabled, LastRunAt, NextRunAt, CreatedAt, ModelId, LastStatus, LastDurationSeconds FROM ScheduledJobs ORDER BY CreatedAt ASC;";
         using var reader = command.ExecuteReader();
         while (reader.Read())
         {
@@ -112,6 +120,8 @@ public class SchedulerRepository(AppDatabase database)
                 NextRunAt = reader.IsDBNull(6) ? null : DateTimeHelpers.ParseUtc(reader.GetString(6)),
                 CreatedAt = DateTimeHelpers.ParseUtc(reader.GetString(7)),
                 ModelId = reader.IsDBNull(8) ? null : reader.GetString(8),
+                LastStatus = reader.IsDBNull(9) ? null : reader.GetString(9),
+                LastDurationSeconds = reader.IsDBNull(10) ? null : reader.GetDouble(10),
             });
         }
         return results;

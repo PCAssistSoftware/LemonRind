@@ -111,6 +111,33 @@ public class PersonaSettings
     public string CustomInstructions { get; set; } = "";
 }
 
+/// <summary>
+/// Limits for one scheduled run, editable in Settings > Scheduler. They used
+/// to be constants inside the scheduler classes, so changing one meant
+/// rebuilding the app.
+/// </summary>
+public class SchedulerSettings
+{
+    /// <summary>The whole run, including every tool call, is stopped after this long.</summary>
+    public int JobTimeoutSeconds { get; set; } = 1800;
+
+    /// <summary>How many tool-call rounds (model round trips) one run may use.</summary>
+    public int MaxToolRounds { get; set; } = 100;
+
+    /// <summary>
+    /// The most one reply may write, counting a model's thinking as well. A
+    /// model that thinks at length and then writes a long report needs room
+    /// for both, or the report is cut off part way.
+    /// </summary>
+    public int MaxOutputTokens { get; set; } = 32768;
+
+    /// <summary>
+    /// When a reply is cut off at that limit, the run asks the model to carry
+    /// on from where it stopped, up to this many times (0 = never).
+    /// </summary>
+    public int MaxContinuations { get; set; } = 2;
+}
+
 public class UiSettings
 {
     public bool ThinkingPanelOpenByDefault { get; set; } = false;
@@ -146,6 +173,7 @@ public class AppSettings
     public PersonaSettings Persona { get; set; } = new();
     public BackupSettings Backup { get; set; } = new();
     public UiSettings Ui { get; set; } = new();
+    public SchedulerSettings Scheduler { get; set; } = new();
 
     /// <summary>
     /// Copies every field's value from this into target's SAME nested
@@ -196,6 +224,11 @@ public class AppSettings
         target.Backup.KeepCount = Backup.KeepCount;
 
         target.Ui.ThinkingPanelOpenByDefault = Ui.ThinkingPanelOpenByDefault;
+
+        target.Scheduler.JobTimeoutSeconds = Scheduler.JobTimeoutSeconds;
+        target.Scheduler.MaxToolRounds = Scheduler.MaxToolRounds;
+        target.Scheduler.MaxOutputTokens = Scheduler.MaxOutputTokens;
+        target.Scheduler.MaxContinuations = Scheduler.MaxContinuations;
         target.Ui.Theme = Ui.Theme;
         target.Ui.SidebarWidth = Ui.SidebarWidth;
         target.Ui.RightPanelWidth = Ui.RightPanelWidth;

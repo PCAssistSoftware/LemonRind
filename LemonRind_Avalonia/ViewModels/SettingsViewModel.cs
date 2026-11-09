@@ -243,6 +243,13 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private string _backupFolder = "";
     [ObservableProperty] private double _backupKeepCount = 5;
 
+    // Scheduler limits for one run (saved with the Save button, applied from
+    // the next run): the time limit is shown in minutes, stored in seconds.
+    [ObservableProperty] private double _schedulerTimeLimitMinutes = 30;
+    [ObservableProperty] private double _schedulerMaxToolRounds = 100;
+    [ObservableProperty] private double _schedulerMaxOutputTokens = 32768;
+    [ObservableProperty] private double _schedulerMaxContinuations = 2;
+
     public SettingsViewModel(
         AppSettingsStore store,
         AppSettings liveSettings,
@@ -298,6 +305,11 @@ public partial class SettingsViewModel : ObservableObject
         BackupIntervalDays = _settings.Backup.IntervalDays;
         BackupFolder = _settings.Backup.BackupFolder;
         BackupKeepCount = _settings.Backup.KeepCount;
+
+        SchedulerTimeLimitMinutes = _settings.Scheduler.JobTimeoutSeconds / 60.0;
+        SchedulerMaxToolRounds = _settings.Scheduler.MaxToolRounds;
+        SchedulerMaxOutputTokens = _settings.Scheduler.MaxOutputTokens;
+        SchedulerMaxContinuations = _settings.Scheduler.MaxContinuations;
 
         ThinkingPanelOpenByDefault = _settings.Ui.ThinkingPanelOpenByDefault;
         Theme = string.IsNullOrWhiteSpace(_settings.Ui.Theme) ? "System" : _settings.Ui.Theme;
@@ -558,6 +570,14 @@ public partial class SettingsViewModel : ObservableObject
         }
     }
 
+    /// <summary>" - ok, took 12 min 40 s" after the time of the last run - empty for runs from before this was recorded.</summary>
+    private static string LastRunDetail(ScheduledJob job)
+    {
+        if (job.LastStatus is null) return "";
+        var took = job.LastDurationSeconds.HasValue ? $", took {RunDuration.Format(job.LastDurationSeconds.Value)}" : "";
+        return $" - {job.LastStatus}{took}";
+    }
+
     private ScheduledJobRowViewModel ToScheduledJobRowViewModel(ScheduledJob job)
     {
         var row = new ScheduledJobRowViewModel(
@@ -566,7 +586,7 @@ public partial class SettingsViewModel : ObservableObject
             job.CronExpression,
             job.Prompt,
             string.IsNullOrEmpty(job.ModelId) ? UseCurrentModelSentinel : job.ModelId,
-            job.LastRunAt.HasValue ? $"{job.LastRunAt.Value.ToLocalTime():dd/MM/yyyy HH:mm}" : "Never run",
+            (job.LastRunAt.HasValue ? $"{job.LastRunAt.Value.ToLocalTime():dd/MM/yyyy HH:mm}" : "Never run") + LastRunDetail(job),
             job.NextRunAt.HasValue ? $"{job.NextRunAt.Value.ToLocalTime():dd/MM/yyyy HH:mm}" : "Never (invalid schedule)",
             job.IsEnabled);
         row.PersistIsEnabled = isEnabled => _schedulerRepository.SetEnabled(row.Id, isEnabled);
@@ -726,6 +746,12 @@ public partial class SettingsViewModel : ObservableObject
         _settings.Backup.IntervalDays = (int)BackupIntervalDays;
         _settings.Backup.BackupFolder = BackupFolder.Trim();
         _settings.Backup.KeepCount = (int)BackupKeepCount;
+
+        // Kept inside each box's own range, so an empty or odd box cannot save a nonsense limit.
+        _settings.Scheduler.JobTimeoutSeconds = (int)Math.Clamp(Math.Round(SchedulerTimeLimitMinutes), 1, 1440) * 60;
+        _settings.Scheduler.MaxToolRounds = (int)Math.Clamp(SchedulerMaxToolRounds, 1, 500);
+        _settings.Scheduler.MaxOutputTokens = (int)Math.Clamp(SchedulerMaxOutputTokens, 256, 131072);
+        _settings.Scheduler.MaxContinuations = (int)Math.Clamp(SchedulerMaxContinuations, 0, 10);
 
         _settings.Ui.ThinkingPanelOpenByDefault = ThinkingPanelOpenByDefault;
         _settings.Ui.Theme = Theme;

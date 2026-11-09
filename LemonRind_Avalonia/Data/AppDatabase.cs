@@ -218,6 +218,9 @@ public class AppDatabase
             """);
 
         AddColumnIfMissing(connection, "ScheduledJobs", "ModelId", "TEXT NULL");
+        // How the last run ended ("ok", "failed", "timed out", "cut short") and how long it took, in seconds.
+        AddColumnIfMissing(connection, "ScheduledJobs", "LastStatus", "TEXT NULL");
+        AddColumnIfMissing(connection, "ScheduledJobs", "LastDurationSeconds", "REAL NULL");
 
         _logger.LogInformation("App database ready at {ConnectionString}", _connectionString);
     }
