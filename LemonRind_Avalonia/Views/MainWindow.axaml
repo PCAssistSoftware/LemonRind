@@ -110,17 +110,17 @@
          panel's RightPanelToolCalls list below, rather than duplicating the
          same markup twice. -->
     <Window.Resources>
-        <DataTemplate x:Key="ToolCallChipTemplate" x:DataType="vm:ToolCallResult">
+        <DataTemplate x:Key="ToolCallChipTemplate" x:DataType="vm:ToolCallGroup">
             <Border Background="{DynamicResource Surface3}"
                     CornerRadius="8"
                     Padding="6,2"
                     Margin="0,0,4,4"
-                    ToolTip.Tip="{Binding ErrorMessage}">
+                    ToolTip.Tip="{Binding Tooltip}">
                 <StackPanel Orientation="Horizontal" Spacing="4">
                     <Ellipse Width="7" Height="7"
                              VerticalAlignment="Center"
                              Fill="{Binding Succeeded, Converter={x:Static conv:NullableBoolToStatusBrushConverter.Instance}}" />
-                    <TextBlock Text="{Binding Name}" FontSize="11" Foreground="{DynamicResource TextMuted}" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding Label}" FontSize="11" Foreground="{DynamicResource TextMuted}" VerticalAlignment="Center" />
                 </StackPanel>
             </Border>
         </DataTemplate>
@@ -672,7 +672,7 @@
                                      gray while pending, green/red once the
                                      matching FunctionResultContent arrives),
                                      not just a plain "a tool ran" name. -->
-                                <ItemsControl ItemsSource="{Binding ToolCalls}"
+                                <ItemsControl ItemsSource="{Binding ToolCallSummary.Groups}"
                                               IsVisible="{Binding HasToolCalls}"
                                               ItemTemplate="{StaticResource ToolCallChipTemplate}"
                                               Margin="0,4,0,0">
@@ -896,7 +896,7 @@
                         <Border Background="{DynamicResource CardBg}" CornerRadius="8" Padding="10">
                             <StackPanel Spacing="8">
                                 <TextBlock Text="Tool calls this turn" FontWeight="Bold" FontSize="12" />
-                                <ItemsControl ItemsSource="{Binding RightPanelToolCalls}"
+                                <ItemsControl ItemsSource="{Binding RightPanelToolCallSummary.Groups}"
                                               ItemTemplate="{StaticResource ToolCallChipTemplate}">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate>

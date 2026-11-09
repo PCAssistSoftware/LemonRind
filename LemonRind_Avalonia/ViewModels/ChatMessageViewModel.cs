@@ -48,6 +48,9 @@ public partial class ChatMessageViewModel : ObservableObject
     // own doc comment.
     public ObservableCollection<ToolCallResult> ToolCalls { get; } = [];
 
+    // The same calls as badges: one per tool and outcome, with a count ("web_search x 12").
+    public ToolCallGroups ToolCallSummary { get; }
+
     // ObservableCollection<T> doesn't feed its own Count changes into a
     // separately-bound IsVisible (Avalonia's binding engine has no built-in
     // int-to-bool conversion for "ToolCalls.Count" either) - this listens
@@ -118,6 +121,7 @@ public partial class ChatMessageViewModel : ObservableObject
         Text = initialText;
         CreatedAt = createdAt ?? DateTime.Now;
         ToolCalls.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasToolCalls));
+        ToolCallSummary = new ToolCallGroups(ToolCalls);
         SystemNotes.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasSystemNotes));
     }
 }

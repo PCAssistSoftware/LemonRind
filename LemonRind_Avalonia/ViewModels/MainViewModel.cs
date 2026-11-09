@@ -491,6 +491,12 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private ObservableCollection<ToolCallResult> _rightPanelToolCalls = [];
 
+    // The right panel shows those calls as badges, one per tool and outcome ("web_search x 12"),
+    // kept in step with whichever list RightPanelToolCalls currently points at.
+    public ToolCallGroups RightPanelToolCallSummary { get; } = new();
+
+    partial void OnRightPanelToolCallsChanged(ObservableCollection<ToolCallResult> value) => RightPanelToolCallSummary.Attach(value);
+
     [RelayCommand]
     private void SelectRightPanelTab(string tab) => RightPanelTab = tab;
 
