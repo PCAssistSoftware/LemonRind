@@ -223,6 +223,11 @@
                             </label>
                         </div>
                     }
+                    <label>
+                        Longest piece of a tool result (characters)
+                        <input type="number" min="500" max="1000000" step="5000" @bind="_edited.Modules.MaxToolOutputChars" />
+                    </label>
+                    <p class="settings-help">The most of one tool result (a web page, a file, an MCP answer) sent to the model in one go. A longer result is not lost: the model is told how to read on, piece by piece, with the read_more tool. About four characters make a token, so the default of 40,000 is roughly 10,000 tokens; raise it if your model has a large context window. Allowed: 500 to 1,000,000.</p>
                 </section>
             }
             else if (_selectedSection == "Knowledge Bases")

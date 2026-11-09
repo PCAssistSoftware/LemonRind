@@ -127,6 +127,7 @@ builder.Services.AddSingleton<ImageAttachmentService>();
 // app and appears in Settings' Modules list.
 builder.Services.AddSingleton<IAssistantModule, AutoBackupModule>();
 
+builder.Services.AddSingleton<ToolResultHolder>();
 builder.Services.AddSingleton<ModuleRegistry>();
 
 var app = builder.Build();

@@ -114,6 +114,13 @@ public class PersonaSettings
 public class ModuleSettings
 {
     public Dictionary<string, bool> Enabled { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The longest piece of a tool result sent to the model in one go (characters).
+    /// A longer result is held and read on piece by piece with the read_more tool.
+    /// About four characters make a token, so 40,000 is roughly 10,000 tokens.
+    /// </summary>
+    public int MaxToolOutputChars { get; set; } = 40000;
 }
 
 /// <summary>
@@ -195,6 +202,7 @@ public class AppSettings
         target.Memory.CompactionTriggerPercent = Memory.CompactionTriggerPercent;
 
         target.Modules.Enabled = new Dictionary<string, bool>(Modules.Enabled, StringComparer.OrdinalIgnoreCase);
+        target.Modules.MaxToolOutputChars = Modules.MaxToolOutputChars;
 
         target.ImageGen.ModelId = ImageGen.ModelId;
         target.ImageGen.DefaultWidth = ImageGen.DefaultWidth;
