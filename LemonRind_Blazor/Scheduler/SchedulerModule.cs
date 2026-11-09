@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Cronos;
 using Microsoft.Extensions.AI;
 using LemonRindBlazor.Configuration;
@@ -28,7 +29,8 @@ public class SchedulerModule(AppSettings settings, SchedulerRepository repositor
     // once a minute anyway (standard cron has no finer resolution).
     private const int PollIntervalSeconds = 30;
 
-    private const int JobRunTimeoutSeconds = 1500;
+    // How long one run may take is a setting (Settings > Scheduler), read at
+    // the start of each run: settings.Scheduler.JobTimeoutSeconds.
 
     private readonly ModuleSettings _moduleSettings = settings.Modules;
 
@@ -141,21 +143,24 @@ public class SchedulerModule(AppSettings settings, SchedulerRepository repositor
             // contend with each other and any real user request in flight.
             foreach (var job in dueJobs)
             {
+                var stopwatch = Stopwatch.StartNew();
+                var result = new JobRunResult("failed", 0);
                 try
                 {
-                    using var jobTimeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(JobRunTimeoutSeconds));
-                    await runner.RunJobAsync(job, jobTimeoutCts.Token);
+                    using var jobTimeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(settings.Scheduler.JobTimeoutSeconds));
+                    result = await runner.RunJobAsync(job, jobTimeoutCts.Token);
                 }
                 catch
                 {
                     // Best-effort - one job failing shouldn't stop the
                     // others from running this tick or break the poller for
                     // future ticks.
+                    result = new JobRunResult("failed", stopwatch.Elapsed.TotalSeconds);
                 }
                 finally
                 {
                     var parsed = CronExpression.Parse(job.CronExpression);
-                    repository.RecordRun(job.Id, now, parsed.GetNextOccurrence(now, TimeZoneInfo.Local, inclusive: false));
+                    repository.RecordRun(job.Id, now, parsed.GetNextOccurrence(now, TimeZoneInfo.Local, inclusive: false), result.Status, result.Seconds);
                 }
             }
         }

@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.AI;
+using LemonRindBlazor.Configuration;
 using LemonRindBlazor.Data;
 using LemonRindBlazor.Memories;
 using LemonRindBlazor.Modules;
@@ -8,6 +10,9 @@ using LemonRindBlazor.Modules.FileSystem;
 using LemonRindBlazor.Services;
 
 namespace LemonRindBlazor.Scheduler;
+
+/// <summary>How a run ended ("ok", "failed", "timed out" or "cut short") and how long it took.</summary>
+public record JobRunResult(string Status, double Seconds);
 
 /// <summary>
 /// Runs one scheduled job's prompt through the normal tool-enabled chat
@@ -28,24 +33,31 @@ public class ScheduledJobRunner(
     ChatSessionRepository sessionRepository,
     MemoryService memoryService,
     SchedulerNotifier notifier,
-    FileWriteApprovalStore approvalStore)
+    FileWriteApprovalStore approvalStore,
+    AppSettings settings)
 {
-    // How many tool-call rounds (model round-trips) one job may use. A research
-    // job that searches and reads many pages needs far more than the library's
-    // default of 40, and an unattended job has nobody to say "keep going".
-    private const int MaxToolRounds = 100;
-
-    // This runner's own chat client, identical to the app's shared one except
-    // for the higher tool-round limit above.
-    private readonly IChatClient chatClient = chatClientFactory.CreateChatClient(MaxToolRounds);
+    // What is sent to carry on a reply that stopped at the output limit.
+    private const string ContinuePrompt =
+        "Your last reply was cut off at the length limit. Continue exactly from where it stopped, without repeating what you already wrote.";
 
     // A fixed fallback prompt, independent of AssistantSettings.SystemPrompt -
     // a scheduled job's system prompt doesn't currently track a user-edited
     // System Prompt from Settings.
     private const string SystemPrompt = "You are a helpful local AI assistant running on the user's own machine.";
 
-    public async Task RunJobAsync(ScheduledJob job, CancellationToken cancellationToken)
+    public async Task<JobRunResult> RunJobAsync(ScheduledJob job, CancellationToken cancellationToken)
     {
+        // Read fresh on every run, so a change made in Settings applies from
+        // the next run without a restart. (How many tool-call rounds one job
+        // may use matters because a research job that searches and reads many
+        // pages needs far more than the library's default of 40, and an
+        // unattended job has nobody to say "keep going". This runner's own
+        // chat client is identical to the app's shared one apart from that.)
+        var limits = settings.Scheduler;
+        var maxToolRounds = limits.MaxToolRounds;
+        var chatClient = chatClientFactory.CreateChatClient(maxToolRounds);
+        var stopwatch = Stopwatch.StartNew();
+
         // Plain job.Name, not a "SCHEDULED: " prefix - the "scheduled" tag
         // (below) is what identifies a scheduled session in the sidebar.
         var sessionId = sessionRepository.CreateSession(job.Name);
@@ -85,8 +97,10 @@ public class ScheduledJobRunner(
         // Without this, a single completion has nothing stopping it from
         // running to Lemonade's own server-side default n_predict - a
         // single stuck/looping generation could produce tens of thousands
-        // of output tokens on its own, eating the whole job timeout.
-        const int maxOutputTokensPerReply = 16384;
+        // of output tokens on its own, eating the whole job timeout. A
+        // model's thinking counts towards it, so it needs room for both the
+        // thinking and the report that follows.
+        var maxOutputTokensPerReply = limits.MaxOutputTokens;
 
         var options = new ChatOptions
         {
@@ -105,6 +119,10 @@ public class ScheduledJobRunner(
         // this it would just hang until the job's own timeout kills it.
         var replyText = "";
         var jobFailed = false;
+        var status = "ok";
+        var continues = 0;
+        var usedUpLimitThinking = false; // the reply ended at the limit with no text at all
+        var notes = new List<string>();  // saved as their own messages, after the reply
         approvalStore.IsRunningScheduledJob = true;
         try
         {
@@ -122,15 +140,49 @@ public class ScheduledJobRunner(
                     // truncated-looking reply (and don't retry: a second attempt would
                     // just burn through the same number of rounds again).
                     var toolRounds = response.Messages.Count(m => m.Role == ChatRole.Assistant && m.Contents.OfType<FunctionCallContent>().Any());
-                    if (toolRounds >= MaxToolRounds - 1)
+                    if (toolRounds >= maxToolRounds - 1)
                     {
                         replyText = (replyText + Environment.NewLine + Environment.NewLine +
-                            $"⚠️ This job used its maximum of {MaxToolRounds} tool-call rounds, so it may have stopped before finishing. Try splitting it into smaller jobs, or ask it to search and read less.").Trim();
+                            $"⚠️ This job used its maximum of {maxToolRounds} tool-call rounds, so it may have stopped before finishing. Try splitting it into smaller jobs, or ask it to search and read less.").Trim();
                         break;
                     }
 
-                    if (!string.IsNullOrWhiteSpace(replyText)) break;
-                    attempt++;
+                    if (string.IsNullOrWhiteSpace(replyText))
+                    {
+                        usedUpLimitThinking = response.FinishReason == ChatFinishReason.Length;
+                        attempt++;
+                        continue;
+                    }
+                    usedUpLimitThinking = false;
+
+                    // A reply that stopped at the output limit is carried on,
+                    // so a long report arrives whole. The model has to see
+                    // what it wrote (and any tool results behind it), so the
+                    // whole response goes back into the history first.
+                    while (response.FinishReason == ChatFinishReason.Length && continues < limits.MaxContinuations)
+                    {
+                        continues++;
+                        history.AddMessages(response);
+                        history.Add(new ChatMessage(ChatRole.User, ContinuePrompt));
+                        response = await chatClient.GetResponseAsync(history, options, cancellationToken);
+                        if (string.IsNullOrWhiteSpace(response.Text)) break; // it used the whole limit thinking again: nothing to add
+                        replyText += response.Text;
+                    }
+
+                    // Still at the limit: what was written stops part way (a
+                    // report cut off in the middle of a table, say). Calling
+                    // that "ok" would hide it.
+                    if (response.FinishReason == ChatFinishReason.Length)
+                    {
+                        status = "cut short";
+                        var tried = continues > 0 ? $" even after {continues} automatic continue{(continues == 1 ? "" : "s")}" : "";
+                        notes.Add($"⚠️ The model's reply was cut off at the output limit ({maxOutputTokensPerReply:N0} tokens, which includes its thinking){tried}, so it is probably incomplete. Raise 'Longest reply' in Settings > Scheduler, use a model that thinks less, or ask for a shorter report.");
+                    }
+                    else if (continues > 0)
+                    {
+                        notes.Add($"Note: the reply reached the output limit and was continued automatically {continues} time{(continues == 1 ? "" : "s")}, so it arrives in {continues + 1} parts.");
+                    }
+                    break;
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -139,6 +191,7 @@ public class ScheduledJobRunner(
                 // time-limit token specifically, not a separate per-request
                 // SDK timeout (which falls through to the generic catch
                 // below instead, with its own timeout detection).
+                status = "timed out";
                 replyText = "⚠️ This scheduled job didn't finish before its own time limit and was cancelled." +
                     Environment.NewLine + Environment.NewLine +
                     "This usually means the model got stuck reasoning in a loop, or the job's prompt/tools made it take unusually long. Try simplifying the prompt, disabling tools it doesn't need, or asking it to keep its answer shorter.";
@@ -202,6 +255,7 @@ public class ScheduledJobRunner(
                         ? "This usually means the request grew very large before Lemonade could respond - often a slow or overly broad tool call (e.g. the wrong web search provider pulling in too much content). Check this job's tools/settings, or increase Lemonade's network timeout."
                         : "Check Lemonade is running a real chat model, and that any modules this job depends on (e.g. which web search provider is selected) are configured correctly.";
                 replyText = $"⚠️ This scheduled job failed to complete: {rawMessage.TrimEnd('.', ' ')}." + Environment.NewLine + Environment.NewLine + hint;
+                status = "failed";
                 jobFailed = true;
             }
         }
@@ -212,10 +266,27 @@ public class ScheduledJobRunner(
 
         if (string.IsNullOrWhiteSpace(replyText))
         {
-            replyText = "(No response - the model's reasoning didn't lead to an answer.)";
+            replyText = usedUpLimitThinking
+                ? $"(No response - the model used up its output limit ({maxOutputTokensPerReply:N0} tokens) while thinking, so there is no answer. Raise 'Longest reply' in Settings > Scheduler or use a model that thinks less.)"
+                : "(No response - the model's reasoning didn't lead to an answer.)";
+            status = usedUpLimitThinking ? "cut short" : "failed";
+            jobFailed = true;
         }
 
         sessionRepository.SaveMessage(sessionId, ChatRole.Assistant.Value, replyText, reasoningContent: null);
+        notifier.RaiseSessionUpdated(sessionId);
+
+        foreach (var note in notes)
+        {
+            sessionRepository.SaveMessage(sessionId, ChatRole.Assistant.Value, note, reasoningContent: null);
+        }
+
+        // When the run ended and how long it took, as the last line of its
+        // chat - whatever the outcome, so a slow or timed-out job shows it too.
+        var seconds = stopwatch.Elapsed.TotalSeconds;
+        var endedAt = DateTime.Now;
+        sessionRepository.SaveMessage(sessionId, ChatRole.Assistant.Value,
+            $"This run ended at {endedAt:HH:mm} on {endedAt:dd/MM/yyyy} and took {RunDuration.Format(seconds)}.", reasoningContent: null);
         notifier.RaiseSessionUpdated(sessionId);
 
         // Best-effort, same as a live turn's fact extraction. Skipped on
@@ -233,5 +304,7 @@ public class ScheduledJobRunner(
         {
             // Best-effort.
         }
+
+        return new JobRunResult(status, seconds);
     }
 }

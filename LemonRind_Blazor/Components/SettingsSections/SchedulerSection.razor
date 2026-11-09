@@ -1,8 +1,11 @@
 @using Cronos
 @using LemonRindBlazor.Scheduler
 @using LemonRindBlazor.Services
+@using LemonRindBlazor.Configuration
 @inject SchedulerRepository Repository
 @inject LemonadeManagementClient ManagementClient
+@inject AppSettings LiveSettings
+@inject AppSettingsStore SettingsStore
 
 <div class="scheduler-page">
     <p class="scheduler-intro">
@@ -11,6 +14,31 @@
         local timezone. Jobs can also be created just by asking the assistant in chat
         ("remind me every Monday at 9am to...") - this page and chat both manage the same underlying jobs.
     </p>
+
+    <div class="limits-box">
+        <h4>Limits for one run</h4>
+        <label>
+            Time limit (minutes)
+            <input type="number" min="1" max="1440" value="@(LiveSettings.Scheduler.JobTimeoutSeconds / 60)" @onchange="e => ChangeLimit(e, 1, 1440, v => v * 60, (s, v) => s.JobTimeoutSeconds = v)" />
+        </label>
+        <p class="limit-help">A run that takes longer than this is stopped. Allowed: 1 to 1440 minutes (a day). The default is 30.</p>
+        <label>
+            Most tool rounds
+            <input type="number" min="1" max="500" value="@LiveSettings.Scheduler.MaxToolRounds" @onchange="e => ChangeLimit(e, 1, 500, v => v, (s, v) => s.MaxToolRounds = v)" />
+        </label>
+        <p class="limit-help">Each time the model uses tools and then carries on is one round. A run that reaches this many stops and says so. Allowed: 1 to 500. The default is 100.</p>
+        <label>
+            Longest reply (tokens)
+            <input type="number" min="256" max="131072" step="4096" value="@LiveSettings.Scheduler.MaxOutputTokens" @onchange="e => ChangeLimit(e, 256, 131072, v => v, (s, v) => s.MaxOutputTokens = v)" />
+        </label>
+        <p class="limit-help">The most the model may write in one go, counting its thinking too. A reply that reaches it is cut off, and the run is marked "cut short". A model that thinks a lot needs a bigger number, and a longer reply takes longer to write. Allowed: 256 to 131,072. The default is 32,768.</p>
+        <label>
+            Automatic continues
+            <input type="number" min="0" max="10" value="@LiveSettings.Scheduler.MaxContinuations" @onchange="e => ChangeLimit(e, 0, 10, v => v, (s, v) => s.MaxContinuations = v)" />
+        </label>
+        <p class="limit-help">When a reply is cut off at the longest reply, the run asks the model to carry on from where it stopped, up to this many times. 0 turns it off. Allowed: 0 to 10. The default is 2.</p>
+        <p class="limit-help">Changes apply from the next run and are saved at once.</p>
+    </div>
 
     <div class="add-box">
         <input @bind="_newName" placeholder="Name" />
@@ -94,7 +122,7 @@
                     }
                 </select>
                 <div class="job-times">
-                    <span>Last run: @(job.LastRunAt.HasValue ? job.LastRunAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm") : "Never run")</span>
+                    <span>Last run: @(job.LastRunAt.HasValue ? job.LastRunAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm") : "Never run")@LastRunDetail(job)</span>
                     <span>Next run: @(job.NextRunAt.HasValue ? job.NextRunAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm") : "Never (invalid schedule)")</span>
                 </div>
                 <button class="job-save btn-primary" @onclick="() => SaveJobEdit(job)">Save changes</button>
@@ -129,6 +157,37 @@
     private int _jobHour = 9;
     private int _jobMinute = 0;
     private static readonly int[] FiveMinuteSteps = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+
+    /// <summary>The settings object the Settings page is editing. Kept in step with the live one so a later Save of another section does not put the old numbers back.</summary>
+    [Parameter] public SchedulerSettings? EditedLimits { get; set; }
+
+    /// <summary>", took 12 min 40 s" and the outcome, after the time of the last run - empty for runs from before this was recorded.</summary>
+    private static string LastRunDetail(ScheduledJob job)
+    {
+        if (job.LastStatus is null) return "";
+        var took = job.LastDurationSeconds.HasValue ? $", took {RunDuration.Format(job.LastDurationSeconds.Value)}" : "";
+        return $" - {job.LastStatus}{took}";
+    }
+
+    /// <summary>
+    /// One of the limits changed: a value outside its range is ignored (the
+    /// hint under the box says what is allowed); a good one is applied to the
+    /// live settings and written to the settings file at once - from a fresh
+    /// read of the file, so nothing else that is being edited on this page
+    /// and has not been saved yet gets saved with it.
+    /// </summary>
+    private void ChangeLimit(ChangeEventArgs e, int low, int high, Func<int, int> toStored, Action<SchedulerSettings, int> apply)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var typed) || typed < low || typed > high) return;
+        var value = toStored(typed);
+
+        apply(LiveSettings.Scheduler, value);
+        if (EditedLimits is not null) apply(EditedLimits, value);
+
+        var onDisk = SettingsStore.LoadFresh();
+        apply(onDisk.Scheduler, value);
+        SettingsStore.Save(onDisk);
+    }
 
     protected override async Task OnInitializedAsync()
     {

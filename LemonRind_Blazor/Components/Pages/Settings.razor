@@ -246,7 +246,7 @@
                 <section class="settings-section">
                     <h3>Scheduler</h3>
                     @if (IsModuleDisabled("Scheduler")) { <div class="module-disabled-banner">This module is currently disabled - see Modules to enable it. This section still works either way.</div> }
-                    <SchedulerSection />
+                    <SchedulerSection EditedLimits="_edited.Scheduler" />
                 </section>
             }
         </div>

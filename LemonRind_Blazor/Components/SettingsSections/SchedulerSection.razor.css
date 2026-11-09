@@ -165,3 +165,35 @@
     align-self: flex-start;
     padding: 0.5rem 1.4rem;
 }
+
+/* Limits for one run: a number box each, with its hint underneath. */
+.limits-box {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin: 1rem 0;
+}
+
+.limits-box h4 {
+    margin: 0 0 0.25rem 0;
+}
+
+.limits-box label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.9rem;
+    max-width: 16rem;
+}
+
+.limits-box input {
+    padding: 0.5rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-strong);
+}
+
+.limit-help {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    margin: 0 0 0.5rem 0;
+}
