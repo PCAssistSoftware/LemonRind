@@ -28,8 +28,40 @@ Namespace Data
                 Return _title
             End Get
             Set(value As String)
-                SetProperty(_title, value)
+                If SetProperty(_title, value) Then OnPropertyChanged(NameOf(TitleParts))
             End Set
+        End Property
+
+        ''' <summary>What was typed in the search box when this row was found (empty when not searching), so the title, snippet and tags can show what matched.</summary>
+        Public Property SearchQuery As String = ""
+
+        ''' <summary>A few words of the best matching message, with matched words wrapped in SearchHighlight's marker characters. Nothing when the chat matched only by title, folder or tag.</summary>
+        Public Property Snippet As String
+
+        Public ReadOnly Property HasSnippet As Boolean
+            Get
+                Return Not String.IsNullOrEmpty(Snippet)
+            End Get
+        End Property
+
+        ''' <summary>The title in pieces, the matched ones flagged, for the sidebar to draw.</summary>
+        Public ReadOnly Property TitleParts As List(Of HighlightPart)
+            Get
+                Return SearchHighlight.HighlightParts(Title, SearchQuery)
+            End Get
+        End Property
+
+        Public ReadOnly Property SnippetParts As List(Of HighlightPart)
+            Get
+                Return SearchHighlight.ParseSnippet(Snippet)
+            End Get
+        End Property
+
+        ''' <summary>The tags as chips, each flagged when the search matched it.</summary>
+        Public ReadOnly Property TagChips As List(Of TagChip)
+            Get
+                Return Tags.Select(Function(t) New TagChip(t, SearchHighlight.Matches(t, SearchQuery))).ToList()
+            End Get
         End Property
 
         Public Property UpdatedAt As DateTime
@@ -265,7 +297,7 @@ Namespace Data
         End Function
 
         ''' <summary>
-        ''' Sessions whose title contains the query, or that contain a message
+        ''' Sessions whose title, folder name or a tag contains the query, or that contain a message
         ''' matching it via the MessagesFts full-text index. Each search word
         ''' is treated as an independent prefix match (implicit AND) rather
         ''' than passing the raw query straight to FTS5's MATCH syntax, so
@@ -286,6 +318,10 @@ Namespace Data
                         FROM Sessions s
                         LEFT JOIN Folders f ON f.Id = s.FolderId
                         WHERE s.Title LIKE @likeQuery
+                           OR f.Name LIKE @likeQuery
+                           OR s.Id IN (
+                                SELECT st.SessionId FROM SessionTags st JOIN Tags t ON t.Id = st.TagId WHERE t.Name LIKE @likeQuery
+                           )
                            OR s.Id IN (
                                 SELECT m.SessionId FROM Messages m
                                 WHERE m.Id IN (SELECT rowid FROM MessagesFts WHERE MessagesFts MATCH @ftsQuery)
@@ -293,10 +329,49 @@ Namespace Data
                         ORDER BY (CASE WHEN s.FolderId IS NULL THEN 1 ELSE 0 END), f.Name, s.UpdatedAt DESC;"
                     command.Parameters.AddWithValue("@likeQuery", $"%{query}%")
                     command.Parameters.AddWithValue("@ftsQuery", ftsQuery)
-                    Return ReadSummaries(connection, command)
+                    Dim found = ReadSummaries(connection, command)
+
+                    For Each session In found
+                        session.SearchQuery = query
+                    Next
+                    AttachSnippets(connection, found, ftsQuery, query)
+                    Return found
                 End Using
             End Using
         End Function
+
+        ''' <summary>
+        ''' Gives each found session a short snippet of its best-matching message (the one the full-text index ranks
+        ''' highest), made by SQLite's own snippet() with each matched word wrapped in two marker characters that
+        ''' SearchHighlight.ParseSnippet understands. A message with a picture attached is stored with a marker holding
+        ''' the picture's file path in front of what was typed; that path is searchable but is not something to show, so
+        ''' for those messages the snippet is cut from the typed words alone, and a message that matched only through its
+        ''' path offers no snippet. A session that matched only by title, folder or tag keeps no snippet.
+        ''' </summary>
+        Private Shared Sub AttachSnippets(connection As SqliteConnection, sessions As List(Of ChatSessionSummary), ftsQuery As String, typedQuery As String)
+            If sessions.Count = 0 Then Return
+            Dim byId = sessions.ToDictionary(Function(s) s.Id)
+
+            Using command = connection.CreateCommand()
+                command.CommandText = "
+                    SELECT m.SessionId, m.Content, snippet(MessagesFts, 0, char(2), char(3), '...', 16)
+                    FROM MessagesFts
+                    JOIN Messages m ON m.Id = MessagesFts.rowid
+                    WHERE MessagesFts MATCH @ftsQuery AND m.Role != 'tool'
+                    ORDER BY MessagesFts.rank;"
+                command.Parameters.AddWithValue("@ftsQuery", ftsQuery)
+
+                Using reader = command.ExecuteReader()
+                    While reader.Read()
+                        Dim session As ChatSessionSummary = Nothing
+                        If Not byId.TryGetValue(reader.GetString(0), session) OrElse session.Snippet IsNot Nothing Then Continue While ' best first: keep the first usable one
+
+                        Dim parsed = Services.ImageAttachmentService.TryParseAttachedImageMarker(reader.GetString(1))
+                        session.Snippet = If(parsed.ImagePath Is Nothing, reader.GetString(2), SearchHighlight.SnippetFromText(parsed.RemainingText, typedQuery))
+                    End While
+                End Using
+            End Using
+        End Sub
 
         ''' <summary>All messages in a session, oldest first - ready to rebuild the chat window's history from.</summary>
         Public Function LoadMessages(sessionId As String) As List(Of StoredChatMessage)

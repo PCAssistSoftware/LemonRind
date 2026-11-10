@@ -7,6 +7,7 @@
         xmlns:converters="clr-namespace:LemonRind.Converters"
         xmlns:vm="clr-namespace:LemonRind.ViewModels"
         xmlns:data="clr-namespace:LemonRind.Data"
+        xmlns:controls="clr-namespace:LemonRind.Controls"
         xmlns:mdxaml="clr-namespace:Markdig.Wpf;assembly=Markdig.Wpf"
         mc:Ignorable="d"
         Title="Lemon Rind" Height="1007" Width="1600"
@@ -534,6 +535,7 @@
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
                             <!-- Neither RelativeSource AncestorType=ListBox
                                  nor ElementName=SessionsListBox works here -
@@ -583,7 +585,7 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
 
-                                <TextBlock Grid.Column="0" Text="{Binding Title}" TextTrimming="CharacterEllipsis"
+                                <TextBlock Grid.Column="0" controls:HighlightedText.Parts="{Binding TitleParts}" TextTrimming="CharacterEllipsis"
                                            FontSize="14" Padding="6,4" ToolTip="{Binding Title}"
                                            Visibility="{Binding IsEditing, Converter={StaticResource InverseBooleanToVisibilityConverter}}" />
 
@@ -621,7 +623,12 @@
                                  entirely (via the WrapPanel having nothing
                                  to show) rather than reserving empty space
                                  when a session has no tags. -->
-                            <ItemsControl Grid.Row="1" ItemsSource="{Binding Tags}" Margin="6,0,0,2"
+                            <!-- While searching: a few words of the message that matched, with the matched words picked out. -->
+                            <TextBlock Grid.Row="1" controls:HighlightedText.Parts="{Binding SnippetParts}" Margin="6,0,0,2"
+                                       FontSize="11" Foreground="Gray" TextWrapping="Wrap" MaxHeight="34" TextTrimming="CharacterEllipsis"
+                                       Visibility="{Binding HasSnippet, Converter={StaticResource BooleanToVisibilityConverter}}" />
+
+                            <ItemsControl Grid.Row="2" ItemsSource="{Binding TagChips}" Margin="6,0,0,2"
                                           Visibility="{Binding IsEditing, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
@@ -630,8 +637,19 @@
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Border Background="#E5E5EA" CornerRadius="8" Padding="6,1" Margin="0,0,4,4">
-                                            <TextBlock Text="{Binding}" FontSize="10" Foreground="Gray" />
+                                        <Border CornerRadius="8" Padding="6,1" Margin="0,0,4,4">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="#E5E5EA" />
+                                                    <Style.Triggers>
+                                                        <!-- the chat search matched this tag -->
+                                                        <DataTrigger Binding="{Binding IsMatch}" Value="True">
+                                                            <Setter Property="Background" Value="#FFE58F" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <TextBlock Text="{Binding Text}" FontSize="10" Foreground="Gray" />
                                         </Border>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
