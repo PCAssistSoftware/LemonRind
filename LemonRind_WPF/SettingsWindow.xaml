@@ -437,6 +437,8 @@
                                                                 <ColumnDefinition Width="Auto" />
                                                                 <ColumnDefinition Width="Auto" />
                                                                 <ColumnDefinition Width="Auto" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                                <ColumnDefinition Width="Auto" />
                                                             </Grid.ColumnDefinitions>
                                                             <TextBlock Grid.Column="0" Text="{Binding Icon}" FontFamily="Segoe MDL2 Assets"
                                                                        Foreground="Gray" Margin="0,0,8,0" VerticalAlignment="Center" />
@@ -460,7 +462,17 @@
                                                             </TextBlock>
                                                             <TextBlock Grid.Column="3" Text="{Binding ChunkCount, StringFormat={}{0} chunks}"
                                                                        Foreground="Gray" FontSize="11" Margin="0,0,8,0" VerticalAlignment="Center" />
-                                                            <Button Grid.Column="4" Content="Remove" Padding="6,2"
+                                                            <!-- A picture is stored as what a vision model wrote about it: read that, or have it redone. -->
+                                                            <Button Grid.Column="4" Content="View text" Padding="6,2" Margin="0,0,4,0"
+                                                                    Visibility="{Binding HasPictureText, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                                    Command="{Binding DataContext.ViewPictureTextCommand, RelativeSource={RelativeSource AncestorType=ItemsControl, AncestorLevel=2}}"
+                                                                    CommandParameter="{Binding}" />
+                                                            <Button Grid.Column="5" Content="Read again" Padding="6,2" Margin="0,0,4,0"
+                                                                    ToolTip="Read the picture again with the model that is loaded now"
+                                                                    Visibility="{Binding CanReadAgain, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                                    Command="{Binding DataContext.ReadPictureAgainCommand, RelativeSource={RelativeSource AncestorType=ItemsControl, AncestorLevel=2}}"
+                                                                    CommandParameter="{Binding}" />
+                                                            <Button Grid.Column="6" Content="Remove" Padding="6,2"
                                                                     Command="{Binding DataContext.RemoveSourceCommand, RelativeSource={RelativeSource AncestorType=ItemsControl, AncestorLevel=2}}"
                                                                     CommandParameter="{Binding}" />
                                                         </Grid>

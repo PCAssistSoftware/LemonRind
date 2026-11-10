@@ -384,6 +384,20 @@ Namespace Data
                         End If
                     End Using
                 Next
+
+                ' A picture source: what a vision model wrote about it, and a shrunk copy of the picture (so it can be read
+                ' again after the original is gone). Null for every other kind of source.
+                For Each columnInfo In {("PictureText", "TEXT NULL"), ("PictureImage", "BLOB NULL")}
+                    Using checkCommand = connection.CreateCommand()
+                        checkCommand.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('KnowledgeSources') WHERE name = '{columnInfo.Item1}';"
+                        If CLng(checkCommand.ExecuteScalar()) = 0 Then
+                            Using alterCommand = connection.CreateCommand()
+                                alterCommand.CommandText = $"ALTER TABLE KnowledgeSources ADD COLUMN {columnInfo.Item1} {columnInfo.Item2};"
+                                alterCommand.ExecuteNonQuery()
+                            End Using
+                        End If
+                    End Using
+                Next
             End Using
 
             _logger.LogInformation("App database ready at {ConnectionString}", _connectionString)

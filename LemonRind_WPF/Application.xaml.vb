@@ -172,6 +172,7 @@ Class Application
         ' Memory) and WebReaderClient (already registered above) rather than
         ' building separate embedding/web-fetch code.
         builder.Services.AddSingleton(Of KnowledgeRepository)()
+        builder.Services.AddSingleton(Of PictureReader)()
         builder.Services.AddSingleton(Of KnowledgeIngestionService)()
         builder.Services.AddSingleton(Of KnowledgeService)()
         ' KnowledgeModule is a toggle for existing functionality, not new

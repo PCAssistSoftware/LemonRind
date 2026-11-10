@@ -80,6 +80,30 @@ Namespace ViewModels
         Public Property Status As String
         Public Property ErrorMessage As String
         Public Property ChunkCount As Integer
+        Public Property Reference As String = ""
+
+        ''' <summary>What a vision model wrote about a picture source; empty for any other source.</summary>
+        Public Property PictureText As String = ""
+
+        ''' <summary>A file source that is a picture (read by a vision model rather than as text).</summary>
+        Public ReadOnly Property IsPicture As Boolean
+            Get
+                Return SourceType = "File" AndAlso PictureReader.IsPicture(Reference)
+            End Get
+        End Property
+
+        Public ReadOnly Property HasPictureText As Boolean
+            Get
+                Return Not String.IsNullOrEmpty(PictureText)
+            End Get
+        End Property
+
+        ''' <summary>Whether "Read again" is offered: a picture that is not being read right now.</summary>
+        Public ReadOnly Property CanReadAgain As Boolean
+            Get
+                Return IsPicture AndAlso Status <> "Ingesting"
+            End Get
+        End Property
 
         ''' <summary>Small icon per source type, shown in the sources list.</summary>
         Public ReadOnly Property Icon As String
@@ -1095,6 +1119,12 @@ Namespace ViewModels
         Public ReadOnly Property ReembedKnowledgeBaseCommand As IAsyncRelayCommand(Of KnowledgeBaseViewModel)
         Public ReadOnly Property RemoveSourceCommand As IRelayCommand(Of KnowledgeSourceViewModel)
 
+        ''' <summary>Shows what the vision model wrote about a picture - the text that is searched.</summary>
+        Public ReadOnly Property ViewPictureTextCommand As IRelayCommand(Of KnowledgeSourceViewModel)
+
+        ''' <summary>Reads a picture again with the model that is loaded now (works after the original file has gone).</summary>
+        Public ReadOnly Property ReadPictureAgainCommand As IAsyncRelayCommand(Of KnowledgeSourceViewModel)
+
         Public ReadOnly Property ImportMcpServerConfigJsonCommand As IAsyncRelayCommand
         Public ReadOnly Property CreateMcpServerCommand As IAsyncRelayCommand
         Public ReadOnly Property DeleteMcpServerCommand As IAsyncRelayCommand(Of McpServerViewModel)
@@ -1232,6 +1262,8 @@ Namespace ViewModels
             AddTextSourceCommand = New AsyncRelayCommand(Of KnowledgeBaseViewModel)(AddressOf AddTextSourceAsync)
             ReembedKnowledgeBaseCommand = New AsyncRelayCommand(Of KnowledgeBaseViewModel)(AddressOf ReembedKnowledgeBaseAsync)
             RemoveSourceCommand = New RelayCommand(Of KnowledgeSourceViewModel)(AddressOf RemoveSource)
+            ViewPictureTextCommand = New RelayCommand(Of KnowledgeSourceViewModel)(AddressOf ViewPictureText)
+            ReadPictureAgainCommand = New AsyncRelayCommand(Of KnowledgeSourceViewModel)(AddressOf ReadPictureAgainAsync)
 
             ImportMcpServerConfigJsonCommand = New AsyncRelayCommand(AddressOf ImportMcpServerConfigJsonAsync)
             CreateMcpServerCommand = New AsyncRelayCommand(AddressOf CreateMcpServerAsync)
@@ -1349,7 +1381,9 @@ Namespace ViewModels
                     .DisplayName = source.DisplayName,
                     .Status = source.Status,
                     .ErrorMessage = source.ErrorMessage,
-                    .ChunkCount = source.ChunkCount
+                    .ChunkCount = source.ChunkCount,
+                    .Reference = source.Reference,
+                    .PictureText = source.PictureText
                 })
             Next
         End Sub
@@ -1388,7 +1422,7 @@ Namespace ViewModels
             Dim dialog As New Microsoft.Win32.OpenFileDialog With {
                 .Title = "Add files to this knowledge base",
                 .Multiselect = True,
-                .Filter = "Supported files (*.pdf;*.docx;*.xlsx;*.txt;*.md;*.csv)|*.pdf;*.docx;*.xlsx;*.txt;*.md;*.csv|All files (*.*)|*.*"
+                .Filter = "Supported files (*.pdf;*.docx;*.xlsx;*.txt;*.md;*.csv;*.png;*.jpg;*.jpeg;*.webp;*.gif;*.bmp)|*.pdf;*.docx;*.xlsx;*.txt;*.md;*.csv;*.png;*.jpg;*.jpeg;*.webp;*.gif;*.bmp|All files (*.*)|*.*"
             }
             If dialog.ShowDialog() <> True Then Return
 
@@ -1455,6 +1489,29 @@ Namespace ViewModels
                 RefreshKnowledgeBaseHealth(kbViewModel)
                 kbViewModel.PendingTextName = ""
                 kbViewModel.PendingTextContent = ""
+                kbViewModel.StatusText = ""
+            Finally
+                kbViewModel.IsBusy = False
+            End Try
+        End Function
+
+        Private Sub ViewPictureText(sourceViewModel As KnowledgeSourceViewModel)
+            If sourceViewModel Is Nothing OrElse Not sourceViewModel.HasPictureText Then Return
+            SystemPromptDialog.Show(sourceViewModel.PictureText, title:=sourceViewModel.DisplayName,
+                description:="What the model wrote about this picture. This text is what gets searched.")
+        End Sub
+
+        Private Async Function ReadPictureAgainAsync(sourceViewModel As KnowledgeSourceViewModel) As Task
+            If sourceViewModel Is Nothing Then Return
+            Dim kbViewModel = KnowledgeBases.FirstOrDefault(Function(kb) kb.Id = sourceViewModel.KnowledgeBaseId)
+            If kbViewModel Is Nothing Then Return
+
+            kbViewModel.IsBusy = True
+            kbViewModel.StatusText = $"Reading {sourceViewModel.DisplayName} again..."
+            Try
+                Await _knowledgeIngestionService.RereadPictureAsync(kbViewModel.Id, sourceViewModel.Id, CancellationToken.None)
+                RefreshSources(kbViewModel)
+                RefreshKnowledgeBaseHealth(kbViewModel)
                 kbViewModel.StatusText = ""
             Finally
                 kbViewModel.IsBusy = False

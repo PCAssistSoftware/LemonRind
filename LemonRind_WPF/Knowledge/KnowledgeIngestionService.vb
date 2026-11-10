@@ -24,6 +24,7 @@ Namespace Knowledge
         Private ReadOnly _embeddingGenerator As IEmbeddingGenerator(Of String, Embedding(Of Single))
         Private ReadOnly _webReaderClient As WebReaderClient
         Private ReadOnly _embeddingModel As String
+        Private ReadOnly _pictureReader As PictureReader
 
         ''' <summary>The embedding model in use (the one this service's generator was built with) - what a knowledge base is checked against.</summary>
         Public ReadOnly Property EmbeddingModelName As String
@@ -32,7 +33,8 @@ Namespace Knowledge
             End Get
         End Property
 
-        Public Sub New(repository As KnowledgeRepository, embeddingClientFactory As EmbeddingClientFactory, webReaderClient As WebReaderClient)
+        Public Sub New(repository As KnowledgeRepository, embeddingClientFactory As EmbeddingClientFactory, webReaderClient As WebReaderClient, pictureReader As PictureReader)
+            _pictureReader = pictureReader
             _repository = repository
             _embeddingGenerator = embeddingClientFactory.CreateEmbeddingGenerator()
             _embeddingModel = embeddingClientFactory.ModelName
@@ -40,8 +42,54 @@ Namespace Knowledge
         End Sub
 
         Public Async Function AddFileSourceAsync(knowledgeBaseId As String, filePath As String, cancellationToken As CancellationToken) As Task
+            If PictureReader.IsPicture(filePath) Then
+                Dim sourceId = _repository.CreateSource(knowledgeBaseId, "File", filePath, Path.GetFileName(filePath))
+                Await ReadPictureAsync(knowledgeBaseId, sourceId, Path.GetFileName(filePath), filePath, cancellationToken)
+                Return
+            End If
+
             Await IngestSingleTextAsync(knowledgeBaseId, "File", filePath, Path.GetFileName(filePath),
                 Function() Task.FromResult(FileTextExtractor.ExtractTextUncapped(filePath)), cancellationToken)
+        End Function
+
+        ''' <summary>
+        ''' Reads a picture source again with the model that is loaded now (its first reading was poor, say). Uses the shrunk
+        ''' copy kept in the database, so it works even after the original file has gone.
+        ''' </summary>
+        Public Async Function RereadPictureAsync(knowledgeBaseId As String, sourceId As String, cancellationToken As CancellationToken) As Task
+            Dim source = _repository.ListSources(knowledgeBaseId).FirstOrDefault(Function(s) s.Id = sourceId)
+            If source Is Nothing OrElse Not PictureReader.IsPicture(source.Reference) Then Return
+
+            _repository.BeginRereading(sourceId)
+            Await ReadPictureAsync(knowledgeBaseId, sourceId, source.DisplayName, Nothing, cancellationToken)
+        End Function
+
+        ''' <summary>Describes the picture, keeps the description on the source, then chunks and embeds it like any text.</summary>
+        Private Async Function ReadPictureAsync(knowledgeBaseId As String, sourceId As String, displayName As String, path As String, cancellationToken As CancellationToken) As Task
+            Try
+                Dim image As Byte()
+                If path IsNot Nothing Then
+                    image = _pictureReader.ShrinkPicture(path)
+                    ' kept before reading, so "Read again" works even if this first reading fails (the loaded model cannot
+                    ' see pictures, say, and the person loads one that can)
+                    _repository.SetPicture(sourceId, Nothing, image)
+                Else
+                    image = _repository.GetPictureImage(sourceId)
+                    If image Is Nothing Then Throw New PictureReadException("The picture is no longer kept here to read again. Add it again.")
+                End If
+
+                Dim description = Await _pictureReader.DescribeAsync(image, displayName, cancellationToken)
+                _repository.SetPicture(sourceId, description.Text, Nothing)
+
+                Dim chunkCount = Await EmbedAndSaveChunksAsync(knowledgeBaseId, sourceId, description.Text, 0, cancellationToken)
+                If chunkCount = 0 Then
+                    _repository.MarkSourceFailed(sourceId, "The description had no text.")
+                Else
+                    _repository.MarkSourceReady(sourceId, chunkCount)
+                End If
+            Catch ex As Exception
+                _repository.MarkSourceFailed(sourceId, ex.Message)
+            End Try
         End Function
 
         Public Async Function AddWebsiteSourceAsync(knowledgeBaseId As String, url As String, cancellationToken As CancellationToken) As Task

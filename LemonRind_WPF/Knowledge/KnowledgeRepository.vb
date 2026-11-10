@@ -28,6 +28,9 @@ Namespace Knowledge
         Public Property ErrorMessage As String
         Public Property ChunkCount As Integer
         Public Property AddedAt As DateTime
+
+        ''' <summary>What a vision model wrote about a picture source; empty for any other source.</summary>
+        Public Property PictureText As String = ""
     End Class
 
     ''' <summary>
@@ -217,6 +220,58 @@ Namespace Knowledge
             Return id
         End Function
 
+        ''' <summary>Keeps what a vision model wrote about a picture and/or a shrunk copy of the picture on its source. Nothing leaves that part as it is.</summary>
+        Public Sub SetPicture(sourceId As String, text As String, image As Byte())
+            Using connection = _database.OpenConnection()
+                Using command = connection.CreateCommand()
+                    command.CommandText = "
+                        UPDATE KnowledgeSources
+                        SET PictureText = CASE WHEN @hasText = 1 THEN @text ELSE PictureText END,
+                            PictureImage = CASE WHEN @hasImage = 1 THEN @image ELSE PictureImage END
+                        WHERE Id = @id;"
+                    command.Parameters.AddWithValue("@hasText", If(text Is Nothing, 0, 1))
+                    command.Parameters.AddWithValue("@text", If(text Is Nothing, CObj(DBNull.Value), text))
+                    command.Parameters.AddWithValue("@hasImage", If(image Is Nothing, 0, 1))
+                    command.Parameters.AddWithValue("@image", If(image Is Nothing, CObj(DBNull.Value), image))
+                    command.Parameters.AddWithValue("@id", sourceId)
+                    command.ExecuteNonQuery()
+                End Using
+            End Using
+        End Sub
+
+        ''' <summary>The shrunk copy of a picture source, or Nothing.</summary>
+        Public Function GetPictureImage(sourceId As String) As Byte()
+            Using connection = _database.OpenConnection()
+                Using command = connection.CreateCommand()
+                    command.CommandText = "SELECT PictureImage FROM KnowledgeSources WHERE Id = @id;"
+                    command.Parameters.AddWithValue("@id", sourceId)
+                    Dim value = command.ExecuteScalar()
+                    Return TryCast(value, Byte())
+                End Using
+            End Using
+        End Function
+
+        ''' <summary>Puts a source back into the Ingesting state and throws away its chunks, ready to be read again.</summary>
+        Public Sub BeginRereading(sourceId As String)
+            Using connection = _database.OpenConnection()
+                Using transaction = connection.BeginTransaction()
+                    Using command = connection.CreateCommand()
+                        command.Transaction = transaction
+                        command.CommandText = "DELETE FROM KnowledgeChunks WHERE SourceId = @id;"
+                        command.Parameters.AddWithValue("@id", sourceId)
+                        command.ExecuteNonQuery()
+                    End Using
+                    Using command = connection.CreateCommand()
+                        command.Transaction = transaction
+                        command.CommandText = "UPDATE KnowledgeSources SET Status = 'Ingesting', ErrorMessage = NULL, ChunkCount = 0 WHERE Id = @id;"
+                        command.Parameters.AddWithValue("@id", sourceId)
+                        command.ExecuteNonQuery()
+                    End Using
+                    transaction.Commit()
+                End Using
+            End Using
+        End Sub
+
         Public Sub MarkSourceReady(sourceId As String, chunkCount As Integer)
             Using connection = _database.OpenConnection()
                 Using command = connection.CreateCommand()
@@ -244,7 +299,7 @@ Namespace Knowledge
             Using connection = _database.OpenConnection()
                 Using command = connection.CreateCommand()
                     command.CommandText = "
-                        SELECT Id, KnowledgeBaseId, SourceType, Reference, DisplayName, Status, ErrorMessage, ChunkCount, AddedAt
+                        SELECT Id, KnowledgeBaseId, SourceType, Reference, DisplayName, Status, ErrorMessage, ChunkCount, AddedAt, PictureText
                         FROM KnowledgeSources WHERE KnowledgeBaseId = @kbId ORDER BY AddedAt ASC;"
                     command.Parameters.AddWithValue("@kbId", knowledgeBaseId)
                     Using reader = command.ExecuteReader()
@@ -258,7 +313,8 @@ Namespace Knowledge
                                 .Status = reader.GetString(5),
                                 .ErrorMessage = If(reader.IsDBNull(6), "", reader.GetString(6)),
                                 .ChunkCount = reader.GetInt32(7),
-                                .AddedAt = ParseUtc(reader.GetString(8))
+                                .AddedAt = ParseUtc(reader.GetString(8)),
+                                .PictureText = If(reader.IsDBNull(9), "", reader.GetString(9))
                             })
                         End While
                     End Using
