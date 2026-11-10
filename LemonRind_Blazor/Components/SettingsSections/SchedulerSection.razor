@@ -88,7 +88,7 @@
         <input @bind="_newCron" placeholder="Cron expression (e.g. 0 19 * * 5 for 7pm every Friday)" />
         <textarea @bind="_newPrompt" placeholder="Prompt to run" rows="2"></textarea>
         <select @bind="_newModelId">
-            <option value="">(use whatever model is currently selected)</option>
+            <option value="">(use the default chat model)</option>
             @foreach (var model in _availableModels)
             {
                 <option value="@model">@model</option>
@@ -115,7 +115,7 @@
                 <input class="job-edit-cron" @bind="edit.Cron" title="Field order: minute hour day month weekday. E.g. 50 19 * * * runs at 19:50 every day." />
                 <textarea class="job-edit-prompt" @bind="edit.Prompt" rows="2"></textarea>
                 <select @bind="edit.ModelId">
-                    <option value="">(use whatever model is currently selected)</option>
+                    <option value="">(use the default chat model)</option>
                     @foreach (var model in _availableModels)
                     {
                         <option value="@model">@model</option>

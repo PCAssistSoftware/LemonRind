@@ -270,3 +270,14 @@
     color: var(--danger);
     font-weight: 500;
 }
+
+/* Under a setting that names something Lemonade does not have. */
+.settings-warning {
+    background: var(--chip-warn-bg);
+    border: 1px solid var(--warning);
+    border-radius: 6px;
+    padding: 0.5rem 0.7rem;
+    font-size: 0.82rem;
+    color: var(--chip-warn-fg);
+    margin: 0.25rem 0 0.75rem;
+}

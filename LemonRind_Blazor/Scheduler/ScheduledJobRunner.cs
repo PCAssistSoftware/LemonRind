@@ -33,6 +33,7 @@ public class ScheduledJobRunner(
     ChatSessionRepository sessionRepository,
     MemoryService memoryService,
     SchedulerNotifier notifier,
+    LemonadeManagementClient management,
     FileWriteApprovalStore approvalStore,
     AppSettings settings,
     RunningJobTracker runningJobs)
@@ -46,6 +47,24 @@ public class ScheduledJobRunner(
     // System Prompt from Settings.
     private const string SystemPrompt = "You are a helpful local AI assistant running on the user's own machine.";
 
+    /// <summary>Asks Lemonade which models it has and which are loaded, to settle the model for a job that has none of its own. If Lemonade cannot be asked, nothing changes: the run goes ahead as before and reports its own error.</summary>
+    private async Task<JobModelChoice> ChooseModelAsync(ScheduledJob job, CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(job.ModelId)) return new JobModelChoice(job.ModelId, "", "");
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(10));
+            var models = await management.ListDownloadedModelsAsync(timeout.Token);
+            var health = await management.GetHealthAsync(timeout.Token);
+            return DefaultModelCheck.ChooseForJob(job.ModelId, settings.Lemonade.ChatModel, models, health);
+        }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            return new JobModelChoice(null, "", "");
+        }
+    }
+
     public async Task<JobRunResult> RunJobAsync(ScheduledJob job, CancellationToken cancellationToken)
     {
         // Read fresh on every run, so a change made in Settings applies from
@@ -56,7 +75,9 @@ public class ScheduledJobRunner(
         // chat client is identical to the app's shared one apart from that.)
         // Say so while this job works, with the model it uses (its own, else the default chat model), so the screen can
         // show "Job running" and ask before another model is loaded.
-        using var running = runningJobs.Start(job.Name, string.IsNullOrWhiteSpace(job.ModelId) ? settings.Lemonade.ChatModel : job.ModelId);
+        // A job with no model of its own uses the default chat model; if Lemonade no longer has it, the loaded chat model.
+        var choice = await ChooseModelAsync(job, cancellationToken);
+        using var running = runningJobs.Start(job.Name, choice.Model ?? (string.IsNullOrWhiteSpace(job.ModelId) ? settings.Lemonade.ChatModel : job.ModelId));
 
         var limits = settings.Scheduler;
         var maxToolRounds = limits.MaxToolRounds;
@@ -117,6 +138,10 @@ public class ScheduledJobRunner(
         {
             options.ModelId = job.ModelId;
         }
+        else if (choice.Model is not null)
+        {
+            options.ModelId = choice.Model;
+        }
 
         // _approvalStore.IsRunningScheduledJob is set for exactly this call
         // chain (GetResponseAsync runs the whole tool-invocation loop
@@ -129,11 +154,14 @@ public class ScheduledJobRunner(
         var continues = 0;
         var usedUpLimitThinking = false; // the reply ended at the limit with no text at all
         var notes = new List<string>();  // saved as their own messages, after the reply
+        if (choice.Note.Length > 0) notes.Add(choice.Note);
         approvalStore.IsRunningScheduledJob = true;
         try
         {
             try
             {
+                if (choice.Problem.Length > 0) throw new InvalidOperationException(choice.Problem);
+
                 const int maxAttempts = 2;
                 var attempt = 1;
                 while (attempt <= maxAttempts)

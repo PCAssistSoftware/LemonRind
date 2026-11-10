@@ -8,6 +8,7 @@
 @inject AppSettings LiveSettings
 @inject ModuleRegistry ModuleRegistry
 @inject IJSRuntime JS
+@inject LemonadeManagementClient ManagementClient
 
 <PageTitle>Settings - Lemon Rind (Blazor test)</PageTitle>
 
@@ -39,7 +40,11 @@
                 <section class="settings-section">
                     <h3>Lemonade connection</h3>
                     <label>Base URL (requires restart)<input @bind="_edited.Lemonade.BaseUrl" /></label>
-                    <label>Default chat model<input @bind="_edited.Lemonade.ChatModel" /></label>
+                    <label>Default chat model<input @bind="_edited.Lemonade.ChatModel" @bind:event="oninput" /></label>
+                    @if (DefaultModelCheck.WarningFor(_edited.Lemonade.ChatModel, _downloadedModels) is { Length: > 0 } chatModelWarning)
+                    {
+                        <p class="settings-warning">@chatModelWarning</p>
+                    }
                     <label>Default embedding model<input @bind="_edited.Lemonade.EmbeddingModel" /></label>
                     <label>API key (requires restart)<input @bind="_edited.Lemonade.ApiKey" type="password" /></label>
                     <a href="/logs" class="module-manage-link">View live Lemonade logs &rarr;</a>
@@ -335,10 +340,21 @@
         try { await JS.InvokeVoidAsync("lemon.setTheme", _theme); } catch (JSException) { }
     }
 
-    protected override void OnInitialized()
+    // What Lemonade has downloaded, to warn when the default chat model is not one of them. Empty if Lemonade cannot be reached.
+    private List<LemonadeModelInfo> _downloadedModels = [];
+
+    protected override async Task OnInitializedAsync()
     {
         _edited = SettingsStore.LoadFresh();
         _allowedRootsText = string.Join(Environment.NewLine, _edited.FileSystem.AllowedRoots);
+        try
+        {
+            _downloadedModels = await ManagementClient.ListDownloadedModelsAsync(CancellationToken.None);
+        }
+        catch
+        {
+            // Best effort: no warning if Lemonade is not reachable.
+        }
     }
 
     private bool IsModuleDisabled(string configKey) => !_edited.Modules.Enabled.GetValueOrDefault(configKey, false);
