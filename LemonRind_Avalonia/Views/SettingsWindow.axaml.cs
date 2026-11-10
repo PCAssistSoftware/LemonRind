@@ -48,7 +48,7 @@ public partial class SettingsWindow : Window
             AllowMultiple = false,
             FileTypeFilter =
             [
-                new FilePickerFileType("Supported files") { Patterns = ["*.pdf", "*.docx", "*.xlsx", "*.txt", "*.md", "*.csv"] },
+                new FilePickerFileType("Supported files") { Patterns = [.. Services.FileTextExtractor.SupportedExtensions.Concat(Services.PictureReader.PictureExtensions).Select(e => "*" + e)] },
                 FilePickerFileTypes.All,
             ],
         });

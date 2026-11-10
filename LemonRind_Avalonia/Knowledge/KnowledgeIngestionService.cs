@@ -23,13 +23,15 @@ public class KnowledgeIngestionService
     private readonly KnowledgeRepository _repository;
     private readonly IEmbeddingGenerator<string, Embedding<float>> _embeddingGenerator;
     private readonly WebReaderClient _webReaderClient;
+    private readonly PictureReader _pictureReader;
     private readonly string _embeddingModel;
 
     /// <summary>The embedding model in use (the one this service's generator was built with) - what a knowledge base is checked against.</summary>
     public string EmbeddingModelName => _embeddingModel;
 
-    public KnowledgeIngestionService(KnowledgeRepository repository, EmbeddingClientFactory embeddingClientFactory, WebReaderClient webReaderClient)
+    public KnowledgeIngestionService(KnowledgeRepository repository, EmbeddingClientFactory embeddingClientFactory, WebReaderClient webReaderClient, PictureReader pictureReader)
     {
+        _pictureReader = pictureReader;
         _repository = repository;
         _embeddingGenerator = embeddingClientFactory.CreateEmbeddingGenerator();
         _embeddingModel = embeddingClientFactory.ModelName;
@@ -37,8 +39,61 @@ public class KnowledgeIngestionService
     }
 
     public Task AddFileSourceAsync(string knowledgeBaseId, string filePath, CancellationToken cancellationToken) =>
-        IngestSingleTextAsync(knowledgeBaseId, "File", filePath, Path.GetFileName(filePath),
-            () => Task.FromResult(FileTextExtractor.ExtractTextUncapped(filePath)), cancellationToken);
+        PictureReader.IsPicture(filePath)
+            ? AddPictureSourceAsync(knowledgeBaseId, filePath, cancellationToken)
+            : IngestSingleTextAsync(knowledgeBaseId, "File", filePath, Path.GetFileName(filePath),
+                () => Task.FromResult(FileTextExtractor.ExtractTextUncapped(filePath)), cancellationToken);
+
+    private async Task AddPictureSourceAsync(string knowledgeBaseId, string filePath, CancellationToken cancellationToken)
+    {
+        var sourceId = _repository.CreateSource(knowledgeBaseId, "File", filePath, Path.GetFileName(filePath));
+        await ReadPictureAsync(knowledgeBaseId, sourceId, Path.GetFileName(filePath), filePath, cancellationToken);
+    }
+
+    /// <summary>
+    /// Reads a picture source again with the model that is loaded now (its first reading was poor, say). Uses the shrunk
+    /// copy kept in the database, so it works even after the original file has gone.
+    /// </summary>
+    public async Task RereadPictureAsync(string knowledgeBaseId, string sourceId, CancellationToken cancellationToken)
+    {
+        var source = _repository.ListSources(knowledgeBaseId).FirstOrDefault(s => s.Id == sourceId);
+        if (source is null || !PictureReader.IsPicture(source.Reference)) return;
+
+        _repository.BeginRereading(sourceId);
+        await ReadPictureAsync(knowledgeBaseId, sourceId, source.DisplayName, null, cancellationToken);
+    }
+
+    /// <summary>Describes the picture, keeps the description on the source, then chunks and embeds it like any text.</summary>
+    private async Task ReadPictureAsync(string knowledgeBaseId, string sourceId, string displayName, string? path, CancellationToken cancellationToken)
+    {
+        try
+        {
+            byte[] image;
+            if (path is not null)
+            {
+                image = _pictureReader.ShrinkPicture(path);
+                // kept before reading, so "Read again" works even if this first reading fails (the loaded model cannot
+                // see pictures, say, and the person loads one that can)
+                _repository.SetPicture(sourceId, null, image);
+            }
+            else
+            {
+                image = _repository.GetPictureImage(sourceId)
+                    ?? throw new PictureReadException("The picture is no longer kept here to read again. Add it again.");
+            }
+
+            var (text, _) = await _pictureReader.DescribeAsync(image, displayName, cancellationToken);
+            _repository.SetPicture(sourceId, text, null);
+
+            var chunkCount = await EmbedAndSaveChunksAsync(knowledgeBaseId, sourceId, text, startingChunkIndex: 0, cancellationToken);
+            if (chunkCount == 0) _repository.MarkSourceFailed(sourceId, "The description had no text.");
+            else _repository.MarkSourceReady(sourceId, chunkCount);
+        }
+        catch (Exception ex)
+        {
+            _repository.MarkSourceFailed(sourceId, ex.Message);
+        }
+    }
 
     public Task AddWebsiteSourceAsync(string knowledgeBaseId, string url, CancellationToken cancellationToken) =>
         IngestSingleTextAsync(knowledgeBaseId, "Website", url, url,

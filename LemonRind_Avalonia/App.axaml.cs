@@ -108,6 +108,7 @@ public partial class App : Application
         // RAG knowledge bases (files/folders/websites/pasted text,
         // chunked/embedded/stored, one attached per chat at a time).
         builder.Services.AddSingleton<KnowledgeRepository>();
+        builder.Services.AddSingleton<PictureReader>();
         builder.Services.AddSingleton<KnowledgeIngestionService>();
         builder.Services.AddSingleton<KnowledgeService>();
         builder.Services.AddSingleton<IAssistantModule, KnowledgeModule>();

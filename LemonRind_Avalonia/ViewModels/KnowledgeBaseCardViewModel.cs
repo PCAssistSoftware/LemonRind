@@ -154,6 +154,32 @@ public partial class KnowledgeBaseCardViewModel : ObservableObject
         finally { IsBusy = false; }
     }
 
+    /// <summary>Shows what the vision model wrote about a picture - the text that is searched.</summary>
+    [RelayCommand]
+    private async Task ViewPictureTextAsync(KnowledgeSource? source)
+    {
+        if (source is null || !source.HasPictureText) return;
+        await Views.SystemPromptDialog.ShowAsync(source.PictureText, title: source.DisplayName,
+            description: "What the model wrote about this picture. This text is what gets searched.");
+    }
+
+    /// <summary>Reads a picture again with the model that is loaded now (works after the original file has gone).</summary>
+    [RelayCommand]
+    private async Task ReadPictureAgainAsync(KnowledgeSource? source)
+    {
+        if (source is null) return;
+        IsBusy = true;
+        StatusText = $"Reading {source.DisplayName} again...";
+        try
+        {
+            await _ingestionService.RereadPictureAsync(Id, source.Id, CancellationToken.None);
+            RefreshSources();
+            RefreshCompatibility();
+            StatusText = "";
+        }
+        finally { IsBusy = false; }
+    }
+
     [RelayCommand]
     private void DeleteSource(KnowledgeSource? source)
     {

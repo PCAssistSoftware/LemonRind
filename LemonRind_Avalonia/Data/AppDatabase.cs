@@ -237,6 +237,11 @@ public class AppDatabase
         AddColumnIfMissing(connection, "KnowledgeBases", "EmbeddingModel", "TEXT NULL");
         AddColumnIfMissing(connection, "KnowledgeBases", "EmbeddingDimensions", "INTEGER NULL");
 
+        // A picture source: what a vision model wrote about it, and a shrunk copy of the picture (so it can be read again
+        // after the original is gone). Null for every other kind of source.
+        AddColumnIfMissing(connection, "KnowledgeSources", "PictureText", "TEXT NULL");
+        AddColumnIfMissing(connection, "KnowledgeSources", "PictureImage", "BLOB NULL");
+
         _logger.LogInformation("App database ready at {ConnectionString}", _connectionString);
     }
 

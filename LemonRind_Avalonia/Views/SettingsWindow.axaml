@@ -291,10 +291,18 @@
                                             <ItemsControl ItemsSource="{Binding Sources}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate x:DataType="know:KnowledgeSource">
-                                                        <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,2">
+                                                        <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" Margin="0,2">
                                                             <TextBlock Grid.Column="0" Text="{Binding DisplayName}" ToolTip.Tip="{Binding ErrorMessage}" />
                                                             <TextBlock Grid.Column="1" Text="{Binding Status}" Foreground="{DynamicResource TextMuted}" FontSize="11" Margin="0,0,8,0" VerticalAlignment="Center" />
-                                                            <Button Grid.Column="2"
+                                                            <!-- A picture is stored as what a vision model wrote about it: read that, or have it redone. -->
+                                                            <Button Grid.Column="2" Content="View text" IsVisible="{Binding HasPictureText}" Padding="6,0" FontSize="11" Margin="0,0,4,0"
+                                                                    Command="{Binding $parent[ItemsControl].((vm:KnowledgeBaseCardViewModel)DataContext).ViewPictureTextCommand}"
+                                                                    CommandParameter="{Binding}" />
+                                                            <Button Grid.Column="3" Content="Read again" IsVisible="{Binding CanReadAgain}" Padding="6,0" FontSize="11" Margin="0,0,4,0"
+                                                                    ToolTip.Tip="Read the picture again with the model that is loaded now"
+                                                                    Command="{Binding $parent[ItemsControl].((vm:KnowledgeBaseCardViewModel)DataContext).ReadPictureAgainCommand}"
+                                                                    CommandParameter="{Binding}" />
+                                                            <Button Grid.Column="4"
                                                                     Content="✕"
                                                                     Padding="4,0"
                                                                     FontSize="11"
