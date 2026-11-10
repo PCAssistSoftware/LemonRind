@@ -193,23 +193,41 @@
                                    Foreground="{DynamicResource TextMuted}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,2" />
                         <TextBox Text="{Binding PersonaAboutUser}" AcceptsReturn="True" Height="70" TextWrapping="Wrap" Margin="0,0,0,10" />
 
-                        <TextBlock Text="Writing style" FontWeight="Bold" Margin="0,0,0,4" />
-                        <Grid ColumnDefinitions="*,12,*,12,*" Margin="0,0,0,10">
+                        <TextBlock Text="Writing style" FontWeight="Bold" Margin="0,0,0,2" />
+                        <TextBlock Text="How the assistant writes in your chats. Scheduled jobs ignore these choices, so a report does not come back in chat slang. A style is a request to the model, not a hard rule: use Longest reply (in Assistant) for a limit." Foreground="{DynamicResource TextMuted}" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6" />
+                        <Grid ColumnDefinitions="*,12,*,12,*,12,*" Margin="0,0,0,10">
                             <StackPanel Grid.Column="0">
                                 <TextBlock Text="Tone" Foreground="{DynamicResource TextMuted}" FontSize="12" />
                                 <ComboBox ItemsSource="{Binding PersonaToneOptions}" SelectedItem="{Binding PersonaTone}" Padding="6" HorizontalAlignment="Stretch" />
                             </StackPanel>
                             <StackPanel Grid.Column="2">
-                                <TextBlock Text="Verbosity" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                                <TextBlock Text="Length" Foreground="{DynamicResource TextMuted}" FontSize="12" />
                                 <ComboBox ItemsSource="{Binding PersonaVerbosityOptions}" SelectedItem="{Binding PersonaVerbosity}" Padding="6" HorizontalAlignment="Stretch" />
                             </StackPanel>
                             <StackPanel Grid.Column="4">
                                 <TextBlock Text="Emoji use" Foreground="{DynamicResource TextMuted}" FontSize="12" />
                                 <ComboBox ItemsSource="{Binding PersonaEmojiUsageOptions}" SelectedItem="{Binding PersonaEmojiUsage}" Padding="6" HorizontalAlignment="Stretch" />
                             </StackPanel>
+                            <StackPanel Grid.Column="6">
+                                <TextBlock Text="Vocabulary" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                                <ComboBox ItemsSource="{Binding PersonaVocabularyOptions}" SelectedItem="{Binding PersonaVocabulary}" Padding="6" HorizontalAlignment="Stretch" />
+                            </StackPanel>
                         </Grid>
 
-                        <TextBlock Text="Custom instructions (anything else)" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <TextBlock Text="Formatting to avoid" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <WrapPanel Margin="0,0,0,6">
+                            <CheckBox IsChecked="{Binding PersonaNoMarkdown}" Content="No Markdown" Margin="0,0,16,0" />
+                            <CheckBox IsChecked="{Binding PersonaNoHeaders}" Content="No headers" Margin="0,0,16,0" />
+                            <CheckBox IsChecked="{Binding PersonaNoTables}" Content="No tables" Margin="0,0,16,0" />
+                            <CheckBox IsChecked="{Binding PersonaNoLists}" Content="No lists" />
+                        </WrapPanel>
+                        <TextBlock Text="Habits to avoid" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <WrapPanel Margin="0,0,0,10">
+                            <CheckBox IsChecked="{Binding PersonaNoFlattery}" Content="No flattery or praise" Margin="0,0,16,0" />
+                            <CheckBox IsChecked="{Binding PersonaNoEmDashes}" Content="No em dashes" />
+                        </WrapPanel>
+
+                        <TextBlock Text="Other instructions" Foreground="{DynamicResource TextMuted}" FontSize="12" />
                         <TextBox Text="{Binding PersonaCustomInstructions}" AcceptsReturn="True" Height="60" TextWrapping="Wrap" Margin="0,0,0,8" />
                     </StackPanel>
 

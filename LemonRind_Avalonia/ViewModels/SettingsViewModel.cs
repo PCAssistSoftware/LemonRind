@@ -119,11 +119,19 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private string _personaTone = "Default";
     [ObservableProperty] private string _personaVerbosity = "Default";
     [ObservableProperty] private string _personaEmojiUsage = "Default";
+    [ObservableProperty] private string _personaVocabulary = "Default";
+    [ObservableProperty] private bool _personaNoMarkdown;
+    [ObservableProperty] private bool _personaNoHeaders;
+    [ObservableProperty] private bool _personaNoTables;
+    [ObservableProperty] private bool _personaNoLists;
+    [ObservableProperty] private bool _personaNoFlattery;
+    [ObservableProperty] private bool _personaNoEmDashes;
     [ObservableProperty] private string _personaCustomInstructions = "";
 
-    public ObservableCollection<string> PersonaToneOptions { get; } = ["Default", "Casual", "Formal", "Warm", "Concise", "Direct"];
-    public ObservableCollection<string> PersonaVerbosityOptions { get; } = ["Default", "Concise", "Detailed"];
+    public ObservableCollection<string> PersonaToneOptions { get; } = ["Default", "Casual", "Formal", "Warm", "Concise", "Direct", "Chat-like"];
+    public ObservableCollection<string> PersonaVerbosityOptions { get; } = ["Default", "Concise", "Detailed", "One paragraph", "One sentence"];
     public ObservableCollection<string> PersonaEmojiUsageOptions { get; } = ["Default", "None", "Sparing", "Frequent"];
+    public ObservableCollection<string> PersonaVocabularyOptions { get; } = ["Default", "Simple", "Academic"];
 
     [ObservableProperty] private bool _thinkingPanelOpenByDefault;
 
@@ -315,6 +323,13 @@ public partial class SettingsViewModel : ObservableObject
         PersonaTone = _settings.Persona.Tone;
         PersonaVerbosity = _settings.Persona.Verbosity;
         PersonaEmojiUsage = _settings.Persona.EmojiUsage;
+        PersonaVocabulary = _settings.Persona.Vocabulary;
+        PersonaNoMarkdown = _settings.Persona.NoMarkdown;
+        PersonaNoHeaders = _settings.Persona.NoHeaders;
+        PersonaNoTables = _settings.Persona.NoTables;
+        PersonaNoLists = _settings.Persona.NoLists;
+        PersonaNoFlattery = _settings.Persona.NoFlattery;
+        PersonaNoEmDashes = _settings.Persona.NoEmDashes;
         PersonaCustomInstructions = _settings.Persona.CustomInstructions;
 
         ImageGenModelId = _settings.ImageGen.ModelId;
@@ -757,6 +772,13 @@ public partial class SettingsViewModel : ObservableObject
         _settings.Persona.Tone = string.IsNullOrWhiteSpace(PersonaTone) ? "Default" : PersonaTone;
         _settings.Persona.Verbosity = string.IsNullOrWhiteSpace(PersonaVerbosity) ? "Default" : PersonaVerbosity;
         _settings.Persona.EmojiUsage = string.IsNullOrWhiteSpace(PersonaEmojiUsage) ? "Default" : PersonaEmojiUsage;
+        _settings.Persona.Vocabulary = string.IsNullOrWhiteSpace(PersonaVocabulary) ? "Default" : PersonaVocabulary;
+        _settings.Persona.NoMarkdown = PersonaNoMarkdown;
+        _settings.Persona.NoHeaders = PersonaNoHeaders;
+        _settings.Persona.NoTables = PersonaNoTables;
+        _settings.Persona.NoLists = PersonaNoLists;
+        _settings.Persona.NoFlattery = PersonaNoFlattery;
+        _settings.Persona.NoEmDashes = PersonaNoEmDashes;
         _settings.Persona.CustomInstructions = PersonaCustomInstructions.Trim();
 
         foreach (var module in Modules)
