@@ -63,7 +63,7 @@
             <div class="kb-add-source">
                 <div class="add-row">
                     <label class="source-label">+ File</label>
-                    <InputFile OnChange="e => AddFileSource(kb.Id, e)" />
+                    <InputFile OnChange="e => AddFileSource(kb.Id, e)" accept="@string.Join(",", Services.FileTextExtractor.SupportedExtensions)" />
                 </div>
                 <div class="add-row">
                     <label class="source-label">+ Folder</label>
