@@ -728,6 +728,76 @@ Namespace ViewModels
             End Set
         End Property
 
+        Private _personaVocabulary As String
+        Public Property PersonaVocabulary As String
+            Get
+                Return _personaVocabulary
+            End Get
+            Set(value As String)
+                SetProperty(_personaVocabulary, value)
+            End Set
+        End Property
+
+        Private _personaNoMarkdown As Boolean
+        Public Property PersonaNoMarkdown As Boolean
+            Get
+                Return _personaNoMarkdown
+            End Get
+            Set(value As Boolean)
+                SetProperty(_personaNoMarkdown, value)
+            End Set
+        End Property
+
+        Private _personaNoHeaders As Boolean
+        Public Property PersonaNoHeaders As Boolean
+            Get
+                Return _personaNoHeaders
+            End Get
+            Set(value As Boolean)
+                SetProperty(_personaNoHeaders, value)
+            End Set
+        End Property
+
+        Private _personaNoTables As Boolean
+        Public Property PersonaNoTables As Boolean
+            Get
+                Return _personaNoTables
+            End Get
+            Set(value As Boolean)
+                SetProperty(_personaNoTables, value)
+            End Set
+        End Property
+
+        Private _personaNoLists As Boolean
+        Public Property PersonaNoLists As Boolean
+            Get
+                Return _personaNoLists
+            End Get
+            Set(value As Boolean)
+                SetProperty(_personaNoLists, value)
+            End Set
+        End Property
+
+        Private _personaNoFlattery As Boolean
+        Public Property PersonaNoFlattery As Boolean
+            Get
+                Return _personaNoFlattery
+            End Get
+            Set(value As Boolean)
+                SetProperty(_personaNoFlattery, value)
+            End Set
+        End Property
+
+        Private _personaNoEmDashes As Boolean
+        Public Property PersonaNoEmDashes As Boolean
+            Get
+                Return _personaNoEmDashes
+            End Get
+            Set(value As Boolean)
+                SetProperty(_personaNoEmDashes, value)
+            End Set
+        End Property
+
         Private _personaCustomInstructions As String
         Public Property PersonaCustomInstructions As String
             Get
@@ -739,9 +809,10 @@ Namespace ViewModels
         End Property
 
         ''' <summary>Options for the Tone/Verbosity/Emoji-use dropdowns - "Default" always first so it's the natural do-nothing choice.</summary>
-        Public ReadOnly Property PersonaToneOptions As New ObservableCollection(Of String) From {"Default", "Casual", "Formal", "Warm", "Concise", "Direct"}
-        Public ReadOnly Property PersonaVerbosityOptions As New ObservableCollection(Of String) From {"Default", "Concise", "Detailed"}
+        Public ReadOnly Property PersonaToneOptions As New ObservableCollection(Of String) From {"Default", "Casual", "Formal", "Warm", "Concise", "Direct", "Chat-like"}
+        Public ReadOnly Property PersonaVerbosityOptions As New ObservableCollection(Of String) From {"Default", "Concise", "Detailed", "One paragraph", "One sentence"}
         Public ReadOnly Property PersonaEmojiUsageOptions As New ObservableCollection(Of String) From {"Default", "None", "Sparing", "Frequent"}
+        Public ReadOnly Property PersonaVocabularyOptions As New ObservableCollection(Of String) From {"Default", "Simple", "Academic"}
 
         ''' <summary>
         ''' Post-audit "Auto-backup" feature - see AppSettings.BackupSettings
@@ -1196,6 +1267,13 @@ Namespace ViewModels
             _personaTone = _settings.Persona.Tone
             _personaVerbosity = _settings.Persona.Verbosity
             _personaEmojiUsage = _settings.Persona.EmojiUsage
+            _personaVocabulary = _settings.Persona.Vocabulary
+            _personaNoMarkdown = _settings.Persona.NoMarkdown
+            _personaNoHeaders = _settings.Persona.NoHeaders
+            _personaNoTables = _settings.Persona.NoTables
+            _personaNoLists = _settings.Persona.NoLists
+            _personaNoFlattery = _settings.Persona.NoFlattery
+            _personaNoEmDashes = _settings.Persona.NoEmDashes
             _personaCustomInstructions = _settings.Persona.CustomInstructions
             _backupIntervalDays = _settings.Backup.IntervalDays
             _backupFolder = _settings.Backup.BackupFolder
@@ -1850,6 +1928,13 @@ Namespace ViewModels
             _settings.Persona.Tone = If(String.IsNullOrWhiteSpace(PersonaTone), "Default", PersonaTone)
             _settings.Persona.Verbosity = If(String.IsNullOrWhiteSpace(PersonaVerbosity), "Default", PersonaVerbosity)
             _settings.Persona.EmojiUsage = If(String.IsNullOrWhiteSpace(PersonaEmojiUsage), "Default", PersonaEmojiUsage)
+            _settings.Persona.Vocabulary = If(String.IsNullOrWhiteSpace(PersonaVocabulary), "Default", PersonaVocabulary)
+            _settings.Persona.NoMarkdown = PersonaNoMarkdown
+            _settings.Persona.NoHeaders = PersonaNoHeaders
+            _settings.Persona.NoTables = PersonaNoTables
+            _settings.Persona.NoLists = PersonaNoLists
+            _settings.Persona.NoFlattery = PersonaNoFlattery
+            _settings.Persona.NoEmDashes = PersonaNoEmDashes
             _settings.Persona.CustomInstructions = PersonaCustomInstructions
 
             _settings.Backup.IntervalDays = If(BackupIntervalDays > 0, BackupIntervalDays, New BackupSettings().IntervalDays)

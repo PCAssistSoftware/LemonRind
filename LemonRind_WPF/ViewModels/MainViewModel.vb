@@ -2212,17 +2212,7 @@ Namespace ViewModels
         ''' section entirely for an unconfigured Persona.
         ''' </summary>
         Private Function BuildWritingStyleText() As String
-            Dim persona = _personaSettings
-            Dim lines As New List(Of String)
-
-            If persona.Tone <> "Default" Then lines.Add($"Tone: {persona.Tone}")
-            If persona.Verbosity <> "Default" Then lines.Add($"Verbosity: {persona.Verbosity}")
-            If persona.EmojiUsage <> "Default" Then lines.Add($"Emoji use: {persona.EmojiUsage}")
-            If Not String.IsNullOrWhiteSpace(persona.CustomInstructions) Then lines.Add(persona.CustomInstructions)
-
-            If lines.Count = 0 Then Return Nothing
-
-            Return "Writing style:" & Environment.NewLine & "- " & String.Join(Environment.NewLine & "- ", lines)
+            Return WritingStyle.Build(_personaSettings)
         End Function
 
         ''' <summary>

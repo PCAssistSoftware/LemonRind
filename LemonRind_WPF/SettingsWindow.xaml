@@ -156,9 +156,13 @@
                                  AcceptsReturn="True" TextWrapping="Wrap" Height="80"
                                  VerticalScrollBarVisibility="Auto" Margin="0,0,0,16" />
 
-                        <TextBlock Text="Writing style" FontWeight="Bold" Margin="0,0,0,6" />
+                        <TextBlock Text="Writing style" FontWeight="Bold" Margin="0,0,0,2" />
+                        <TextBlock Text="How the assistant writes in your chats. Scheduled jobs ignore these choices, so a report does not come back in chat slang. A style is a request to the model, not a hard rule: use Longest reply (in Assistant) for a limit."
+                                   Foreground="Gray" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6" />
                         <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="12" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="12" />
                                 <ColumnDefinition Width="*" />
@@ -170,15 +174,32 @@
                                 <ComboBox ItemsSource="{Binding PersonaToneOptions}" SelectedItem="{Binding PersonaTone}" Padding="6" />
                             </StackPanel>
                             <StackPanel Grid.Column="2">
-                                <TextBlock Text="Verbosity" Style="{StaticResource FieldLabel}" />
+                                <TextBlock Text="Length" Style="{StaticResource FieldLabel}" />
                                 <ComboBox ItemsSource="{Binding PersonaVerbosityOptions}" SelectedItem="{Binding PersonaVerbosity}" Padding="6" />
                             </StackPanel>
                             <StackPanel Grid.Column="4">
                                 <TextBlock Text="Emoji use" Style="{StaticResource FieldLabel}" />
                                 <ComboBox ItemsSource="{Binding PersonaEmojiUsageOptions}" SelectedItem="{Binding PersonaEmojiUsage}" Padding="6" />
                             </StackPanel>
+                            <StackPanel Grid.Column="6">
+                                <TextBlock Text="Vocabulary" Style="{StaticResource FieldLabel}" />
+                                <ComboBox ItemsSource="{Binding PersonaVocabularyOptions}" SelectedItem="{Binding PersonaVocabulary}" Padding="6" />
+                            </StackPanel>
                         </Grid>
-                        <TextBlock Text="Custom instructions (anything else)" Style="{StaticResource FieldLabel}" />
+
+                        <TextBlock Text="Formatting to avoid" Style="{StaticResource FieldLabel}" />
+                        <WrapPanel Margin="0,0,0,8">
+                            <CheckBox IsChecked="{Binding PersonaNoMarkdown}" Content="No Markdown" Margin="0,0,16,0" />
+                            <CheckBox IsChecked="{Binding PersonaNoHeaders}" Content="No headers" Margin="0,0,16,0" />
+                            <CheckBox IsChecked="{Binding PersonaNoTables}" Content="No tables" Margin="0,0,16,0" />
+                            <CheckBox IsChecked="{Binding PersonaNoLists}" Content="No lists" />
+                        </WrapPanel>
+                        <TextBlock Text="Habits to avoid" Style="{StaticResource FieldLabel}" />
+                        <WrapPanel Margin="0,0,0,10">
+                            <CheckBox IsChecked="{Binding PersonaNoFlattery}" Content="No flattery or praise" Margin="0,0,16,0" />
+                            <CheckBox IsChecked="{Binding PersonaNoEmDashes}" Content="No em dashes" />
+                        </WrapPanel>
+                        <TextBlock Text="Other instructions" Style="{StaticResource FieldLabel}" />
                         <TextBox Text="{Binding PersonaCustomInstructions, UpdateSourceTrigger=PropertyChanged}" Padding="8"
                                  AcceptsReturn="True" TextWrapping="Wrap" Height="60"
                                  VerticalScrollBarVisibility="Auto" />

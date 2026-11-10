@@ -208,6 +208,15 @@ Namespace Configuration
         Public Property Tone As String = "Default"
         Public Property Verbosity As String = "Default"
         Public Property EmojiUsage As String = "Default"
+        Public Property Vocabulary As String = "Default"
+
+        ' Formatting and habits the assistant is asked to avoid. Off adds nothing to the prompt.
+        Public Property NoMarkdown As Boolean
+        Public Property NoHeaders As Boolean
+        Public Property NoTables As Boolean
+        Public Property NoLists As Boolean
+        Public Property NoFlattery As Boolean
+        Public Property NoEmDashes As Boolean
         Public Property CustomInstructions As String = ""
     End Class
 
@@ -334,6 +343,13 @@ Namespace Configuration
             target.Persona.Tone = Persona.Tone
             target.Persona.Verbosity = Persona.Verbosity
             target.Persona.EmojiUsage = Persona.EmojiUsage
+            target.Persona.Vocabulary = Persona.Vocabulary
+            target.Persona.NoMarkdown = Persona.NoMarkdown
+            target.Persona.NoHeaders = Persona.NoHeaders
+            target.Persona.NoTables = Persona.NoTables
+            target.Persona.NoLists = Persona.NoLists
+            target.Persona.NoFlattery = Persona.NoFlattery
+            target.Persona.NoEmDashes = Persona.NoEmDashes
             target.Persona.CustomInstructions = Persona.CustomInstructions
 
             target.Backup.IntervalDays = Backup.IntervalDays
