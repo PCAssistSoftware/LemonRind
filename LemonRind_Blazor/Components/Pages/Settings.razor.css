@@ -281,3 +281,18 @@
     color: var(--chip-warn-fg);
     margin: 0.25rem 0 0.75rem;
 }
+
+/* A tick box with its words beside it (the writing style switches). */
+.settings-section label.check-label {
+    flex-direction: row;
+    align-items: center;
+    flex: 0 0 auto;
+    gap: 0.4rem;
+    margin-bottom: 0.4rem;
+    color: var(--text);
+}
+
+.settings-section label.check-label input {
+    padding: 0;
+    width: auto;
+}

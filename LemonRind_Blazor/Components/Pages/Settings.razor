@@ -72,38 +72,58 @@
                         About you (who the assistant is talking to)
                         <textarea @bind="_edited.Persona.AboutUser" rows="2"></textarea>
                     </label>
+                    <h4>Writing style</h4>
+                    <p class="settings-help">How the assistant writes in your chats. Scheduled jobs ignore these choices, so a report does not come back in chat slang. A style is a request to the model, not a hard rule: use Longest reply (in Assistant) for a limit.</p>
                     <div class="settings-row">
                         <label>
                             Tone
                             <select @bind="_edited.Persona.Tone">
-                                <option value="Default">Default</option>
-                                <option value="Casual">Casual</option>
-                                <option value="Formal">Formal</option>
-                                <option value="Warm">Warm</option>
-                                <option value="Concise">Concise</option>
-                                <option value="Direct">Direct</option>
+                                @foreach (var option in new[] { "Default", "Casual", "Formal", "Warm", "Concise", "Direct", "Chat-like" })
+                                {
+                                    <option value="@option">@option</option>
+                                }
                             </select>
                         </label>
                         <label>
-                            Verbosity
+                            Length
                             <select @bind="_edited.Persona.Verbosity">
-                                <option value="Default">Default</option>
-                                <option value="Concise">Concise</option>
-                                <option value="Detailed">Detailed</option>
+                                @foreach (var option in new[] { "Default", "Concise", "Detailed", "One paragraph", "One sentence" })
+                                {
+                                    <option value="@option">@option</option>
+                                }
                             </select>
                         </label>
                         <label>
                             Emoji use
                             <select @bind="_edited.Persona.EmojiUsage">
-                                <option value="Default">Default</option>
-                                <option value="None">None</option>
-                                <option value="Sparing">Sparing</option>
-                                <option value="Frequent">Frequent</option>
+                                @foreach (var option in new[] { "Default", "None", "Sparing", "Frequent" })
+                                {
+                                    <option value="@option">@option</option>
+                                }
+                            </select>
+                        </label>
+                        <label>
+                            Vocabulary
+                            <select @bind="_edited.Persona.Vocabulary">
+                                @foreach (var option in new[] { "Default", "Simple", "Academic" })
+                                {
+                                    <option value="@option">@option</option>
+                                }
                             </select>
                         </label>
                     </div>
+                    <div class="settings-row">
+                        <label class="check-label"><input type="checkbox" @bind="_edited.Persona.NoMarkdown" /> No Markdown</label>
+                        <label class="check-label"><input type="checkbox" @bind="_edited.Persona.NoHeaders" /> No headers</label>
+                        <label class="check-label"><input type="checkbox" @bind="_edited.Persona.NoTables" /> No tables</label>
+                        <label class="check-label"><input type="checkbox" @bind="_edited.Persona.NoLists" /> No lists</label>
+                    </div>
+                    <div class="settings-row">
+                        <label class="check-label"><input type="checkbox" @bind="_edited.Persona.NoFlattery" /> No flattery or praise</label>
+                        <label class="check-label"><input type="checkbox" @bind="_edited.Persona.NoEmDashes" /> No em dashes</label>
+                    </div>
                     <label>
-                        Custom writing-style instructions
+                        Other instructions
                         <textarea @bind="_edited.Persona.CustomInstructions" rows="2"></textarea>
                     </label>
                 </section>
@@ -408,6 +428,7 @@
             e.Persona.Tone = string.IsNullOrWhiteSpace(e.Persona.Tone) ? "Default" : e.Persona.Tone;
             e.Persona.Verbosity = string.IsNullOrWhiteSpace(e.Persona.Verbosity) ? "Default" : e.Persona.Verbosity;
             e.Persona.EmojiUsage = string.IsNullOrWhiteSpace(e.Persona.EmojiUsage) ? "Default" : e.Persona.EmojiUsage;
+            e.Persona.Vocabulary = string.IsNullOrWhiteSpace(e.Persona.Vocabulary) ? "Default" : e.Persona.Vocabulary;
             e.Persona.CustomInstructions = e.Persona.CustomInstructions.Trim();
             e.ImageGen.ModelId = e.ImageGen.ModelId.Trim();
             e.Backup.BackupFolder = e.Backup.BackupFolder.Trim();

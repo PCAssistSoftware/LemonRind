@@ -1823,20 +1823,7 @@
     /// check correctly omits this section entirely for an unconfigured
     /// Persona.
     /// </summary>
-    private string? BuildWritingStyleText()
-    {
-        var persona = Settings.Persona;
-        var lines = new List<string>();
-
-        if (persona.Tone != "Default") lines.Add($"Tone: {persona.Tone}");
-        if (persona.Verbosity != "Default") lines.Add($"Verbosity: {persona.Verbosity}");
-        if (persona.EmojiUsage != "Default") lines.Add($"Emoji use: {persona.EmojiUsage}");
-        if (!string.IsNullOrWhiteSpace(persona.CustomInstructions)) lines.Add(persona.CustomInstructions);
-
-        if (lines.Count == 0) return null;
-
-        return "Writing style:\n- " + string.Join("\n- ", lines);
-    }
+    private string? BuildWritingStyleText() => WritingStyle.Build(Settings.Persona);
 
     /// <summary>
     /// Non-mutating. Folds this turn's volatile context (current

@@ -111,6 +111,15 @@ public class PersonaSettings
     public string Tone { get; set; } = "Default";
     public string Verbosity { get; set; } = "Default";
     public string EmojiUsage { get; set; } = "Default";
+    public string Vocabulary { get; set; } = "Default";
+
+    // Formatting and habits the assistant is asked to avoid. Off adds nothing to the prompt.
+    public bool NoMarkdown { get; set; }
+    public bool NoHeaders { get; set; }
+    public bool NoTables { get; set; }
+    public bool NoLists { get; set; }
+    public bool NoFlattery { get; set; }
+    public bool NoEmDashes { get; set; }
     public string CustomInstructions { get; set; } = "";
 }
 
@@ -222,6 +231,13 @@ public class AppSettings
         target.Persona.Tone = Persona.Tone;
         target.Persona.Verbosity = Persona.Verbosity;
         target.Persona.EmojiUsage = Persona.EmojiUsage;
+        target.Persona.Vocabulary = Persona.Vocabulary;
+        target.Persona.NoMarkdown = Persona.NoMarkdown;
+        target.Persona.NoHeaders = Persona.NoHeaders;
+        target.Persona.NoTables = Persona.NoTables;
+        target.Persona.NoLists = Persona.NoLists;
+        target.Persona.NoFlattery = Persona.NoFlattery;
+        target.Persona.NoEmDashes = Persona.NoEmDashes;
         target.Persona.CustomInstructions = Persona.CustomInstructions;
 
         target.Backup.IntervalDays = Backup.IntervalDays;
