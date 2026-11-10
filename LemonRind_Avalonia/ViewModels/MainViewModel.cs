@@ -1432,7 +1432,7 @@ public partial class MainViewModel : ObservableObject
             // A single stuck/looping completion otherwise has nothing
             // bounding it (Lemonade has been seen running a request past 80,000+
             // output tokens). ScheduledJobRunner's ChatOptions has the same cap.
-            const int maxOutputTokensPerReply = 16384;
+            var maxOutputTokensPerReply = Math.Clamp(_settings.Assistant.MaxReplyTokens, 256, 131072); // Settings > Assistant > Longest reply
             var options = new ChatOptions
             {
                 ModelId = SelectedModel,

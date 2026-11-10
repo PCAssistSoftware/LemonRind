@@ -63,6 +63,14 @@ public class KnowledgeIngestionService
         await ReadPictureAsync(knowledgeBaseId, sourceId, source.DisplayName, null, cancellationToken);
     }
 
+    /// <summary>What the loaded vision model says about a picture inside a folder. Throws PictureModelException if no loaded model can see.</summary>
+    private async Task<string> ReadPictureTextAsync(string path, CancellationToken cancellationToken)
+    {
+        var image = _pictureReader.ShrinkPicture(path);
+        var (text, _) = await _pictureReader.DescribeAsync(image, Path.GetFileName(path), cancellationToken);
+        return text;
+    }
+
     /// <summary>Describes the picture, keeps the description on the source, then chunks and embeds it like any text.</summary>
     private async Task ReadPictureAsync(string knowledgeBaseId, string sourceId, string displayName, string? path, CancellationToken cancellationToken)
     {
@@ -121,16 +129,48 @@ public class KnowledgeIngestionService
         try
         {
             var files = Directory.EnumerateFiles(folderPath, "*.*", SearchOption.AllDirectories)
-                .Where(FileTextExtractor.IsSupported).ToList();
+                .Where(f => FileTextExtractor.IsSupported(f) || PictureReader.IsPicture(f)).ToList();
 
             var totalChunkCount = 0;
             var readableFileCount = 0;
+            var skippedPictures = 0;
+            string? pictureProblem = null; // why the loaded model cannot read pictures right now, once known
 
             foreach (var filePath in files)
             {
                 try
                 {
-                    var text = FileTextExtractor.ExtractTextUncapped(filePath);
+                    string text;
+                    if (PictureReader.IsPicture(filePath))
+                    {
+                        if (pictureProblem is null)
+                        {
+                            try
+                            {
+                                text = await ReadPictureTextAsync(filePath, cancellationToken);
+                            }
+                            catch (PictureModelException ex)
+                            {
+                                pictureProblem = ex.Message; // every other picture would fail the same way
+                                text = "";
+                            }
+                        }
+                        else
+                        {
+                            text = "";
+                        }
+
+                        if (pictureProblem is not null)
+                        {
+                            skippedPictures++;
+                            continue;
+                        }
+                    }
+                    else
+                    {
+                        text = FileTextExtractor.ExtractTextUncapped(filePath);
+                    }
+
                     totalChunkCount += await EmbedAndSaveChunksAsync(knowledgeBaseId, sourceId, text, totalChunkCount, cancellationToken);
                     readableFileCount++;
                 }
@@ -140,19 +180,17 @@ public class KnowledgeIngestionService
                 }
                 catch
                 {
-                    // Skipped - see this method's summary. One bad file
-                    // (corrupt PDF, permission error, ...) shouldn't sink
-                    // ingesting the other 49 good ones in the folder.
                 }
             }
 
             if (readableFileCount == 0)
             {
-                _repository.MarkSourceFailed(sourceId, files.Count == 0 ? "No supported files found in this folder." : "None of the files in this folder could be read.");
+                _repository.MarkSourceFailed(sourceId, pictureProblem ?? (files.Count == 0 ? "No supported files found in this folder." : "None of the files in this folder could be read."));
             }
             else
             {
-                _repository.MarkSourceReady(sourceId, totalChunkCount);
+                var note = skippedPictures > 0 ? $"{skippedPictures} picture{(skippedPictures == 1 ? "" : "s")} not read: {pictureProblem}" : null;
+                _repository.MarkSourceReady(sourceId, totalChunkCount, note);
             }
         }
         catch (Exception ex)

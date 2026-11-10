@@ -108,6 +108,7 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private string _memoriesStatusText = "";
 
     [ObservableProperty] private string _systemPrompt = "";
+    [ObservableProperty] private double _maxReplyTokens = 32768;
 
     // Identity/AboutUser/writing-style, folded into the stable
     // system prompt (MainViewModel.BuildStableSystemPromptText) ahead of
@@ -307,6 +308,7 @@ public partial class SettingsViewModel : ObservableObject
         CompactionTriggerPercent = _settings.Memory.CompactionTriggerPercent;
 
         SystemPrompt = _settings.Assistant.SystemPrompt;
+        MaxReplyTokens = _settings.Assistant.MaxReplyTokens;
 
         PersonaIdentity = _settings.Persona.Identity;
         PersonaAboutUser = _settings.Persona.AboutUser;
@@ -745,6 +747,7 @@ public partial class SettingsViewModel : ObservableObject
 
         _settings.Memory.CompactionTriggerPercent = (int)CompactionTriggerPercent;
 
+        _settings.Assistant.MaxReplyTokens = (int)Math.Clamp(MaxReplyTokens, 256, 131072);
         _settings.Assistant.SystemPrompt = string.IsNullOrWhiteSpace(SystemPrompt)
             ? new AssistantSettings().SystemPrompt
             : SystemPrompt.Trim();
