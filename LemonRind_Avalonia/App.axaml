@@ -25,6 +25,8 @@
                     <SolidColorBrush x:Key="CardBg">#FFFFFF</SolidColorBrush>
                     <SolidColorBrush x:Key="Surface2">#F2F4F7</SolidColorBrush>
                     <SolidColorBrush x:Key="Surface3">#E7EAEF</SolidColorBrush>
+                    <!-- A chat-search match: the words found in a title or snippet, and a whole tag chip. -->
+                    <SolidColorBrush x:Key="MatchBg">#FFE58F</SolidColorBrush>
                     <SolidColorBrush x:Key="BorderSubtle">#ECEEF2</SolidColorBrush>
                     <SolidColorBrush x:Key="BorderBrushLight">#E2E5EA</SolidColorBrush>
                     <SolidColorBrush x:Key="BorderStrong">#C9CFD8</SolidColorBrush>
@@ -62,6 +64,7 @@
                     <SolidColorBrush x:Key="CardBg">#1B2029</SolidColorBrush>
                     <SolidColorBrush x:Key="Surface2">#1E232C</SolidColorBrush>
                     <SolidColorBrush x:Key="Surface3">#283040</SolidColorBrush>
+                    <SolidColorBrush x:Key="MatchBg">#6B5A12</SolidColorBrush>
                     <SolidColorBrush x:Key="BorderSubtle">#232935</SolidColorBrush>
                     <SolidColorBrush x:Key="BorderBrushLight">#2B313D</SolidColorBrush>
                     <SolidColorBrush x:Key="BorderStrong">#3B4455</SolidColorBrush>

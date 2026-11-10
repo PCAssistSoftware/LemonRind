@@ -16,6 +16,13 @@
         Title="Lemon Rind (Avalonia test)">
 
     <Window.Styles>
+        <!-- A tag chip in the sidebar; it takes the match colour while the chat search matches that tag. -->
+        <Style Selector="Border.tagchip">
+            <Setter Property="Background" Value="{DynamicResource Surface3}" />
+        </Style>
+        <Style Selector="Border.tagchip.match">
+            <Setter Property="Background" Value="{DynamicResource MatchBg}" />
+        </Style>
         <!-- Chat bubbles: grey for the assistant, blue for the user, text colour follows the bubble (theme-aware via the
              palette in App.axaml - replaces the old fixed-colour converters). -->
         <Style Selector="Border.bubble">
@@ -224,7 +231,7 @@
                                 </ContextMenu>
                             </StackPanel.ContextMenu>
                             <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Text="{Binding Title}"
+                                <ctl:HighlightedText Parts="{Binding TitleParts}"
                                            VerticalAlignment="Center"
                                            FontWeight="Medium"
                                            TextTrimming="CharacterEllipsis"
@@ -244,16 +251,21 @@
                                          LostFocus="OnSessionTitleLostFocus"
                                          KeyDown="OnSessionTitleKeyDown" />
                             </Grid>
-                            <ItemsControl ItemsSource="{Binding Tags}" IsVisible="{Binding HasTags}" Margin="0,2,0,0">
+                            <!-- While searching: a few words of the message that matched, with the matched words picked out. -->
+                            <ctl:HighlightedText Parts="{Binding SnippetParts}" IsVisible="{Binding HasSnippet}"
+                                                 FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap" MaxLines="2"
+                                                 TextTrimming="CharacterEllipsis"
+                                                 Foreground="{DynamicResource TextMuted}" />
+                            <ItemsControl ItemsSource="{Binding TagChips}" IsVisible="{Binding HasTags}" Margin="0,2,0,0">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <WrapPanel />
                                     </ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="x:String">
-                                        <Border Background="{DynamicResource Surface3}" CornerRadius="6" Padding="4,1" Margin="0,0,3,3">
-                                            <TextBlock Text="{Binding}" FontSize="9" Foreground="{DynamicResource TextMuted}" />
+                                    <DataTemplate x:DataType="vm:TagChip">
+                                        <Border Classes="tagchip" Classes.match="{Binding IsMatch}" CornerRadius="6" Padding="4,1" Margin="0,0,3,3">
+                                            <TextBlock Text="{Binding Text}" FontSize="9" Foreground="{DynamicResource TextMuted}" />
                                         </Border>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>

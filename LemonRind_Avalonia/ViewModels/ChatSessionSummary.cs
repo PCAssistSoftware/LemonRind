@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using LemonRindAvalonia.Data;
 
 namespace LemonRindAvalonia.ViewModels;
 
@@ -14,7 +15,24 @@ public partial class ChatSessionSummary : ObservableObject
     public string Id { get; set; } = "";
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TitleParts))]
     private string _title = "";
+
+    /// <summary>What was typed in the search box when this row was found (empty when not searching), so the title, snippet and tags can show what matched.</summary>
+    public string SearchQuery { get; set; } = "";
+
+    /// <summary>A few words of the best matching message, with matched words wrapped in SearchHighlight's marker characters. Null when the chat matched only by title, folder or tag.</summary>
+    public string? Snippet { get; set; }
+
+    public bool HasSnippet => !string.IsNullOrEmpty(Snippet);
+
+    /// <summary>The title in pieces, the matched ones flagged, for the sidebar to draw.</summary>
+    public IReadOnlyList<HighlightPart> TitleParts => SearchHighlight.HighlightParts(Title, SearchQuery);
+
+    public IReadOnlyList<HighlightPart> SnippetParts => SearchHighlight.ParseSnippet(Snippet);
+
+    /// <summary>The tags as chips, each flagged when the search matched it.</summary>
+    public IReadOnlyList<TagChip> TagChips => Tags.Select(t => new TagChip(t, SearchHighlight.Matches(t, SearchQuery))).ToList();
 
     public DateTime UpdatedAt { get; set; }
 
@@ -51,7 +69,11 @@ public partial class ChatSessionSummary : ObservableObject
 
     public ChatSessionSummary()
     {
-        Tags.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasTags));
+        Tags.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasTags));
+            OnPropertyChanged(nameof(TagChips));
+        };
     }
 
     /// <summary>
@@ -65,3 +87,6 @@ public partial class ChatSessionSummary : ObservableObject
     [ObservableProperty]
     private bool _isEditingTitle;
 }
+
+/// <summary>One tag chip in the sidebar, and whether the current search matched it.</summary>
+public record TagChip(string Text, bool IsMatch);
