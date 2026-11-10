@@ -82,6 +82,13 @@ Namespace ViewModels
         Public Property ChunkCount As Integer
         Public Property Reference As String = ""
 
+        ''' <summary>A note on a source that is ready but had something left out (pictures the loaded model could not read).</summary>
+        Public ReadOnly Property HasNote As Boolean
+            Get
+                Return Status <> "Failed" AndAlso Not String.IsNullOrEmpty(ErrorMessage)
+            End Get
+        End Property
+
         ''' <summary>What a vision model wrote about a picture source; empty for any other source.</summary>
         Public Property PictureText As String = ""
 
@@ -643,6 +650,17 @@ Namespace ViewModels
             End Set
         End Property
 
+        ''' <summary>The most the model may write in one chat reply, counting its thinking too.</summary>
+        Private _maxReplyTokens As Integer
+        Public Property MaxReplyTokens As Integer
+            Get
+                Return _maxReplyTokens
+            End Get
+            Set(value As Integer)
+                SetProperty(_maxReplyTokens, value)
+            End Set
+        End Property
+
         ''' <summary>A normal live-reload Settings field like everything else here.</summary>
         Private _systemPrompt As String
         Public Property SystemPrompt As String
@@ -1172,6 +1190,7 @@ Namespace ViewModels
             _dataFolder = _settings.AppData.DataFolder
             _compactionTriggerPercent = _settings.Memory.CompactionTriggerPercent
             _systemPrompt = _settings.Assistant.SystemPrompt
+            _maxReplyTokens = _settings.Assistant.MaxReplyTokens
             _personaIdentity = _settings.Persona.Identity
             _personaAboutUser = _settings.Persona.AboutUser
             _personaTone = _settings.Persona.Tone
@@ -1821,6 +1840,7 @@ Namespace ViewModels
             ' all every turn - falls back to the built-in default rather
             ' than silently persisting an empty string.
             _settings.Assistant.SystemPrompt = If(String.IsNullOrWhiteSpace(SystemPrompt), New AssistantSettings().SystemPrompt, SystemPrompt)
+            _settings.Assistant.MaxReplyTokens = If(MaxReplyTokens >= 256 AndAlso MaxReplyTokens <= 131072, MaxReplyTokens, New AssistantSettings().MaxReplyTokens)
 
             ' Persona fields are all genuinely optional (empty is a valid,
             ' meaningful "not set" state, unlike SystemPrompt above), so no

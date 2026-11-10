@@ -64,6 +64,13 @@ Namespace Knowledge
             Await ReadPictureAsync(knowledgeBaseId, sourceId, source.DisplayName, Nothing, cancellationToken)
         End Function
 
+        ''' <summary>What the loaded vision model says about a picture inside a folder. Throws PictureModelException if no loaded model can see.</summary>
+        Private Async Function ReadPictureTextAsync(pictureFile As String, cancellationToken As CancellationToken) As Task(Of String)
+            Dim image = _pictureReader.ShrinkPicture(pictureFile)
+            Dim description = Await _pictureReader.DescribeAsync(image, Path.GetFileName(pictureFile), cancellationToken)
+            Return description.Text
+        End Function
+
         ''' <summary>Describes the picture, keeps the description on the source, then chunks and embeds it like any text.</summary>
         Private Async Function ReadPictureAsync(knowledgeBaseId As String, sourceId As String, displayName As String, path As String, cancellationToken As CancellationToken) As Task
             Try
@@ -119,14 +126,32 @@ Namespace Knowledge
 
             Try
                 Dim files = Directory.EnumerateFiles(folderPath, "*.*", SearchOption.AllDirectories).
-                    Where(Function(f) FileTextExtractor.IsSupported(f)).ToList()
+                    Where(Function(f) FileTextExtractor.IsSupported(f) OrElse PictureReader.IsPicture(f)).ToList()
 
                 Dim totalChunkCount = 0
                 Dim readableFileCount = 0
+                Dim skippedPictures = 0
+                Dim pictureProblem As String = Nothing ' why the loaded model cannot read pictures right now, once known
 
                 For Each filePath In files
                     Try
-                        Dim text = FileTextExtractor.ExtractTextUncapped(filePath)
+                        Dim text As String
+                        If PictureReader.IsPicture(filePath) Then
+                            If pictureProblem Is Nothing Then
+                                Try
+                                    text = Await ReadPictureTextAsync(filePath, cancellationToken)
+                                Catch pictureEx As PictureModelException
+                                    pictureProblem = pictureEx.Message ' every other picture would fail the same way
+                                End Try
+                            End If
+                            If pictureProblem IsNot Nothing Then
+                                skippedPictures += 1
+                                Continue For
+                            End If
+                        Else
+                            text = FileTextExtractor.ExtractTextUncapped(filePath)
+                        End If
+
                         totalChunkCount += Await EmbedAndSaveChunksAsync(knowledgeBaseId, sourceId, text, totalChunkCount, cancellationToken)
                         readableFileCount += 1
                     Catch ex As KnowledgeModelMismatchException
@@ -139,9 +164,10 @@ Namespace Knowledge
                 Next
 
                 If readableFileCount = 0 Then
-                    _repository.MarkSourceFailed(sourceId, If(files.Count = 0, "No supported files found in this folder.", "None of the files in this folder could be read."))
+                    _repository.MarkSourceFailed(sourceId, If(pictureProblem, If(files.Count = 0, "No supported files found in this folder.", "None of the files in this folder could be read.")))
                 Else
-                    _repository.MarkSourceReady(sourceId, totalChunkCount)
+                    Dim note As String = If(skippedPictures > 0, $"{skippedPictures} picture{If(skippedPictures = 1, "", "s")} not read: {pictureProblem}", Nothing)
+                    _repository.MarkSourceReady(sourceId, totalChunkCount, note)
                 End If
             Catch ex As Exception
                 _repository.MarkSourceFailed(sourceId, ex.Message)

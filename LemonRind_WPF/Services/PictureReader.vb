@@ -13,6 +13,15 @@ Namespace Services
         End Sub
     End Class
 
+    ''' <summary>No loaded model can read pictures right now, so no picture can be read until one is loaded.</summary>
+    Public Class PictureModelException
+        Inherits PictureReadException
+
+        Public Sub New(message As String)
+            MyBase.New(message)
+        End Sub
+    End Class
+
     ''' <summary>
     ''' Reads a picture for a knowledge base: a vision model writes out any text in it and describes what it shows, and that
     ''' description is what gets searched (a knowledge base can only search text).
@@ -60,7 +69,7 @@ Namespace Services
                 models = Await _management.ListDownloadedModelsAsync(cancellationToken)
                 health = Await _management.GetHealthAsync(cancellationToken)
             Catch ex As Exception When Not TypeOf ex Is OperationCanceledException
-                Throw New PictureReadException($"Could not ask Lemonade which model is loaded: {ex.Message}")
+                Throw New PictureModelException($"Could not ask Lemonade which model is loaded: {ex.Message}")
             End Try
 
             Dim byName As New Dictionary(Of String, LemonadeModelInfo)(StringComparer.OrdinalIgnoreCase)
@@ -85,9 +94,9 @@ Namespace Services
             Dim canSee = models.Where(Function(m) HasLabel(m, "vision")).Select(Function(m) m.Id).OrderBy(Function(id) id, StringComparer.OrdinalIgnoreCase).Take(5).ToList()
             Dim examples = If(canSee.Count > 0, $" Models that can: {String.Join(", ", canSee)}.", "")
             If chatLoaded.Count > 0 Then
-                Throw New PictureReadException($"The loaded model '{chatLoaded(0)}' cannot read pictures. Load one that can and add the picture again.{examples}")
+                Throw New PictureModelException($"The loaded model '{chatLoaded(0)}' cannot read pictures. Load one that can and add the picture again.{examples}")
             End If
-            Throw New PictureReadException($"No chat model is loaded. Load one that can read pictures and add the picture again.{examples}")
+            Throw New PictureModelException($"No chat model is loaded. Load one that can read pictures and add the picture again.{examples}")
         End Function
 
         ''' <summary>The picture as a JPEG of at most 1568 pixels on its longest side (what vision models read well), as bytes.</summary>

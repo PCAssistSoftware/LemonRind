@@ -2514,11 +2514,12 @@ Namespace ViewModels
                 ' this app's side, from the model genuinely getting stuck
                 ' (see the retry loop below).
                 Dim contextWindow = _modelContextWindows.GetValueOrDefault(SelectedModel, 0)
-                ' Half the model's own context window, capped at 16384 -
-                ' generous, but sized off the selected model so a
-                ' small-context model isn't asked for more output than it
-                ' could ever produce.
-                Dim generousCap = If(contextWindow > 0, Math.Min(contextWindow \ 2, 16384), 8192)
+                ' Half the model's own context window, capped at the Longest reply
+                ' setting (Settings > Assistant) - generous, but sized off the
+                ' selected model so a small-context model isn't asked for more
+                ' output than it could ever produce.
+                Dim replyLimit = Math.Clamp(_assistantSettings.MaxReplyTokens, 256, 131072)
+                Dim generousCap = If(contextWindow > 0, Math.Min(contextWindow \ 2, replyLimit), Math.Min(8192, replyLimit))
                 ' That cap alone isn't enough on its own: it's sized against
                 ' the model's TOTAL window, not what's actually left once the
                 ' system prompt/tools/history already committed to this

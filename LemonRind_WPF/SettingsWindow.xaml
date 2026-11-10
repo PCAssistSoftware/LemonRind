@@ -122,6 +122,10 @@
                         <TextBox Text="{Binding SystemPrompt, UpdateSourceTrigger=PropertyChanged}" Padding="8"
                                  AcceptsReturn="True" TextWrapping="Wrap" Height="140"
                                  VerticalScrollBarVisibility="Auto" />
+                        <TextBlock Text="Longest reply (tokens)" Style="{StaticResource FieldLabel}" Margin="0,14,0,2" />
+                        <TextBox Text="{Binding MaxReplyTokens, UpdateSourceTrigger=PropertyChanged}" Padding="6" Width="100" HorizontalAlignment="Left" />
+                        <TextBlock Text="The most the model may write in one reply, counting its thinking too. A reply that reaches it is cut off (a Continue button appears). A model that thinks a lot needs a bigger number, and a longer reply takes longer to write. Allowed: 256 to 131,072. The default is 32,768. Applies from the next message."
+                                   Foreground="Gray" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,8" />
                     </StackPanel>
 
                     <!-- Persona is deliberately settings-authored only, not
@@ -431,6 +435,10 @@
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate>
                                                         <Grid Margin="0,3">
+                                                            <Grid.RowDefinitions>
+                                                                <RowDefinition Height="Auto" />
+                                                                <RowDefinition Height="Auto" />
+                                                            </Grid.RowDefinitions>
                                                             <Grid.ColumnDefinitions>
                                                                 <ColumnDefinition Width="Auto" />
                                                                 <ColumnDefinition Width="*" />
@@ -445,6 +453,9 @@
                                                             <TextBlock Grid.Column="1" Text="{Binding DisplayName}" VerticalAlignment="Center"
                                                                        TextTrimming="CharacterEllipsis"
                                                                        ToolTip="{Binding ErrorMessage}" />
+                                                            <!-- A ready source with something left out (pictures the loaded model could not read). -->
+                                                            <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="6" Text="{Binding ErrorMessage}" Foreground="#B45309" FontSize="11" TextWrapping="Wrap"
+                                                                       Visibility="{Binding HasNote, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                                             <TextBlock Grid.Column="2" Text="{Binding Status}" FontSize="11" Margin="8,0" VerticalAlignment="Center">
                                                                 <TextBlock.Style>
                                                                     <Style TargetType="TextBlock">

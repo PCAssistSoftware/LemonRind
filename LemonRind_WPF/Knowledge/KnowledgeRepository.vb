@@ -272,11 +272,13 @@ Namespace Knowledge
             End Using
         End Sub
 
-        Public Sub MarkSourceReady(sourceId As String, chunkCount As Integer)
+        ''' <summary>The source is searchable. A note (kept in ErrorMessage) says if something in it was left out.</summary>
+        Public Sub MarkSourceReady(sourceId As String, chunkCount As Integer, Optional note As String = Nothing)
             Using connection = _database.OpenConnection()
                 Using command = connection.CreateCommand()
-                    command.CommandText = "UPDATE KnowledgeSources SET Status = 'Ready', ChunkCount = @chunkCount, ErrorMessage = NULL WHERE Id = @id;"
+                    command.CommandText = "UPDATE KnowledgeSources SET Status = 'Ready', ChunkCount = @chunkCount, ErrorMessage = @note WHERE Id = @id;"
                     command.Parameters.AddWithValue("@chunkCount", chunkCount)
+                    command.Parameters.AddWithValue("@note", If(note Is Nothing, CObj(DBNull.Value), note))
                     command.Parameters.AddWithValue("@id", sourceId)
                     command.ExecuteNonQuery()
                 End Using

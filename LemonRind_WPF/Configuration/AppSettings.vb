@@ -179,6 +179,9 @@ Namespace Configuration
     ''' </summary>
     Public Class AssistantSettings
         Public Property SystemPrompt As String = "You are a helpful local AI assistant running on the user's own machine."
+
+        ''' <summary>The most the model may write in one chat reply, counting its thinking too (a scheduled job has its own limit).</summary>
+        Public Property MaxReplyTokens As Integer = 32768
     End Class
 
     ''' <summary>
@@ -324,6 +327,7 @@ Namespace Configuration
             target.ImageGen.Seed = ImageGen.Seed
 
             target.Assistant.SystemPrompt = Assistant.SystemPrompt
+            target.Assistant.MaxReplyTokens = Assistant.MaxReplyTokens
 
             target.Persona.Identity = Persona.Identity
             target.Persona.AboutUser = Persona.AboutUser
