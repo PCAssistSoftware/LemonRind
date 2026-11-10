@@ -193,3 +193,71 @@
 .kb-reembed {
     margin-left: 0.5rem;
 }
+
+/* A picture source: View text / Read again, and the pop-up that shows what the model wrote. */
+.source-action {
+    background: none;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 0.75rem;
+    padding: 0.1rem 0.5rem;
+    cursor: pointer;
+}
+
+.picture-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+}
+
+.picture-dialog {
+    background: var(--surface);
+    color: var(--text);
+    border-radius: 12px;
+    box-shadow: var(--shadow-lg);
+    width: min(46rem, 92vw);
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    padding: 1rem 1.25rem;
+}
+
+.picture-dialog h4 {
+    margin: 0 0 0.25rem;
+}
+
+.picture-hint {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-bottom: 0.6rem;
+}
+
+.picture-body {
+    overflow-y: auto;
+    min-height: 0;
+}
+
+.picture-thumb {
+    display: block;
+    max-width: 16rem;
+    max-height: 12rem;
+    border-radius: 8px;
+    margin-bottom: 0.6rem;
+}
+
+.picture-text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: 0.9rem;
+}
+
+.picture-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 0.75rem;
+}

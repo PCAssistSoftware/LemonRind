@@ -76,6 +76,7 @@ builder.Services.AddSingleton<IAssistantModule, FileSystemModule>();
 // KnowledgeModule contributes no tools of its own; it gates the Knowledge
 // Bases feature. FileTextExtractor is static, no DI registration needed.
 builder.Services.AddSingleton<KnowledgeRepository>();
+builder.Services.AddSingleton<PictureReader>();
 builder.Services.AddSingleton<KnowledgeIngestionService>();
 builder.Services.AddSingleton<KnowledgeService>();
 builder.Services.AddSingleton<IAssistantModule, KnowledgeModule>();

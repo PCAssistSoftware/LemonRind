@@ -55,6 +55,18 @@
                         {
                             <span class="source-error" title="@source.ErrorMessage">@source.ErrorMessage</span>
                         }
+                        @if (source.IsPicture)
+                        {
+                            // A picture is stored as what a vision model wrote about it: read that, or have it redone.
+                            if (source.HasPictureText)
+                            {
+                                <button class="source-action" @onclick="() => ViewPictureText(source)">View text</button>
+                            }
+                            if (source.CanReadAgain)
+                            {
+                                <button class="source-action" title="Read the picture again with the model that is loaded now" @onclick="() => ReadPictureAgain(source.Id, kb.Id)">Read again</button>
+                            }
+                        }
                         <button class="source-delete" @onclick="() => DeleteSource(source.Id, kb.Id)">&times;</button>
                     </div>
                 }
@@ -63,7 +75,7 @@
             <div class="kb-add-source">
                 <div class="add-row">
                     <label class="source-label">+ File</label>
-                    <InputFile OnChange="e => AddFileSource(kb.Id, e)" accept="@string.Join(",", Services.FileTextExtractor.SupportedExtensions)" />
+                    <InputFile OnChange="e => AddFileSource(kb.Id, e)" accept="@string.Join(",", Services.FileTextExtractor.SupportedExtensions.Concat(Services.PictureReader.PictureExtensions))" />
                 </div>
                 <div class="add-row">
                     <label class="source-label">+ Folder</label>
@@ -90,7 +102,60 @@
     }
 </div>
 
+@if (_viewingPicture is not null)
+{
+    <div class="picture-overlay" @onclick="ClosePictureText">
+        <div class="picture-dialog" @onclick:stopPropagation="true">
+            <h4>@_viewingPicture.DisplayName</h4>
+            <div class="picture-hint">What the model wrote about this picture. This text is what gets searched.</div>
+            <div class="picture-body">
+                @if (_viewingPictureUrl is not null)
+                {
+                    <img class="picture-thumb" src="@_viewingPictureUrl" alt="@_viewingPicture.DisplayName" />
+                }
+                <div class="picture-text">@_viewingPicture.PictureText</div>
+            </div>
+            <div class="picture-actions"><button @onclick="ClosePictureText">Close</button></div>
+        </div>
+    </div>
+}
+
 @code {
+    // The picture whose text is open in the pop-up, and a data: address for its kept copy (null if there is none).
+    private KnowledgeSource? _viewingPicture;
+    private string? _viewingPictureUrl;
+
+    private void ViewPictureText(KnowledgeSource source)
+    {
+        var image = Repository.GetPictureImage(source.Id);
+        _viewingPictureUrl = image is null ? null : "data:image/jpeg;base64," + Convert.ToBase64String(image);
+        _viewingPicture = source;
+    }
+
+    private void ClosePictureText()
+    {
+        _viewingPicture = null;
+        _viewingPictureUrl = null;
+    }
+
+    private async Task ReadPictureAgain(string sourceId, string kbId)
+    {
+        _statusText[kbId] = "Reading the picture again...";
+        _sourcesByKb.Remove(kbId);
+        StateHasChanged();
+        try
+        {
+            await IngestionService.RereadPictureAsync(kbId, sourceId, CancellationToken.None);
+            _statusText[kbId] = "Read the picture again.";
+        }
+        catch (Exception ex)
+        {
+            _statusText[kbId] = $"Couldn't read the picture: {ex.Message}";
+        }
+        _sourcesByKb.Remove(kbId);
+        StateHasChanged();
+    }
+
     // RAG (Knowledge Bases), shown as a "Knowledge Bases" section of
     // Settings like in the desktop editions. Folder-source ingestion is deliberately not
     // built here (unlike the desktop apps' native folder picker) - a
@@ -194,7 +259,10 @@
         // it already did on the desktop side.
         var uploadsDir = Path.Combine(AppContext.BaseDirectory, "data", "Uploads");
         Directory.CreateDirectory(uploadsDir);
-        var savedPath = Path.Combine(uploadsDir, $"{Guid.NewGuid()}-{file.Name}");
+        // In a folder of its own, so the file keeps its real name (the source list shows it) without a clash.
+        var uploadFolder = Path.Combine(uploadsDir, Guid.NewGuid().ToString());
+        Directory.CreateDirectory(uploadFolder);
+        var savedPath = Path.Combine(uploadFolder, Path.GetFileName(file.Name));
 
         try
         {
@@ -213,7 +281,7 @@
         }
         finally
         {
-            File.Delete(savedPath);
+            try { Directory.Delete(uploadFolder, recursive: true); } catch { /* best-effort temp cleanup */ }
         }
 
         _sourcesByKb.Remove(kbId);

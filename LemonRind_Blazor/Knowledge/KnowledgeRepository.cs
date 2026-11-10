@@ -29,6 +29,17 @@ public class KnowledgeSource
     public string ErrorMessage { get; set; } = "";
     public int ChunkCount { get; set; }
     public DateTime AddedAt { get; set; }
+
+    /// <summary>What a vision model wrote about a picture source; empty for any other source.</summary>
+    public string PictureText { get; set; } = "";
+
+    /// <summary>A file source that is a picture (read by a vision model rather than as text).</summary>
+    public bool IsPicture => SourceType == "File" && Services.PictureReader.IsPicture(Reference);
+
+    public bool HasPictureText => PictureText.Length > 0;
+
+    /// <summary>Whether "Read again" is offered: a picture that is not being read right now.</summary>
+    public bool CanReadAgain => IsPicture && Status != "Ingesting";
 }
 
 /// <summary>
@@ -195,6 +206,57 @@ public class KnowledgeRepository(AppDatabase database)
         return id;
     }
 
+    /// <summary>Keeps what a vision model wrote about a picture and/or a shrunk copy of the picture on its source. Null leaves that part as it is.</summary>
+    public void SetPicture(string sourceId, string? text, byte[]? image)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE KnowledgeSources
+            SET PictureText = CASE WHEN @hasText = 1 THEN @text ELSE PictureText END,
+                PictureImage = CASE WHEN @hasImage = 1 THEN @image ELSE PictureImage END
+            WHERE Id = @id;
+            """;
+        command.Parameters.AddWithValue("@hasText", text is null ? 0 : 1);
+        command.Parameters.AddWithValue("@text", (object?)text ?? DBNull.Value);
+        command.Parameters.AddWithValue("@hasImage", image is null ? 0 : 1);
+        command.Parameters.AddWithValue("@image", (object?)image ?? DBNull.Value);
+        command.Parameters.AddWithValue("@id", sourceId);
+        command.ExecuteNonQuery();
+    }
+
+    /// <summary>The shrunk copy of a picture source, or null.</summary>
+    public byte[]? GetPictureImage(string sourceId)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT PictureImage FROM KnowledgeSources WHERE Id = @id;";
+        command.Parameters.AddWithValue("@id", sourceId);
+        return command.ExecuteScalar() is byte[] bytes ? bytes : null;
+    }
+
+    /// <summary>Puts a source back into the Ingesting state and throws away its chunks, ready to be read again.</summary>
+    public void BeginRereading(string sourceId)
+    {
+        using var connection = database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+        using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = "DELETE FROM KnowledgeChunks WHERE SourceId = @id;";
+            command.Parameters.AddWithValue("@id", sourceId);
+            command.ExecuteNonQuery();
+        }
+        using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = "UPDATE KnowledgeSources SET Status = 'Ingesting', ErrorMessage = NULL, ChunkCount = 0 WHERE Id = @id;";
+            command.Parameters.AddWithValue("@id", sourceId);
+            command.ExecuteNonQuery();
+        }
+        transaction.Commit();
+    }
+
     public void MarkSourceReady(string sourceId, int chunkCount)
     {
         using var connection = database.OpenConnection();
@@ -221,7 +283,7 @@ public class KnowledgeRepository(AppDatabase database)
         using var connection = database.OpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, KnowledgeBaseId, SourceType, Reference, DisplayName, Status, ErrorMessage, ChunkCount, AddedAt
+            SELECT Id, KnowledgeBaseId, SourceType, Reference, DisplayName, Status, ErrorMessage, ChunkCount, AddedAt, PictureText
             FROM KnowledgeSources WHERE KnowledgeBaseId = @kbId ORDER BY AddedAt ASC;
             """;
         command.Parameters.AddWithValue("@kbId", knowledgeBaseId);
@@ -239,6 +301,7 @@ public class KnowledgeRepository(AppDatabase database)
                 ErrorMessage = reader.IsDBNull(6) ? "" : reader.GetString(6),
                 ChunkCount = reader.GetInt32(7),
                 AddedAt = DateTimeHelpers.ParseUtc(reader.GetString(8)),
+                PictureText = reader.IsDBNull(9) ? "" : reader.GetString(9),
             });
         }
         return results;
