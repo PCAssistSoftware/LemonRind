@@ -336,7 +336,46 @@ public class ChatSessionRepository(AppDatabase database)
             """;
         command.Parameters.AddWithValue("@likeQuery", $"%{query}%");
         command.Parameters.AddWithValue("@ftsQuery", ftsQuery);
-        return ReadSummaries(connection, command);
+        var found = ReadSummaries(connection, command);
+
+        foreach (var session in found) session.SearchQuery = query;
+        AttachSnippets(connection, found, ftsQuery, query);
+        return found;
+    }
+
+    /// <summary>
+    /// Gives each found session a short snippet of its best-matching message (the one the full-text index ranks
+    /// highest), made by SQLite's own snippet() with each matched word wrapped in two marker characters that
+    /// SearchHighlight.ParseSnippet understands. A message with a picture attached is stored with a marker holding the
+    /// picture's file path in front of what was typed; that path is searchable but is not something to show, so for
+    /// those messages the snippet is cut from the typed words alone, and a message that matched only through its path
+    /// offers no snippet. A session that matched only by title, folder or tag keeps a null snippet.
+    /// </summary>
+    private static void AttachSnippets(Microsoft.Data.Sqlite.SqliteConnection connection, List<ChatSessionSummary> sessions, string ftsQuery, string typedQuery)
+    {
+        if (sessions.Count == 0) return;
+        var byId = sessions.ToDictionary(s => s.Id);
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT m.SessionId, m.Content, snippet(MessagesFts, 0, char(2), char(3), '...', 16)
+            FROM MessagesFts
+            JOIN Messages m ON m.Id = MessagesFts.rowid
+            WHERE MessagesFts MATCH @ftsQuery AND m.Role != 'tool'
+            ORDER BY MessagesFts.rank;
+            """;
+        command.Parameters.AddWithValue("@ftsQuery", ftsQuery);
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            if (!byId.TryGetValue(reader.GetString(0), out var session) || session.Snippet is not null) continue; // best first: keep the first usable one
+
+            var (picture, words) = Services.ImageAttachmentService.TryParseAttachedImageMarker(reader.GetString(1));
+            session.Snippet = picture is null
+                ? reader.GetString(2)
+                : SearchHighlight.SnippetFromText(words, typedQuery);
+        }
     }
 
     /// <summary>All messages in a session, oldest first.</summary>

@@ -73,16 +73,21 @@
                                 else
                                 {
                                     <div class="session-title-row">
-                                        <span class="session-title">@session.Title</span>
+                                        <span class="session-title">@Highlighted(SearchHighlight.HighlightParts(session.Title, session.SearchQuery))</span>
                                         <span class="session-time" title="@session.UpdatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")">@RelativeTime(session.UpdatedAt)</span>
                                     </div>
+                                }
+                                @if (!string.IsNullOrEmpty(session.Snippet) && _renamingSessionId != session.Id)
+                                {
+                                    // A few words of the message that matched the search, with the matched words picked out.
+                                    <div class="session-snippet">@Highlighted(SearchHighlight.ParseSnippet(session.Snippet))</div>
                                 }
                                 @if (session.HasTags && _editingTagsSessionId != session.Id)
                                 {
                                     <div class="session-tags">
                                         @foreach (var tag in session.Tags)
                                         {
-                                            <span class="session-tag">@tag</span>
+                                            <span class="session-tag @(SearchHighlight.Matches(tag, session.SearchQuery) ? "search-hit" : "")">@tag</span>
                                         }
                                     </div>
                                 }
@@ -2540,6 +2545,25 @@
         .UseSoftlineBreakAsHardlineBreak()
         .DisableHtml()
         .Build();
+
+    /// <summary>Text with its matched pieces highlighted. Every piece goes through Blazor's normal encoding, so a chat that happens to contain markup is shown as text.</summary>
+    private static RenderFragment Highlighted(IEnumerable<HighlightPart> parts) => builder =>
+    {
+        foreach (var part in parts)
+        {
+            if (part.IsMatch)
+            {
+                builder.OpenElement(0, "mark");
+                builder.AddAttribute(1, "class", "search-mark");
+                builder.AddContent(2, part.Text);
+                builder.CloseElement();
+            }
+            else
+            {
+                builder.AddContent(3, part.Text);
+            }
+        }
+    };
 
     private static MarkupString RenderMarkdown(string? text) =>
         (MarkupString)Markdown.ToHtml(text ?? "", ChatMarkdownPipeline);

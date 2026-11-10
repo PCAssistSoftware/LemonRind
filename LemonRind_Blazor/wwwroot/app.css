@@ -20,6 +20,7 @@
     --surface: #FFFFFF;       /* sidebar, panels, menus, dialogs, inputs */
     --surface-2: #F2F4F7;     /* cards / subtle fills */
     --surface-3: #E7EAEF;     /* chips, active tab, selected fill */
+    --match-bg: #FFE58F;      /* a search match: the words found in a title or snippet */
     --hover: #EDEFF3;
     --border: #E2E5EA;
     --border-subtle: #ECEEF2;
@@ -76,6 +77,7 @@
         --surface: #1B2029;
         --surface-2: #1E232C;
         --surface-3: #283040;
+        --match-bg: #6B5A12;
         --hover: #212733;
         --border: #2B313D;
         --border-subtle: #232935;
@@ -118,6 +120,7 @@
     --surface: #1B2029;
     --surface-2: #1E232C;
     --surface-3: #283040;
+    --match-bg: #6B5A12;
     --hover: #212733;
     --border: #2B313D;
     --border-subtle: #232935;
