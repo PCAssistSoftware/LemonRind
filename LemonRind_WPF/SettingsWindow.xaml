@@ -102,6 +102,8 @@
                         <TextBox Text="{Binding LemonadeBaseUrl, UpdateSourceTrigger=PropertyChanged}" Padding="6" />
                         <TextBlock Text="Default chat model" Style="{StaticResource FieldLabel}" />
                         <TextBox Text="{Binding LemonadeChatModel, UpdateSourceTrigger=PropertyChanged}" Padding="6" />
+                        <TextBlock Text="{Binding LemonadeChatModelWarning}" Foreground="#B45309" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"
+                                   Visibility="{Binding HasLemonadeChatModelWarning, Converter={StaticResource BooleanToVisibilityConverter}}" />
                         <TextBlock Text="Default embedding model" Style="{StaticResource FieldLabel}" />
                         <TextBox Text="{Binding LemonadeEmbeddingModel, UpdateSourceTrigger=PropertyChanged}" Padding="6" />
                         <TextBlock Text="API key (optional)" Style="{StaticResource FieldLabel}" />

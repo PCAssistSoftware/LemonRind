@@ -44,6 +44,7 @@ Namespace Scheduler
         Private ReadOnly _chatClientFactory As LemonadeChatClientFactory
         Private ReadOnly _settings As AppSettings
         Private ReadOnly _runningJobs As RunningJobTracker
+        Private ReadOnly _managementClient As LemonadeManagementClient
 
         ' Func(Of ModuleRegistry), not ModuleRegistry directly -
         ' ModuleRegistry's own constructor needs every IAssistantModule
@@ -63,8 +64,9 @@ Namespace Scheduler
         Private ReadOnly _notifier As SchedulerNotifier
         Private ReadOnly _approvalStore As FileWriteApprovalStore
 
-        Public Sub New(chatClientFactory As LemonadeChatClientFactory, moduleRegistry As Func(Of ModuleRegistry), sessionRepository As ChatSessionRepository, memoryService As MemoryService, notifier As SchedulerNotifier, approvalStore As FileWriteApprovalStore, settings As AppSettings, runningJobs As RunningJobTracker)
+        Public Sub New(chatClientFactory As LemonadeChatClientFactory, moduleRegistry As Func(Of ModuleRegistry), sessionRepository As ChatSessionRepository, memoryService As MemoryService, notifier As SchedulerNotifier, approvalStore As FileWriteApprovalStore, settings As AppSettings, runningJobs As RunningJobTracker, managementClient As LemonadeManagementClient)
             _chatClientFactory = chatClientFactory
+            _managementClient = managementClient
             _settings = settings
             _runningJobs = runningJobs
             _moduleRegistry = moduleRegistry
@@ -79,12 +81,29 @@ Namespace Scheduler
         ''' show "Job running" and ask before another model is loaded.
         ''' </summary>
         Public Async Function RunJobAsync(job As ScheduledJob, cancellationToken As CancellationToken) As Task(Of JobRunResult)
-            Using running = _runningJobs.Start(job.Name, If(String.IsNullOrWhiteSpace(job.ModelId), _settings.Lemonade.ChatModel, job.ModelId))
-                Return Await RunJobCoreAsync(job, cancellationToken)
+            ' A job with no model of its own uses the default chat model; if Lemonade no longer has it, the loaded chat model.
+            Dim choice = Await ChooseModelAsync(job, cancellationToken)
+            Using running = _runningJobs.Start(job.Name, If(choice.Model, If(String.IsNullOrWhiteSpace(job.ModelId), _settings.Lemonade.ChatModel, job.ModelId)))
+                Return Await RunJobCoreAsync(job, choice, cancellationToken)
             End Using
         End Function
 
-        Private Async Function RunJobCoreAsync(job As ScheduledJob, cancellationToken As CancellationToken) As Task(Of JobRunResult)
+        ''' <summary>Asks Lemonade which models it has and which are loaded, to settle the model for a job that has none of its own. If Lemonade cannot be asked, nothing changes: the run goes ahead as before and reports its own error.</summary>
+        Private Async Function ChooseModelAsync(job As ScheduledJob, cancellationToken As CancellationToken) As Task(Of JobModelChoice)
+            If Not String.IsNullOrWhiteSpace(job.ModelId) Then Return New JobModelChoice(job.ModelId, "", "")
+            Try
+                Using timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+                    timeout.CancelAfter(TimeSpan.FromSeconds(10))
+                    Dim models = Await _managementClient.ListDownloadedModelsAsync(timeout.Token)
+                    Dim health = Await _managementClient.GetHealthAsync(timeout.Token)
+                    Return DefaultModelCheck.ChooseForJob(job.ModelId, _settings.Lemonade.ChatModel, models, health)
+                End Using
+            Catch ex As Exception When Not cancellationToken.IsCancellationRequested
+                Return New JobModelChoice(Nothing, "", "")
+            End Try
+        End Function
+
+        Private Async Function RunJobCoreAsync(job As ScheduledJob, choice As JobModelChoice, cancellationToken As CancellationToken) As Task(Of JobRunResult)
             ' Read fresh on every run, so a change made in Settings applies
             ' from the next run without a restart. (How many tool-call
             ' rounds one job may use matters because a research job that
@@ -177,6 +196,8 @@ Namespace Scheduler
             ' no-op, not an error.
             If Not String.IsNullOrEmpty(job.ModelId) Then
                 options.ModelId = job.ModelId
+            ElseIf choice.Model IsNot Nothing Then
+                options.ModelId = choice.Model
             End If
 
             ' Same retry-once-on-empty-reply safeguard as the live chat path
@@ -200,9 +221,12 @@ Namespace Scheduler
             Dim continues = 0
             Dim usedUpLimitThinking = False ' the reply ended at the limit with no text at all
             Dim notes As New List(Of String) ' saved as their own messages, after the reply
+            If choice.Note.Length > 0 Then notes.Add(choice.Note)
             _approvalStore.IsRunningScheduledJob = True
             Try
                 Try
+                    If choice.Problem.Length > 0 Then Throw New InvalidOperationException(choice.Problem)
+
                     Const maxAttempts = 2
                     Dim attempt = 1
                     While attempt <= maxAttempts

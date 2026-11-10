@@ -326,8 +326,27 @@ Namespace ViewModels
                 Return _lemonadeChatModel
             End Get
             Set(value As String)
-                SetProperty(_lemonadeChatModel, value)
+                If SetProperty(_lemonadeChatModel, value) Then
+                    OnPropertyChanged(NameOf(LemonadeChatModelWarning))
+                    OnPropertyChanged(NameOf(HasLemonadeChatModelWarning))
+                End If
             End Set
+        End Property
+
+        ' What Lemonade has downloaded, to warn when the default chat model is not one of them. Empty if Lemonade cannot be reached.
+        Private _downloadedModels As IReadOnlyList(Of LemonadeModelInfo) = New List(Of LemonadeModelInfo)()
+
+        ''' <summary>A warning under the chat model box when Lemonade does not have that model, else empty.</summary>
+        Public ReadOnly Property LemonadeChatModelWarning As String
+            Get
+                Return DefaultModelCheck.WarningFor(_lemonadeChatModel, _downloadedModels)
+            End Get
+        End Property
+
+        Public ReadOnly Property HasLemonadeChatModelWarning As Boolean
+            Get
+                Return LemonadeChatModelWarning.Length > 0
+            End Get
         End Property
 
         Private _lemonadeEmbeddingModel As String
@@ -875,7 +894,7 @@ Namespace ViewModels
         Public ReadOnly Property AvailableModels As New ObservableCollection(Of String)()
 
         ''' <summary>Not a real model id - a job storing this (or Nothing/empty) just means "whatever model is currently selected/default when the job fires", the same as leaving it unset entirely.</summary>
-        Public Const UseCurrentModelSentinel As String = "(use current model)"
+        Public Const UseCurrentModelSentinel As String = "(use the default chat model)"
 
         Private _newJobModelId As String = UseCurrentModelSentinel
         Public Property NewJobModelId As String
@@ -1613,6 +1632,9 @@ Namespace ViewModels
                 For Each model In models
                     AvailableModels.Add(model.Id)
                 Next
+                _downloadedModels = models
+                OnPropertyChanged(NameOf(LemonadeChatModelWarning))
+                OnPropertyChanged(NameOf(HasLemonadeChatModelWarning))
             Catch
                 ' Best-effort - Lemonade might not be reachable when Settings
                 ' is opened; the sentinel default still works fine either way.
