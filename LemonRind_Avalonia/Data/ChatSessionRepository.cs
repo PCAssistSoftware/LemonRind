@@ -58,7 +58,7 @@ public class ChatSessionRepository(AppDatabase database)
         return id;
     }
 
-    public void SaveMessage(string sessionId, string role, string content, string? reasoningContent, string? toolCalls = null)
+    public void SaveMessage(string sessionId, string role, string content, string? reasoningContent, string? toolCalls = null, Services.TurnStats? stats = null)
     {
         var now = DateTime.UtcNow.ToString("o");
         using var connection = database.OpenConnection();
@@ -66,8 +66,10 @@ public class ChatSessionRepository(AppDatabase database)
         using (var command = connection.CreateCommand())
         {
             command.CommandText = """
-                INSERT INTO Messages (SessionId, Role, Content, ReasoningContent, ToolCalls, CreatedAt)
-                VALUES (@sessionId, @role, @content, @reasoningContent, @toolCalls, @now);
+                INSERT INTO Messages (SessionId, Role, Content, ReasoningContent, ToolCalls, CreatedAt,
+                                      Model, InputTokens, OutputTokens, TokensPerSecond, TimeToFirstToken)
+                VALUES (@sessionId, @role, @content, @reasoningContent, @toolCalls, @now,
+                        @model, @inputTokens, @outputTokens, @tokensPerSecond, @timeToFirstToken);
                 """;
             command.Parameters.AddWithValue("@sessionId", sessionId);
             command.Parameters.AddWithValue("@role", role);
@@ -75,6 +77,11 @@ public class ChatSessionRepository(AppDatabase database)
             command.Parameters.AddWithValue("@reasoningContent", (object?)reasoningContent ?? DBNull.Value);
             command.Parameters.AddWithValue("@toolCalls", (object?)toolCalls ?? DBNull.Value);
             command.Parameters.AddWithValue("@now", now);
+            command.Parameters.AddWithValue("@model", (object?)stats?.Model ?? DBNull.Value);
+            command.Parameters.AddWithValue("@inputTokens", stats is null ? DBNull.Value : stats.InputTokens);
+            command.Parameters.AddWithValue("@outputTokens", stats is null ? DBNull.Value : stats.OutputTokens);
+            command.Parameters.AddWithValue("@tokensPerSecond", stats is null ? DBNull.Value : stats.TokensPerSecond);
+            command.Parameters.AddWithValue("@timeToFirstToken", stats is null ? DBNull.Value : stats.TimeToFirstToken);
             command.ExecuteNonQuery();
         }
 
@@ -378,6 +385,76 @@ public class ChatSessionRepository(AppDatabase database)
                 ? reader.GetString(2)
                 : SearchHighlight.SnippetFromText(words, typedQuery);
         }
+    }
+
+    /// <summary>
+    /// Every saved turn that carries numbers (tokens, speed, wait for the first token), oldest first, for the usage
+    /// screen. Replies saved before the numbers were recorded have none and are not listed here.
+    /// </summary>
+    public List<UsageRequest> UsageRequests()
+    {
+        var results = new List<UsageRequest>();
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT m.CreatedAt, m.SessionId, s.Title, m.Model, m.InputTokens, m.OutputTokens, m.TokensPerSecond, m.TimeToFirstToken,
+                   EXISTS (SELECT 1 FROM SessionTags st JOIN Tags t ON t.Id = st.TagId
+                           WHERE st.SessionId = s.Id AND t.Name = 'scheduled') AS Scheduled
+            FROM Messages m
+            JOIN Sessions s ON s.Id = m.SessionId
+            WHERE m.InputTokens IS NOT NULL
+            ORDER BY m.CreatedAt;
+            """;
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            results.Add(new UsageRequest(
+                DateTimeHelpers.ParseUtc(reader.GetString(0)),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.IsDBNull(3) ? null : reader.GetString(3),
+                reader.GetInt32(4),
+                reader.IsDBNull(5) ? 0 : reader.GetInt32(5),
+                reader.IsDBNull(6) ? 0 : reader.GetDouble(6),
+                reader.IsDBNull(7) ? 0 : reader.GetDouble(7),
+                reader.GetInt32(8) != 0));
+        }
+        return results;
+    }
+
+    /// <summary>
+    /// Every saved tool call, with its name and whether it failed, for the usage screen. A reply stores its calls as
+    /// "name:1,name:0" (1 worked, 0 failed; a bare name or ":?" from before outcomes were tracked counts as worked), so
+    /// the whole history is included, whether or not the model's name was recorded.
+    /// </summary>
+    public List<ToolUse> UsageToolUses()
+    {
+        var results = new List<ToolUse>();
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT m.CreatedAt, m.Model, m.ToolCalls,
+                   EXISTS (SELECT 1 FROM SessionTags st JOIN Tags t ON t.Id = st.TagId
+                           WHERE st.SessionId = m.SessionId AND t.Name = 'scheduled') AS Scheduled
+            FROM Messages m
+            WHERE m.ToolCalls IS NOT NULL AND m.ToolCalls != ''
+            ORDER BY m.CreatedAt;
+            """;
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            var at = DateTimeHelpers.ParseUtc(reader.GetString(0));
+            var model = reader.IsDBNull(1) ? null : reader.GetString(1);
+            var scheduled = reader.GetInt32(3) != 0;
+            foreach (var stored in reader.GetString(2).Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var colon = stored.LastIndexOf(':');
+                var name = colon < 0 ? stored : stored[..colon];
+                var failed = colon >= 0 && stored[(colon + 1)..] == "0";
+                results.Add(new ToolUse(at, name.Trim(), failed, model, scheduled));
+            }
+        }
+        return results;
     }
 
     /// <summary>All messages in a session, oldest first.</summary>

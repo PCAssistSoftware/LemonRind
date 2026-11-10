@@ -179,6 +179,8 @@ public partial class App : Application
         // risk; Func<LogViewerWindow> matches the same "each open gets a
         // fresh instance" reasoning as Settings above.
         builder.Services.AddTransient<LogViewerWindow>();
+        builder.Services.AddTransient<UsageWindow>();
+        builder.Services.AddSingleton<Func<UsageWindow>>(sp => () => sp.GetRequiredService<UsageWindow>());
         builder.Services.AddSingleton<Func<LogViewerWindow>>(sp => () => sp.GetRequiredService<LogViewerWindow>());
 
         _host = builder.Build();

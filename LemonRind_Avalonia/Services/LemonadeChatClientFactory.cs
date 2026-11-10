@@ -21,7 +21,7 @@ namespace LemonRindAvalonia.Services;
 /// several more times rather than waiting, which could crash the server by
 /// exceeding its KV cache across the duplicate concurrent requests.
 /// </summary>
-public class LemonadeChatClientFactory(AppSettings settings)
+public class LemonadeChatClientFactory(AppSettings settings, LemonadeManagementClient management)
 {
     private readonly LemonadeSettings _settings = settings.Lemonade;
 
@@ -67,6 +67,9 @@ public class LemonadeChatClientFactory(AppSettings settings)
                 client.IncludeDetailedErrors = true;
                 client.MaximumIterationsPerRequest = maxToolRounds;
             })
+            // Added after the tool-calling loop, so it sits inside it and sees every request the loop makes: the usage
+            // screen needs each request's own numbers, not just the last one of a turn.
+            .Use(inner => new UsageTrackingChatClient(inner, management))
             .Build();
     }
 }

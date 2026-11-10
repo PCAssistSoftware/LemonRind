@@ -62,6 +62,7 @@ public class ScheduledJobRunner(
         var maxToolRounds = limits.MaxToolRounds;
         var chatClient = chatClientFactory.CreateChatClient(maxToolRounds);
         var stopwatch = Stopwatch.StartNew();
+        var usage = TurnUsage.Begin(); // collects what the whole run cost (every model request and tool call), saved with the reply for the usage screen
 
         // Plain job.Name, not a "SCHEDULED: " prefix - the "scheduled" tag
         // (below) is what identifies a scheduled session in the sidebar.
@@ -278,7 +279,8 @@ public class ScheduledJobRunner(
             jobFailed = true;
         }
 
-        sessionRepository.SaveMessage(sessionId, ChatRole.Assistant.Value, replyText, reasoningContent: null);
+        sessionRepository.SaveMessage(sessionId, ChatRole.Assistant.Value, replyText, reasoningContent: null,
+            toolCalls: usage.ToolCallsForStorage(), stats: usage.Close());
         notifier.RaiseSessionUpdated(sessionId);
 
         foreach (var note in notes)

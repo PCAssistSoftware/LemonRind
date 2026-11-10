@@ -1,0 +1,58 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ctl="using:LemonRindAvalonia.Controls"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="980" d:DesignHeight="820"
+        x:Class="LemonRindAvalonia.Views.UsageWindow"
+        Icon="/Assets/AppIcon.ico" Title="Usage" Width="980" Height="820" MinWidth="640" MinHeight="400"
+        WindowStartupLocation="CenterOwner" Background="{DynamicResource PaneBg}">
+
+    <ScrollViewer>
+        <StackPanel Margin="20" Spacing="10">
+            <TextBlock Text="Usage" FontSize="22" FontWeight="SemiBold" />
+            <TextBlock Text="Tokens and speed from the replies this app has saved (chats and scheduled jobs)."
+                       Foreground="{DynamicResource TextMuted}" TextWrapping="Wrap" />
+
+            <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,6,0,0">
+                <ComboBox Name="PeriodBox" MinWidth="130" SelectionChanged="OnFilterChanged" />
+                <ComboBox Name="ModelBox" MinWidth="280" SelectionChanged="OnFilterChanged" />
+                <CheckBox Name="ScheduledBox" Content="Include scheduled jobs" IsChecked="True" IsCheckedChanged="OnFilterChanged" />
+            </StackPanel>
+
+            <TextBlock Name="EmptyText" Text="No replies with numbers in this period." IsVisible="False"
+                       Foreground="{DynamicResource TextMuted}" Margin="0,16" />
+
+            <StackPanel Name="ReportPanel" Spacing="10">
+                <WrapPanel Name="TilesPanel" Margin="0,6" />
+
+                <TextBlock Name="TokensTitle" FontWeight="SemiBold" Margin="0,8,0,0" />
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Border Width="12" Height="12" CornerRadius="2" Background="#1976D2" VerticalAlignment="Center" />
+                    <TextBlock Text="Tokens in" FontSize="12" Foreground="{DynamicResource TextMuted}" />
+                    <Border Width="12" Height="12" CornerRadius="2" Background="#26A69A" Margin="10,0,0,0" VerticalAlignment="Center" />
+                    <TextBlock Text="Tokens out" FontSize="12" Foreground="{DynamicResource TextMuted}" />
+                </StackPanel>
+                <Border Background="{DynamicResource CardBg}" BorderBrush="{DynamicResource BorderBrushLight}" BorderThickness="1" CornerRadius="10">
+                    <ctl:UsageChart Name="TokenChart" Height="220" />
+                </Border>
+
+                <TextBlock Text="Speed (tokens per second)" FontWeight="SemiBold" Margin="0,8,0,0" />
+                <Border Background="{DynamicResource CardBg}" BorderBrush="{DynamicResource BorderBrushLight}" BorderThickness="1" CornerRadius="10">
+                    <ctl:UsageChart Name="SpeedChart" ShowSpeed="True" Height="170" />
+                </Border>
+
+                <TextBlock Text="By model" FontWeight="SemiBold" Margin="0,8,0,0" />
+                <StackPanel Name="ModelsHost" />
+
+                <TextBlock Text="Tools" FontWeight="SemiBold" Margin="0,8,0,0" />
+                <StackPanel Name="ToolsHost" />
+
+                <TextBlock Name="ChatsTitle" Text="Busiest chats" FontWeight="SemiBold" Margin="0,8,0,0" />
+                <StackPanel Name="ChatsHost" />
+
+                <StackPanel Name="NotesHost" Spacing="4" Margin="0,8,0,0" />
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</Window>

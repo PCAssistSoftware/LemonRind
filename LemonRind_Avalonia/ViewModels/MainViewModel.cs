@@ -39,6 +39,7 @@ public partial class MainViewModel : ObservableObject
     private readonly RunningJobTracker _runningJobs;
     private readonly Func<SettingsWindow> _settingsWindowFactory;
     private readonly Func<LogViewerWindow> _logViewerWindowFactory;
+    private readonly Func<UsageWindow> _usageWindowFactory;
     private readonly AppSettings _settings;
     private readonly ImageAttachmentService _imageAttachmentService;
     private readonly ImageGenerationService _imageGenerationService;
@@ -438,6 +439,7 @@ public partial class MainViewModel : ObservableObject
         RunningJobTracker runningJobs,
         Func<SettingsWindow> settingsWindowFactory,
         Func<LogViewerWindow> logViewerWindowFactory,
+        Func<UsageWindow> usageWindowFactory,
         AppSettings settings,
         ImageAttachmentService imageAttachmentService,
         ImageGenerationService imageGenerationService,
@@ -456,6 +458,7 @@ public partial class MainViewModel : ObservableObject
         _runningJobs = runningJobs;
         _settingsWindowFactory = settingsWindowFactory;
         _logViewerWindowFactory = logViewerWindowFactory;
+        _usageWindowFactory = usageWindowFactory;
         _settings = settings;
         _imageAttachmentService = imageAttachmentService;
         _imageGenerationService = imageGenerationService;
@@ -565,6 +568,22 @@ public partial class MainViewModel : ObservableObject
     /// <summary>Opens a non-modal LogViewerWindow (Transient in DI) streaming Lemonade's own logs - meant to sit open alongside the main window, not block it.</summary>
     [RelayCommand]
     private void OpenLogViewer() => _logViewerWindowFactory().Show();
+
+    /// <summary>Opens the usage screen (not modal). Clicking one of its "Busiest chats" opens that chat here.</summary>
+    [RelayCommand]
+    private void OpenUsage()
+    {
+        var window = _usageWindowFactory();
+        window.OpenChat = OpenChatById;
+        window.Show();
+    }
+
+    private void OpenChatById(string sessionId)
+    {
+        if (!string.IsNullOrEmpty(SearchText)) SearchText = ""; // a search could be hiding it
+        var session = Sessions.FirstOrDefault(s => s.Id == sessionId);
+        if (session is not null) SelectedSession = session;
+    }
 
     /// <summary>Reloads KnowledgeBases from the database, preserving the current selection by Id if it still exists (falls back to the "(none)" placeholder otherwise).</summary>
     private void RefreshKnowledgeBases()
@@ -1425,6 +1444,7 @@ public partial class MainViewModel : ObservableObject
             var fullReasoning = new StringBuilder();
             var wasCancelled = false;
             ChatFinishReason? finishReason = null; // how the reply ended: "length" means it hit the output limit
+            var usage = TurnUsage.Begin(); // collects what this turn cost (every model request it makes), saved with the reply for the usage screen
 
             try
             {
@@ -1575,7 +1595,8 @@ public partial class MainViewModel : ObservableObject
             _history.Add(new ChatMessage(ChatRole.Assistant, replyText));
             _sessionRepository.SaveMessage(_currentSessionId, ChatRole.Assistant.Value, replyText,
                 reasoningContent: fullReasoning.Length > 0 ? fullReasoning.ToString() : null,
-                toolCalls: assistantBubble.ToolCalls.Count > 0 ? ToolCallResult.SerializeForStorage(assistantBubble.ToolCalls) : null);
+                toolCalls: assistantBubble.ToolCalls.Count > 0 ? ToolCallResult.SerializeForStorage(assistantBubble.ToolCalls) : null,
+                stats: usage.Close());
             RefreshSessions();
 
             // Auto-tagging - marks a deliberate, notable action worth being
