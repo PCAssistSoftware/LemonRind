@@ -165,7 +165,14 @@ Namespace Modules
 
             ' Async Function As Task, because VB's Async cannot return a ValueTask directly.
             Private Async Function InvokeAndShortenAsync(arguments As AIFunctionArguments, cancellationToken As CancellationToken) As Task(Of Object)
-                Dim result = Await MyBase.InvokeCoreAsync(arguments, cancellationToken)
+                Dim result As Object
+                Try
+                    result = Await MyBase.InvokeCoreAsync(arguments, cancellationToken)
+                Catch ex As Exception When Not cancellationToken.IsCancellationRequested
+                    Services.TurnUsage.Current?.AddToolCall(Name, True) ' counted on the usage screen
+                    Throw
+                End Try
+                Services.TurnUsage.Current?.AddToolCall(Name, False)
                 Return _holder.Shorten(result)
             End Function
         End Class

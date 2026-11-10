@@ -258,6 +258,25 @@ Namespace Data
                     End If
                 End Using
 
+                ' The numbers behind a reply, for the usage screen: which model answered and what the turn cost. Null on replies
+                ' saved before these columns existed (and on any message that is not a model reply). Same guarded
+                ' migration pattern as above.
+                For Each columnInfo In {("Model", "TEXT NULL"), ("InputTokens", "INTEGER NULL"), ("OutputTokens", "INTEGER NULL"), ("TokensPerSecond", "REAL NULL"), ("TimeToFirstToken", "REAL NULL")}
+                    Using checkCommand = connection.CreateCommand()
+                        checkCommand.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('Messages') WHERE name = '{columnInfo.Item1}';"
+                        If CLng(checkCommand.ExecuteScalar()) = 0 Then
+                            Using alterCommand = connection.CreateCommand()
+                                alterCommand.CommandText = $"ALTER TABLE Messages ADD COLUMN {columnInfo.Item1} {columnInfo.Item2};"
+                                alterCommand.ExecuteNonQuery()
+                            End Using
+                        End If
+                    End Using
+                Next
+                Using indexCommand = connection.CreateCommand()
+                    indexCommand.CommandText = "CREATE INDEX IF NOT EXISTS IX_Messages_Usage ON Messages(CreatedAt) WHERE InputTokens IS NOT NULL;"
+                    indexCommand.ExecuteNonQuery()
+                End Using
+
                 ' Collapsible sidebar folders - the synthetic "Unfiled"
                 ' bucket has no real Folders row, so it's never collapsible;
                 ' only real folders persist this. Same guarded migration

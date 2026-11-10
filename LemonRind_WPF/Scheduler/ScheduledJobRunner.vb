@@ -96,6 +96,7 @@ Namespace Scheduler
             Dim maxToolRounds = limits.MaxToolRounds
             Dim chatClient = _chatClientFactory.CreateChatClient(maxToolRounds)
             Dim stopwatch = Diagnostics.Stopwatch.StartNew()
+            Dim usage = TurnUsage.Begin() ' collects what the whole run cost (every model request and tool call), saved with the reply for the usage screen
 
             ' Plain job.Name, not a "SCHEDULED: " prefix - the "scheduled"
             ' tag (below) is what identifies a scheduled session in the
@@ -372,7 +373,8 @@ Namespace Scheduler
                 jobFailed = True
             End If
 
-            _sessionRepository.SaveMessage(sessionId, ChatRole.Assistant.Value, replyText, reasoningContent:="")
+            _sessionRepository.SaveMessage(sessionId, ChatRole.Assistant.Value, replyText, reasoningContent:="",
+                toolCalls:=usage.ToolCallsForStorage(), stats:=usage.Close())
             _notifier.RaiseSessionUpdated(sessionId)
 
             For Each note In notes

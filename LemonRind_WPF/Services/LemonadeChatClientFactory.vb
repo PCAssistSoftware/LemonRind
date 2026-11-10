@@ -19,9 +19,11 @@ Namespace Services
     Public Class LemonadeChatClientFactory
 
         Private ReadOnly _settings As LemonadeSettings
+        Private ReadOnly _management As LemonadeManagementClient
 
-        Public Sub New(settings As AppSettings)
+        Public Sub New(settings As AppSettings, management As LemonadeManagementClient)
             _settings = settings.Lemonade
+            _management = management
         End Sub
 
         ' A single completion against a local model can legitimately take
@@ -91,6 +93,7 @@ Namespace Services
                     client.IncludeDetailedErrors = True
                     client.MaximumIterationsPerRequest = maxToolRounds
                 End Sub).
+                Use(Function(inner) New UsageTrackingChatClient(inner, _management)).
                 Build()
         End Function
 

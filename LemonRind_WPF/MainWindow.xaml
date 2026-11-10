@@ -1527,6 +1527,13 @@
                  element) switches with the active tab, same converter/
                  pattern the two scrollable sections above already use. -->
             <StackPanel Grid.Row="2" Margin="0,12,0,0">
+                <Button Command="{Binding OpenUsageCommand}" Style="{StaticResource PillButtonStyle}" Margin="0,0,0,6"
+                        Visibility="{Binding RightPanelTab, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=Stats}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE9D2;" FontFamily="Segoe MDL2 Assets" FontSize="12" Margin="0,0,6,0" />
+                        <TextBlock Text="View usage" FontSize="13" />
+                    </StackPanel>
+                </Button>
                 <Button Command="{Binding OpenLogViewerCommand}" Style="{StaticResource PillButtonStyle}"
                         Visibility="{Binding RightPanelTab, Converter={StaticResource SectionVisibilityConverter}, ConverterParameter=Stats}">
                     <StackPanel Orientation="Horizontal">

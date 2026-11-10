@@ -742,6 +742,9 @@ Namespace ViewModels
         ''' <summary>Header button next to the health indicator - opens a non-modal LogViewerWindow streaming Lemonade's own logs.</summary>
         Public ReadOnly Property OpenLogViewerCommand As IRelayCommand
 
+        ''' <summary>Right panel button - opens the usage screen (not modal). Clicking one of its "Busiest chats" opens that chat here.</summary>
+        Public ReadOnly Property OpenUsageCommand As IRelayCommand
+
         ''' <summary>Button next to the model dropdown - opens ModelDetailsDialog for whichever model is currently selected.</summary>
         Public ReadOnly Property OpenModelDetailsCommand As IAsyncRelayCommand
 
@@ -768,6 +771,7 @@ Namespace ViewModels
 
         Private ReadOnly _settingsWindowFactory As Func(Of SettingsWindow)
         Private ReadOnly _logViewerWindowFactory As Func(Of LogViewerWindow)
+        Private ReadOnly _usageWindowFactory As Func(Of UsageWindow)
         Private ReadOnly _schedulerNotifier As SchedulerNotifier
         Private ReadOnly _runningJobs As RunningJobTracker
         Private ReadOnly _imageGenerationService As ImageGenerationService
@@ -775,7 +779,7 @@ Namespace ViewModels
         Private ReadOnly _imageAttachmentService As ImageAttachmentService
         Private ReadOnly _connectionRetryTimer As DispatcherTimer
 
-        Public Sub New(chatClient As IChatClient, moduleRegistry As ModuleRegistry, managementClient As LemonadeManagementClient, sessionRepository As ChatSessionRepository, memoryService As MemoryService, compactionService As ConversationCompactionService, knowledgeRepository As KnowledgeRepository, knowledgeService As KnowledgeService, appSettings As AppSettings, settingsWindowFactory As Func(Of SettingsWindow), schedulerNotifier As SchedulerNotifier, runningJobs As RunningJobTracker, imageGenerationService As ImageGenerationService, logViewerWindowFactory As Func(Of LogViewerWindow), imageAttachmentService As ImageAttachmentService)
+        Public Sub New(chatClient As IChatClient, moduleRegistry As ModuleRegistry, managementClient As LemonadeManagementClient, sessionRepository As ChatSessionRepository, memoryService As MemoryService, compactionService As ConversationCompactionService, knowledgeRepository As KnowledgeRepository, knowledgeService As KnowledgeService, appSettings As AppSettings, settingsWindowFactory As Func(Of SettingsWindow), schedulerNotifier As SchedulerNotifier, runningJobs As RunningJobTracker, imageGenerationService As ImageGenerationService, logViewerWindowFactory As Func(Of LogViewerWindow), usageWindowFactory As Func(Of UsageWindow), imageAttachmentService As ImageAttachmentService)
             _chatClient = chatClient
             _moduleRegistry = moduleRegistry
             _managementClient = managementClient
@@ -794,6 +798,7 @@ Namespace ViewModels
             _imageGenerationService = imageGenerationService
             _imageGenSettings = appSettings.ImageGen
             _logViewerWindowFactory = logViewerWindowFactory
+            _usageWindowFactory = usageWindowFactory
             _imageAttachmentService = imageAttachmentService
             ' A scheduled job fires on the poller's own thread pool thread
             ' (SchedulerModule's Timer), not the UI thread - RefreshSessions()
@@ -829,6 +834,7 @@ Namespace ViewModels
             StopCommand = New RelayCommand(AddressOf StopGeneration, AddressOf CanStop)
             OpenSettingsCommand = New RelayCommand(AddressOf OpenSettings)
             OpenLogViewerCommand = New RelayCommand(AddressOf OpenLogViewer)
+            OpenUsageCommand = New RelayCommand(AddressOf OpenUsage)
             OpenModelDetailsCommand = New AsyncRelayCommand(AddressOf OpenModelDetailsAsync)
             RetryConnectionCommand = New AsyncRelayCommand(AddressOf RefreshAvailableModelsAsync)
             OpenSystemPromptCommand = New AsyncRelayCommand(AddressOf OpenSystemPromptAsync)
@@ -868,6 +874,19 @@ Namespace ViewModels
             Dim logViewerWindow = _logViewerWindowFactory()
             logViewerWindow.Owner = Application.Current.MainWindow
             logViewerWindow.Show()
+        End Sub
+
+        Private Sub OpenUsage()
+            Dim usageWindow = _usageWindowFactory()
+            usageWindow.Owner = Application.Current.MainWindow
+            usageWindow.OpenChat = AddressOf OpenChatById
+            usageWindow.Show()
+        End Sub
+
+        Private Sub OpenChatById(sessionId As String)
+            If Not String.IsNullOrEmpty(SearchText) Then SearchText = "" ' a search could be hiding it
+            Dim session = Sessions.FirstOrDefault(Function(s) s.Id = sessionId)
+            If session IsNot Nothing Then SelectedSession = session
         End Sub
 
         ''' <summary>
@@ -2534,6 +2553,7 @@ Namespace ViewModels
                 Dim wasCancelled = False
                 Dim errorMessage As String = Nothing
                 Dim finishReason As ChatFinishReason? = Nothing
+                Dim usage = TurnUsage.Begin() ' collects what this turn cost (every model request it makes), saved with the reply for the usage screen
                 Const maxAttempts = 2
                 Dim attempt = 1
                 While attempt <= maxAttempts
@@ -2637,7 +2657,7 @@ Namespace ViewModels
                 Dim textToPersist = If(String.IsNullOrWhiteSpace(fullReplyText), assistantBubble.Text, fullReplyText)
                 _history.Add(New ChatMessage(ChatRole.Assistant, textToPersist))
                 _sessionRepository.SaveMessage(_currentSessionId, ChatRole.Assistant.Value, textToPersist, assistantBubble.ReasoningText,
-                    toolCalls:=ToolCallResult.SerializeForStorage(assistantBubble.ToolCalls))
+                    toolCalls:=ToolCallResult.SerializeForStorage(assistantBubble.ToolCalls), stats:=usage.Close())
 
                 ' Auto-tagging - a chat model calling generate_image
                 ' mid-conversation still tags the session "image", same as

@@ -83,6 +83,9 @@ Class Application
         ' per run, and MainViewModel shouldn't be handed the whole
         ' IServiceProvider just to create one).
         builder.Services.AddSingleton(Of LemonadeLogClient)()
+        builder.Services.AddTransient(Of UsageWindow)()
+        builder.Services.AddSingleton(Of Func(Of UsageWindow))(
+            Function(sp) Function() sp.GetRequiredService(Of UsageWindow)())
         builder.Services.AddTransient(Of LogViewerWindow)()
         builder.Services.AddSingleton(Of Func(Of LogViewerWindow))(
             Function(sp) Function() sp.GetRequiredService(Of LogViewerWindow)())

@@ -153,20 +153,27 @@ Namespace Data
         ''' export can show them for any session, not just the
         ''' currently-open one.
         ''' </summary>
-        Public Sub SaveMessage(sessionId As String, role As String, content As String, reasoningContent As String, Optional toolCalls As String = Nothing)
+        Public Sub SaveMessage(sessionId As String, role As String, content As String, reasoningContent As String, Optional toolCalls As String = Nothing, Optional stats As Services.TurnStats = Nothing)
             Dim now = DateTime.UtcNow.ToString("o")
 
             Using connection = _database.OpenConnection()
                 Using command = connection.CreateCommand()
                     command.CommandText = "
-                        INSERT INTO Messages (SessionId, Role, Content, ReasoningContent, ToolCalls, CreatedAt)
-                        VALUES (@sessionId, @role, @content, @reasoningContent, @toolCalls, @now);"
+                        INSERT INTO Messages (SessionId, Role, Content, ReasoningContent, ToolCalls, CreatedAt,
+                                              Model, InputTokens, OutputTokens, TokensPerSecond, TimeToFirstToken)
+                        VALUES (@sessionId, @role, @content, @reasoningContent, @toolCalls, @now,
+                                @model, @inputTokens, @outputTokens, @tokensPerSecond, @timeToFirstToken);"
                     command.Parameters.AddWithValue("@sessionId", sessionId)
                     command.Parameters.AddWithValue("@role", role)
                     command.Parameters.AddWithValue("@content", content)
                     command.Parameters.AddWithValue("@reasoningContent", If(String.IsNullOrEmpty(reasoningContent), CObj(DBNull.Value), reasoningContent))
                     command.Parameters.AddWithValue("@toolCalls", If(String.IsNullOrEmpty(toolCalls), CObj(DBNull.Value), toolCalls))
                     command.Parameters.AddWithValue("@now", now)
+                    command.Parameters.AddWithValue("@model", If(stats Is Nothing OrElse String.IsNullOrEmpty(stats.Model), CObj(DBNull.Value), stats.Model))
+                    command.Parameters.AddWithValue("@inputTokens", If(stats Is Nothing, CObj(DBNull.Value), stats.InputTokens))
+                    command.Parameters.AddWithValue("@outputTokens", If(stats Is Nothing, CObj(DBNull.Value), stats.OutputTokens))
+                    command.Parameters.AddWithValue("@tokensPerSecond", If(stats Is Nothing, CObj(DBNull.Value), stats.TokensPerSecond))
+                    command.Parameters.AddWithValue("@timeToFirstToken", If(stats Is Nothing, CObj(DBNull.Value), stats.TimeToFirstToken))
                     command.ExecuteNonQuery()
                 End Using
 
@@ -372,6 +379,75 @@ Namespace Data
                 End Using
             End Using
         End Sub
+
+        ''' <summary>
+        ''' Every saved turn that carries numbers (tokens, speed, wait for the first token), oldest first, for the usage
+        ''' screen. Replies saved before the numbers were recorded have none and are not listed here.
+        ''' </summary>
+        Public Function UsageRequests() As List(Of UsageRequest)
+            Dim results As New List(Of UsageRequest)
+            Using connection = _database.OpenConnection()
+                Using command = connection.CreateCommand()
+                    command.CommandText = "
+                        SELECT m.CreatedAt, m.SessionId, s.Title, m.Model, m.InputTokens, m.OutputTokens, m.TokensPerSecond, m.TimeToFirstToken,
+                               EXISTS (SELECT 1 FROM SessionTags st JOIN Tags t ON t.Id = st.TagId
+                                       WHERE st.SessionId = s.Id AND t.Name = 'scheduled') AS Scheduled
+                        FROM Messages m
+                        JOIN Sessions s ON s.Id = m.SessionId
+                        WHERE m.InputTokens IS NOT NULL
+                        ORDER BY m.CreatedAt;"
+                    Using reader = command.ExecuteReader()
+                        While reader.Read()
+                            results.Add(New UsageRequest(
+                                ParseUtc(reader.GetString(0)),
+                                reader.GetString(1),
+                                reader.GetString(2),
+                                If(reader.IsDBNull(3), Nothing, reader.GetString(3)),
+                                reader.GetInt32(4),
+                                If(reader.IsDBNull(5), 0, reader.GetInt32(5)),
+                                If(reader.IsDBNull(6), 0.0, reader.GetDouble(6)),
+                                If(reader.IsDBNull(7), 0.0, reader.GetDouble(7)),
+                                reader.GetInt32(8) <> 0))
+                        End While
+                    End Using
+                End Using
+            End Using
+            Return results
+        End Function
+
+        ''' <summary>
+        ''' Every saved tool call, with its name and whether it failed, for the usage screen. A reply stores its calls as
+        ''' "name:1,name:0" (1 worked, 0 failed; a bare name or ":?" from before outcomes were tracked counts as worked), so
+        ''' the whole history is included, whether or not the model's name was recorded.
+        ''' </summary>
+        Public Function UsageToolUses() As List(Of ToolUse)
+            Dim results As New List(Of ToolUse)
+            Using connection = _database.OpenConnection()
+                Using command = connection.CreateCommand()
+                    command.CommandText = "
+                        SELECT m.CreatedAt, m.Model, m.ToolCalls,
+                               EXISTS (SELECT 1 FROM SessionTags st JOIN Tags t ON t.Id = st.TagId
+                                       WHERE st.SessionId = m.SessionId AND t.Name = 'scheduled') AS Scheduled
+                        FROM Messages m
+                        WHERE m.ToolCalls IS NOT NULL AND m.ToolCalls != ''
+                        ORDER BY m.CreatedAt;"
+                    Using reader = command.ExecuteReader()
+                        While reader.Read()
+                            Dim at = ParseUtc(reader.GetString(0))
+                            Dim model As String = If(reader.IsDBNull(1), Nothing, reader.GetString(1))
+                            Dim scheduled = reader.GetInt32(3) <> 0
+                            For Each stored In reader.GetString(2).Split({","c}, StringSplitOptions.RemoveEmptyEntries)
+                                Dim colon = stored.LastIndexOf(":"c)
+                                Dim name = If(colon < 0, stored, stored.Substring(0, colon))
+                                Dim failed = colon >= 0 AndAlso stored.Substring(colon + 1) = "0"
+                                results.Add(New ToolUse(at, name.Trim(), failed, model, scheduled))
+                            Next
+                        End While
+                    End Using
+                End Using
+            End Using
+            Return results
+        End Function
 
         ''' <summary>All messages in a session, oldest first - ready to rebuild the chat window's history from.</summary>
         Public Function LoadMessages(sessionId As String) As List(Of StoredChatMessage)
