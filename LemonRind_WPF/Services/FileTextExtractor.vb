@@ -15,7 +15,7 @@ Namespace Services
     ''' </summary>
     Public Module FileTextExtractor
 
-        Public ReadOnly SupportedExtensions As String() = {".pdf", ".docx", ".xlsx", ".txt", ".md"}
+        Public ReadOnly SupportedExtensions As String() = {".pdf", ".docx", ".xlsx", ".txt", ".md", ".csv"}
 
         ' A very large document turned into raw text could dwarf the model's
         ' whole context window on its own - capped rather than silently
@@ -50,7 +50,7 @@ Namespace Services
                     text = ExtractDocx(filePath)
                 Case ".xlsx"
                     text = ExtractXlsx(filePath)
-                Case ".txt", ".md"
+                Case ".txt", ".md", ".csv"
                     text = File.ReadAllText(filePath)
                 Case Else
                     Throw New NotSupportedException($"Unsupported file type '{Path.GetExtension(filePath)}' - supported: {String.Join(", ", SupportedExtensions)}")

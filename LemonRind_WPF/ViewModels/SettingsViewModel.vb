@@ -1388,7 +1388,7 @@ Namespace ViewModels
             Dim dialog As New Microsoft.Win32.OpenFileDialog With {
                 .Title = "Add files to this knowledge base",
                 .Multiselect = True,
-                .Filter = "Supported files (*.pdf;*.docx;*.xlsx;*.txt;*.md)|*.pdf;*.docx;*.xlsx;*.txt;*.md|All files (*.*)|*.*"
+                .Filter = "Supported files (*.pdf;*.docx;*.xlsx;*.txt;*.md;*.csv)|*.pdf;*.docx;*.xlsx;*.txt;*.md;*.csv|All files (*.*)|*.*"
             }
             If dialog.ShowDialog() <> True Then Return
 

@@ -1301,7 +1301,7 @@ Namespace ViewModels
         Private Sub AttachFile()
             Dim dialog As New Microsoft.Win32.OpenFileDialog With {
                 .Title = "Attach a file to analyze in this chat",
-                .Filter = "Supported files (*.pdf;*.docx;*.xlsx;*.txt;*.md;*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp)|*.pdf;*.docx;*.xlsx;*.txt;*.md;*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp|All files (*.*)|*.*"
+                .Filter = "Supported files (*.pdf;*.docx;*.xlsx;*.txt;*.md;*.csv;*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp)|*.pdf;*.docx;*.xlsx;*.txt;*.md;*.csv;*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp|All files (*.*)|*.*"
             }
             If dialog.ShowDialog() <> True Then Return
 
