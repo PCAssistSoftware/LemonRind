@@ -261,3 +261,8 @@
     justify-content: flex-end;
     margin-top: 0.75rem;
 }
+
+.source-note {
+    color: var(--chip-warn-fg);
+    font-size: 0.78rem;
+}

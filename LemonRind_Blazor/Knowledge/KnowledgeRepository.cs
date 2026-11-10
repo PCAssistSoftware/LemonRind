@@ -38,6 +38,9 @@ public class KnowledgeSource
 
     public bool HasPictureText => PictureText.Length > 0;
 
+    /// <summary>A note on a source that is ready but had something left out (pictures the loaded model could not read).</summary>
+    public bool HasNote => Status != "Failed" && ErrorMessage.Length > 0;
+
     /// <summary>Whether "Read again" is offered: a picture that is not being read right now.</summary>
     public bool CanReadAgain => IsPicture && Status != "Ingesting";
 }
@@ -257,12 +260,14 @@ public class KnowledgeRepository(AppDatabase database)
         transaction.Commit();
     }
 
-    public void MarkSourceReady(string sourceId, int chunkCount)
+    /// <summary>The source is searchable. A note (kept in ErrorMessage) says if something in it was left out.</summary>
+    public void MarkSourceReady(string sourceId, int chunkCount, string? note = null)
     {
         using var connection = database.OpenConnection();
         using var command = connection.CreateCommand();
-        command.CommandText = "UPDATE KnowledgeSources SET Status = 'Ready', ChunkCount = @chunkCount, ErrorMessage = NULL WHERE Id = @id;";
+        command.CommandText = "UPDATE KnowledgeSources SET Status = 'Ready', ChunkCount = @chunkCount, ErrorMessage = @note WHERE Id = @id;";
         command.Parameters.AddWithValue("@chunkCount", chunkCount);
+        command.Parameters.AddWithValue("@note", (object?)note ?? DBNull.Value);
         command.Parameters.AddWithValue("@id", sourceId);
         command.ExecuteNonQuery();
     }

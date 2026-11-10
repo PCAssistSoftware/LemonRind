@@ -55,6 +55,10 @@
                         {
                             <span class="source-error" title="@source.ErrorMessage">@source.ErrorMessage</span>
                         }
+                        else if (source.HasNote)
+                        {
+                            <span class="source-note" title="@source.ErrorMessage">@source.ErrorMessage</span>
+                        }
                         @if (source.IsPicture)
                         {
                             // A picture is stored as what a vision model wrote about it: read that, or have it redone.
@@ -299,7 +303,7 @@
     {
         const int maxFiles = 500;
         var supported = e.GetMultipleFiles(maxFiles)
-            .Where(f => Services.FileTextExtractor.IsSupported(f.Name))
+            .Where(f => Services.FileTextExtractor.IsSupported(f.Name) || Services.PictureReader.IsPicture(f.Name))
             .ToList();
         if (supported.Count == 0)
         {

@@ -2218,7 +2218,7 @@
         // bounding it (Lemonade has been seen running a request past 80,000+
         // output tokens with no end in sight), and _sendCts gives the Stop
         // button above something real to cancel.
-        const int maxOutputTokensPerReply = 16384;
+        var maxOutputTokensPerReply = Math.Clamp(Settings.Assistant.MaxReplyTokens, 256, 131072); // Settings > Assistant > Longest reply
         var cts = new CancellationTokenSource();
         _sendCts = cts;
 

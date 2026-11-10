@@ -99,6 +99,9 @@ public class MemorySettings
 public class AssistantSettings
 {
     public string SystemPrompt { get; set; } = "You are a helpful local AI assistant running on the user's own machine.";
+
+    /// <summary>The most the model may write in one chat reply, counting its thinking too (a scheduled job has its own limit).</summary>
+    public int MaxReplyTokens { get; set; } = 32768;
 }
 
 public class PersonaSettings
@@ -212,6 +215,7 @@ public class AppSettings
         target.ImageGen.Seed = ImageGen.Seed;
 
         target.Assistant.SystemPrompt = Assistant.SystemPrompt;
+        target.Assistant.MaxReplyTokens = Assistant.MaxReplyTokens;
 
         target.Persona.Identity = Persona.Identity;
         target.Persona.AboutUser = Persona.AboutUser;

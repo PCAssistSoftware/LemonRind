@@ -5,6 +5,9 @@ namespace LemonRindBlazor.Services;
 /// <summary>A picture could not be read. The message is fit to show the person.</summary>
 public class PictureReadException(string message) : Exception(message);
 
+/// <summary>No loaded model can read pictures right now, so no picture can be read until one is loaded.</summary>
+public class PictureModelException(string message) : PictureReadException(message);
+
 /// <summary>
 /// Reads a picture for a knowledge base: a vision model writes out any text in it and describes what it shows, and that
 /// description is what gets searched (a knowledge base can only search text).
@@ -43,7 +46,7 @@ public class PictureReader(LemonadeManagementClient management, IChatClient chat
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            throw new PictureReadException($"Could not ask Lemonade which model is loaded: {ex.Message}");
+            throw new PictureModelException($"Could not ask Lemonade which model is loaded: {ex.Message}");
         }
 
         var byName = models.GroupBy(m => m.Id, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
@@ -64,9 +67,9 @@ public class PictureReader(LemonadeManagementClient management, IChatClient chat
         var examples = canSee.Count > 0 ? $" Models that can: {string.Join(", ", canSee)}." : "";
         if (chatLoaded.Count > 0)
         {
-            throw new PictureReadException($"The loaded model '{chatLoaded[0]}' cannot read pictures. Load one that can and add the picture again.{examples}");
+            throw new PictureModelException($"The loaded model '{chatLoaded[0]}' cannot read pictures. Load one that can and add the picture again.{examples}");
         }
-        throw new PictureReadException($"No chat model is loaded. Load one that can read pictures and add the picture again.{examples}");
+        throw new PictureModelException($"No chat model is loaded. Load one that can read pictures and add the picture again.{examples}");
     }
 
     /// <summary>The picture as a JPEG of at most 1568 pixels on its longest side (what vision models read well), as bytes.</summary>

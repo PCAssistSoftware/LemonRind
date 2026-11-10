@@ -55,6 +55,8 @@
                 <section class="settings-section">
                     <h3>Assistant</h3>
                     <label>System prompt<textarea @bind="_edited.Assistant.SystemPrompt" rows="3"></textarea></label>
+                    <label>Longest reply (tokens)<input type="number" min="256" max="131072" step="4096" @bind="_edited.Assistant.MaxReplyTokens" /></label>
+                    <p class="settings-help">The most the model may write in one reply, counting its thinking too. A reply that reaches it is cut off (a Continue button appears). A model that thinks a lot needs a bigger number, and a longer reply takes longer to write. Allowed: 256 to 131,072. The default is 32,768. Applies from the next message.</p>
                 </section>
             }
             else if (_selectedSection == "Persona")
@@ -400,6 +402,7 @@
             e.WebSearch.TavilyApiKey = e.WebSearch.TavilyApiKey.Trim();
             e.WebSearch.FirecrawlApiKey = e.WebSearch.FirecrawlApiKey.Trim();
             e.Assistant.SystemPrompt = string.IsNullOrWhiteSpace(e.Assistant.SystemPrompt) ? new AssistantSettings().SystemPrompt : e.Assistant.SystemPrompt.Trim();
+            e.Assistant.MaxReplyTokens = e.Assistant.MaxReplyTokens is >= 256 and <= 131072 ? e.Assistant.MaxReplyTokens : new AssistantSettings().MaxReplyTokens;
             e.Persona.Identity = e.Persona.Identity.Trim();
             e.Persona.AboutUser = e.Persona.AboutUser.Trim();
             e.Persona.Tone = string.IsNullOrWhiteSpace(e.Persona.Tone) ? "Default" : e.Persona.Tone;
