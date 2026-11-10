@@ -205,7 +205,7 @@ public partial class MainWindow : Window
             AllowMultiple = false,
             FileTypeFilter =
             [
-                new FilePickerFileType("Supported files") { Patterns = ["*.pdf", "*.docx", "*.xlsx", "*.txt", "*.md", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.webp"] },
+                new FilePickerFileType("Supported files") { Patterns = ["*.pdf", "*.docx", "*.xlsx", "*.txt", "*.md", "*.csv", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.webp"] },
                 FilePickerFileTypes.All,
             ],
         });

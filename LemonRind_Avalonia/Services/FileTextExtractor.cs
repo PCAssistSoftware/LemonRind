@@ -15,7 +15,7 @@ namespace LemonRindAvalonia.Services;
 /// </summary>
 public static class FileTextExtractor
 {
-    public static readonly string[] SupportedExtensions = [".pdf", ".docx", ".xlsx", ".txt", ".md"];
+    public static readonly string[] SupportedExtensions = [".pdf", ".docx", ".xlsx", ".txt", ".md", ".csv"];
 
     // A very large document turned into raw text could dwarf the model's
     // whole context window on its own - capped rather than silently
@@ -47,7 +47,7 @@ public static class FileTextExtractor
             ".pdf" => ExtractPdf(filePath),
             ".docx" => ExtractDocx(filePath),
             ".xlsx" => ExtractXlsx(filePath),
-            ".txt" or ".md" => File.ReadAllText(filePath),
+            ".txt" or ".md" or ".csv" => File.ReadAllText(filePath),
             _ => throw new NotSupportedException($"Unsupported file type '{Path.GetExtension(filePath)}' - supported: {string.Join(", ", SupportedExtensions)}"),
         };
 
