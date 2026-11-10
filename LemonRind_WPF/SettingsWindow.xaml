@@ -12,6 +12,7 @@
         <converters:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
         <converters:InverseBooleanConverter x:Key="InverseBooleanConverter" />
         <converters:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter" />
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
 
         <!-- Shown at the top of a module-gated section (Image generation/
              MCP Servers/Web search/File system access/Scheduler) when that
