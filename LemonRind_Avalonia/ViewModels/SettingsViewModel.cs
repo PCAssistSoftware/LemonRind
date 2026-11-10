@@ -55,6 +55,20 @@ public partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty] private string _lemonadeBaseUrl = "";
     [ObservableProperty] private string _lemonadeChatModel = "";
+
+    // What Lemonade has downloaded, to warn when the default chat model is not one of them. Empty if Lemonade cannot be reached.
+    private IReadOnlyList<LemonadeModelInfo> _downloadedModels = [];
+
+    /// <summary>A warning under the chat model box when Lemonade does not have that model, else empty.</summary>
+    public string LemonadeChatModelWarning => DefaultModelCheck.WarningFor(LemonadeChatModel, _downloadedModels);
+
+    public bool HasLemonadeChatModelWarning => LemonadeChatModelWarning.Length > 0;
+
+    partial void OnLemonadeChatModelChanged(string value)
+    {
+        OnPropertyChanged(nameof(LemonadeChatModelWarning));
+        OnPropertyChanged(nameof(HasLemonadeChatModelWarning));
+    }
     [ObservableProperty] private string _lemonadeEmbeddingModel = "";
     [ObservableProperty] private string _lemonadeApiKey = "";
 
@@ -166,7 +180,7 @@ public partial class SettingsViewModel : ObservableObject
     // "(use current model)" sentinel, the same convention the
     // WPF app uses, since a job's ModelId is optional (null/empty
     // means "whatever the client defaults to" - see ScheduledJobRunner).
-    public const string UseCurrentModelSentinel = "(use current model)";
+    public const string UseCurrentModelSentinel = "(use the default chat model)";
 
     public ObservableCollection<ScheduledJobRowViewModel> ScheduledJobs { get; } = [];
     public ObservableCollection<string> SchedulerAvailableModels { get; } = [UseCurrentModelSentinel];
@@ -405,6 +419,9 @@ public partial class SettingsViewModel : ObservableObject
         {
             var models = await managementClient.ListDownloadedModelsAsync(CancellationToken.None);
             foreach (var model in models) SchedulerAvailableModels.Add(model.Id);
+            _downloadedModels = models;
+            OnPropertyChanged(nameof(LemonadeChatModelWarning));
+            OnPropertyChanged(nameof(HasLemonadeChatModelWarning));
         }
         catch
         {

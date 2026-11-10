@@ -57,6 +57,8 @@
                         <TextBox Text="{Binding LemonadeBaseUrl}" Margin="0,0,0,8" />
                         <TextBlock Text="Chat model" Foreground="{DynamicResource TextMuted}" FontSize="12" />
                         <TextBox Text="{Binding LemonadeChatModel}" Margin="0,0,0,8" />
+                        <TextBlock Text="{Binding LemonadeChatModelWarning}" IsVisible="{Binding HasLemonadeChatModelWarning}"
+                                   TextWrapping="Wrap" FontSize="12" Foreground="#B45309" Margin="0,-4,0,8" />
                         <TextBlock Text="Embedding model" Foreground="{DynamicResource TextMuted}" FontSize="12" />
                         <TextBox Text="{Binding LemonadeEmbeddingModel}" Margin="0,0,0,8" />
                         <TextBlock Text="API key (optional)" Foreground="{DynamicResource TextMuted}" FontSize="12" />
