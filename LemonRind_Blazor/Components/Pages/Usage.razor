@@ -1,0 +1,258 @@
+@page "/usage"
+@rendermode InteractiveServer
+@using System.Globalization
+@using LemonRindBlazor.Data
+@inject ChatSessionRepository SessionRepository
+
+<PageTitle>Usage - Lemon Rind (Blazor test)</PageTitle>
+
+<div class="usage-page">
+    <div class="usage-inner">
+        <a href="/" class="back-link"><Icon Name="arrow-left" Size="16" /> Back to chat</a>
+        <h2>Usage</h2>
+        <p class="usage-intro">Tokens and speed from the replies this app has saved (chats and scheduled jobs).</p>
+
+        <div class="usage-controls">
+            <div class="period-buttons">
+                @foreach (var (label, _) in Periods)
+                {
+                    <button class="@(label == _period ? "active" : "")" @onclick="() => SetPeriod(label)">@label</button>
+                }
+            </div>
+            <label class="usage-field">
+                Model
+                <select @bind="_model" @bind:after="Rebuild">
+                    <option value="@UsageReports.AllModels">@UsageReports.AllModels</option>
+                    @foreach (var name in _report.AvailableModels)
+                    {
+                        <option value="@name">@name</option>
+                    }
+                </select>
+            </label>
+            <label class="usage-check">
+                <input type="checkbox" @bind="_includeScheduled" @bind:after="Rebuild" /> Include scheduled jobs
+            </label>
+        </div>
+
+        @if (_report.Totals.Requests == 0)
+        {
+            <p class="usage-empty">No replies with numbers in this period.</p>
+        }
+        else
+        {
+            var totals = _report.Totals;
+            <div class="usage-tiles">
+                <div class="usage-tile"><span class="usage-number">@totals.Requests.ToString("N0")</span><span class="usage-caption">Replies</span></div>
+                <div class="usage-tile"><span class="usage-number">@UsageReports.Compact(totals.InputTokens)</span><span class="usage-caption">Tokens in</span></div>
+                <div class="usage-tile"><span class="usage-number">@UsageReports.Compact(totals.OutputTokens)</span><span class="usage-caption">Tokens out</span></div>
+                <div class="usage-tile"><span class="usage-number">@(totals.TokensPerSecond > 0 ? $"{totals.TokensPerSecond:0} tok/s" : "-")</span><span class="usage-caption">Average speed</span></div>
+                <div class="usage-tile"><span class="usage-number">@(totals.TimeToFirstToken > 0 ? $"{totals.TimeToFirstToken:0.0} s" : "-")</span><span class="usage-caption">Average first token</span></div>
+            </div>
+
+            <h3>Tokens per @_report.BucketKind</h3>
+            <div class="usage-legend"><span class="swatch in"></span> Tokens in <span class="swatch out"></span> Tokens out</div>
+            <svg class="usage-chart" viewBox="0 0 @ChartWidth @ChartHeight" role="img" aria-label="Tokens per @_report.BucketKind">
+                @{ var tokenMax = NiceMax(_report.Buckets.Max(b => b.InputTokens + b.OutputTokens)); }
+                @foreach (var tick in new[] { 0.0, 0.5, 1.0 })
+                {
+                    var y = PlotTop + PlotHeight * (1 - tick);
+                    <line class="grid" x1="@PlotLeft" x2="@(ChartWidth - PlotRight)" y1="@Num(y)" y2="@Num(y)" />
+                    @AxisLabel((PlotLeft - 6), Num(y + 4), "end", UsageReports.Compact(tokenMax * tick))
+                }
+                @for (var i = 0; i < _report.Buckets.Count; i++)
+                {
+                    var bucket = _report.Buckets[i];
+                    var slot = PlotWidth / _report.Buckets.Count;
+                    var barWidth = Math.Max(2, slot * 0.7);
+                    var x = PlotLeft + slot * i + (slot - barWidth) / 2;
+                    var inHeight = PlotHeight * bucket.InputTokens / tokenMax;
+                    var outHeight = PlotHeight * bucket.OutputTokens / tokenMax;
+                    <g>
+                        <title>@bucket.Label: @bucket.InputTokens.ToString("N0") in, @bucket.OutputTokens.ToString("N0") out</title>
+                        <rect class="bar-in" x="@Num(x)" y="@Num(PlotTop + PlotHeight - inHeight)" width="@Num(barWidth)" height="@Num(inHeight)" />
+                        <rect class="bar-out" x="@Num(x)" y="@Num(PlotTop + PlotHeight - inHeight - outHeight)" width="@Num(barWidth)" height="@Num(outHeight)" />
+                    </g>
+                    @if (i % LabelStep == 0)
+                    {
+                        @AxisLabel(Num(PlotLeft + slot * i + slot / 2), (ChartHeight - 6), "middle", bucket.Label)
+                    }
+                }
+            </svg>
+
+            <h3>Speed (tokens per second)</h3>
+            <svg class="usage-chart short" viewBox="0 0 @ChartWidth @SpeedChartHeight" role="img" aria-label="Tokens per second">
+                @{
+                    var speedMax = NiceMax(_report.Buckets.Max(b => b.TokensPerSecond));
+                    var speedHeight = SpeedChartHeight - PlotTop - 24;
+                    var points = new List<(double X, double Y, UsageBucket Bucket)>();
+                    for (var i = 0; i < _report.Buckets.Count; i++)
+                    {
+                        var b = _report.Buckets[i];
+                        if (b.TokensPerSecond <= 0) continue; // a period with no replies has no speed: the line bridges the gap
+                        var slot = PlotWidth / _report.Buckets.Count;
+                        points.Add((PlotLeft + slot * i + slot / 2, PlotTop + speedHeight * (1 - b.TokensPerSecond / speedMax), b));
+                    }
+                }
+                @foreach (var tick in new[] { 0.0, 0.5, 1.0 })
+                {
+                    var y = PlotTop + speedHeight * (1 - tick);
+                    <line class="grid" x1="@PlotLeft" x2="@(ChartWidth - PlotRight)" y1="@Num(y)" y2="@Num(y)" />
+                    @AxisLabel((PlotLeft - 6), Num(y + 4), "end", ((speedMax * tick).ToString("0")))
+                }
+                @if (points.Count > 1)
+                {
+                    <polyline class="speed-line" points="@string.Join(" ", points.Select(p => $"{Num(p.X)},{Num(p.Y)}"))" />
+                }
+                @foreach (var p in points)
+                {
+                    <circle class="speed-dot" cx="@Num(p.X)" cy="@Num(p.Y)" r="3.5"><title>@p.Bucket.Label: @p.Bucket.TokensPerSecond.ToString("0.0") tok/s</title></circle>
+                }
+                @for (var i = 0; i < _report.Buckets.Count; i += LabelStep)
+                {
+                    var slot = PlotWidth / _report.Buckets.Count;
+                    @AxisLabel(Num(PlotLeft + slot * i + slot / 2), (SpeedChartHeight - 6), "middle", _report.Buckets[i].Label)
+                }
+            </svg>
+
+            <h3>By model</h3>
+            <table class="usage-table">
+                <thead><tr><th>Model</th><th>Replies</th><th>Tokens in</th><th>Tokens out</th><th>Avg tok/s</th><th>Avg first token</th><th>Slowest start</th></tr></thead>
+                <tbody>
+                    @foreach (var row in _report.Models)
+                    {
+                        <tr>
+                            <td class="text">@row.Model</td>
+                            <td>@row.Totals.Requests.ToString("N0")</td>
+                            <td>@row.Totals.InputTokens.ToString("N0")</td>
+                            <td>@row.Totals.OutputTokens.ToString("N0")</td>
+                            <td>@(row.Totals.TokensPerSecond > 0 ? row.Totals.TokensPerSecond.ToString("0") : "-")</td>
+                            <td>@(row.Totals.TimeToFirstToken > 0 ? $"{row.Totals.TimeToFirstToken:0.0} s" : "-")</td>
+                            <td>@(row.SlowestStart > 0 ? $"{row.SlowestStart:0.0} s" : "-")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            <h3>Tools</h3>
+            @if (_report.Tools.Count == 0)
+            {
+                <p class="usage-note">No tool calls in this period.</p>
+            }
+            else
+            {
+                <table class="usage-table">
+                    <thead><tr><th>Tool</th><th>Calls</th><th>Failed</th><th>Failure rate</th></tr></thead>
+                    <tbody>
+                        @foreach (var tool in _report.Tools)
+                        {
+                            <tr>
+                                <td class="text">@tool.Name</td>
+                                <td>@tool.Calls.ToString("N0")</td>
+                                <td>@tool.Failed.ToString("N0")</td>
+                                <td>@tool.FailureRate.ToString("0%")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+
+            @if (_report.Chats.Count > 0)
+            {
+                <h3>Busiest chats</h3>
+                <div class="usage-chats">
+                    @foreach (var chat in _report.Chats)
+                    {
+                        <a href="/?chat=@chat.SessionId">@chat.Title <span>(@UsageReports.Compact(chat.Tokens) tokens)</span></a>
+                    }
+                </div>
+            }
+
+            <p class="usage-note">Tokens in is what the model had to process for each request; the part of the conversation it had already stored is not counted again. A reply that uses tools takes several requests, and the numbers for one reply add them all up.</p>
+            <p class="usage-note">Speed is averaged by how long each answer was, so a long answer counts for more than a short one. Speed and first-token time come from Lemonade after each request, so two things running at the same moment can be mixed up.</p>
+            @if (_report.AvailableModels.Contains(UsageReports.UnknownModel))
+            {
+                <p class="usage-note">The model's name and the numbers have been saved since this screen was added; earlier replies are listed as '@UsageReports.UnknownModel' where they have numbers at all. Their tool calls are still counted in the tools table.</p>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private static readonly (string Label, int? Days)[] Periods = [("7 days", 7), ("30 days", 30), ("12 months", 365), ("All time", null)];
+
+    private const double ChartWidth = 900;
+    private const double ChartHeight = 230;
+    private const double SpeedChartHeight = 170;
+    private const double PlotLeft = 56;
+    private const double PlotRight = 12;
+    private const double PlotTop = 12;
+    private const double PlotHeight = ChartHeight - PlotTop - 26;
+    private const double PlotWidth = ChartWidth - PlotLeft - PlotRight;
+
+    private List<UsageRequest> _requests = [];
+    private List<ToolUse> _toolUses = [];
+    private string _period = "30 days";
+    private string _model = UsageReports.AllModels;
+    private bool _includeScheduled = true;
+    private UsageReport _report = new(new UsageTotals(0, 0, 0, 0, 0), "day", [], [], [], [], []);
+
+    // Show about ten labels along the bottom, however many bars there are.
+    private int LabelStep => Math.Max(1, (int)Math.Ceiling(_report.Buckets.Count / 10.0));
+
+    protected override void OnInitialized()
+    {
+        _requests = SessionRepository.UsageRequests();
+        _toolUses = SessionRepository.UsageToolUses();
+        Rebuild();
+    }
+
+    private void SetPeriod(string label)
+    {
+        _period = label;
+        Rebuild();
+    }
+
+    private void Rebuild()
+    {
+        var days = Periods.First(p => p.Label == _period).Days;
+        var tz = TimeZoneInfo.Local;
+        var now = DateTime.UtcNow;
+        DateTime? since = null;
+        if (days is { } d)
+        {
+            // midnight, d calendar days back counting today as one
+            var firstDay = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(now, tz)).AddDays(-(d - 1));
+            since = TimeZoneInfo.ConvertTimeToUtc(firstDay.ToDateTime(TimeOnly.MinValue), tz);
+        }
+
+        var chosen = _model == UsageReports.AllModels ? null : _model;
+        _report = UsageReports.Build(_requests, _toolUses, since, now, tz, chosen, _includeScheduled);
+        if (chosen is not null && !_report.AvailableModels.Contains(chosen))
+        {
+            // the chosen model has no replies in this period: go back to all
+            _model = UsageReports.AllModels;
+            _report = UsageReports.Build(_requests, _toolUses, since, now, tz, null, _includeScheduled);
+        }
+    }
+
+    /// <summary>A round number at or above the largest value, so the chart's top line reads sensibly.</summary>
+    private static double NiceMax(double value)
+    {
+        if (value <= 0) return 1;
+        var magnitude = Math.Pow(10, Math.Floor(Math.Log10(value)));
+        foreach (var step in new[] { 1.0, 2.0, 2.5, 5.0, 10.0 })
+        {
+            if (value <= step * magnitude) return step * magnitude;
+        }
+        return 10 * magnitude;
+    }
+
+    /// <summary>An axis label. Written as markup text because Razor treats a &lt;text&gt; tag as its own keyword.</summary>
+    private static MarkupString AxisLabel(object x, object y, string anchor, string text)
+    {
+        static string N(object v) => Convert.ToString(v, CultureInfo.InvariantCulture) ?? "0";
+        return new MarkupString($"<text class=\"axis\" x=\"{N(x)}\" y=\"{N(y)}\" text-anchor=\"{anchor}\">{System.Net.WebUtility.HtmlEncode(text)}</text>");
+    }
+
+    private static string Num(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+}

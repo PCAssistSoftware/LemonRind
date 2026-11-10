@@ -138,7 +138,17 @@ public class ToolResultHolder(AppSettings settings)
     {
         protected override async ValueTask<object?> InvokeCoreAsync(AIFunctionArguments arguments, CancellationToken cancellationToken)
         {
-            var result = await base.InvokeCoreAsync(arguments, cancellationToken);
+            object? result;
+            try
+            {
+                result = await base.InvokeCoreAsync(arguments, cancellationToken);
+            }
+            catch (Exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                Services.TurnUsage.Current?.AddToolCall(Name, failed: true); // counted on the usage screen
+                throw;
+            }
+            Services.TurnUsage.Current?.AddToolCall(Name, failed: false);
             return holder.Shorten(result);
         }
     }

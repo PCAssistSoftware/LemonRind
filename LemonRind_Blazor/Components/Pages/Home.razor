@@ -410,6 +410,7 @@
                 <button class="pill-button" @onclick="ShowSystemPrompt"><Icon Name="file-text" Size="14" /> View system prompt</button>
                 <button class="pill-button" @onclick="ShowTurnContextAsync"><Icon Name="layers" Size="14" /> View turn context</button>
                 <button class="pill-button" @onclick="ShowToolsSent"><Icon Name="wrench" Size="14" /> View tools sent</button>
+                <a href="/usage" class="pill-button"><Icon Name="bar-chart" Size="14" /> View usage</a>
                 <a href="/logs" class="pill-button"><Icon Name="terminal" Size="14" /> View logs</a>
             }
             else
@@ -1403,6 +1404,10 @@
         _pendingApproval?.Completion.TrySetResult(result);
     }
 
+    /// <summary>?chat=id in the address opens that chat (used by the usage page's "Busiest chats").</summary>
+    [SupplyParameterFromQuery(Name = "chat")]
+    public string? OpenChatId { get; set; }
+
     protected override async Task OnInitializedAsync()
     {
         ApprovalGate.OnPendingRequestChanged += OnPendingApprovalChanged;
@@ -1456,7 +1461,9 @@
         // "new empty chat piles up on every launch" problem.
         if (_sessions.Count > 0)
         {
-            LoadSession(_sessions[0].Id);
+            // A link from the usage page ("Busiest chats") opens that chat instead.
+            var requested = _sessions.FirstOrDefault(s => s.Id == OpenChatId);
+            LoadSession((requested ?? _sessions[0]).Id);
         }
         else
         {
@@ -2238,6 +2245,7 @@
         var wasCancelled = false;
         var hadError = false;
         ChatFinishReason? finishReason = null; // how the reply ended: "length" means it hit the output limit
+        var usage = TurnUsage.Begin(); // collects what this turn cost (every model request it makes), saved with the reply for the usage screen
         var options = new ChatOptions { ModelId = _selectedModel, Tools = ModuleRegistry.GetEnabledTools(), MaxOutputTokens = maxOutputTokensPerReply };
 
         // Prompt-processing progress indicator. llama.cpp's own
@@ -2391,7 +2399,8 @@
             _history.Add(new ChatMessage(ChatRole.Assistant, replyText));
             SessionRepository.SaveMessage(_currentSessionId, ChatRole.Assistant.Value, replyText,
                 reasoningContent: fullReasoning.Length > 0 ? fullReasoning.ToString() : null,
-                toolCalls: assistantMessage.ToolCalls.Count > 0 ? string.Join(",", assistantMessage.ToolCalls.Select(t => t.SerializeForStorage())) : null);
+                toolCalls: assistantMessage.ToolCalls.Count > 0 ? string.Join(",", assistantMessage.ToolCalls.Select(t => t.SerializeForStorage())) : null,
+                stats: usage.Close());
         }
 
         // Auto-tag sidebar refresh. "scheduled" tagging is done in

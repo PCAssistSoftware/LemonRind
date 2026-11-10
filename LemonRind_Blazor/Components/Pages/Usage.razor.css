@@ -1,0 +1,220 @@
+/* The usage page: same grey page and width as Settings. The chart colours work on both themes. */
+.usage-page {
+    min-height: 100vh;
+    box-sizing: border-box;
+    padding: 1.25rem 2rem 3rem;
+    background: var(--pane-bg);
+}
+
+.usage-inner {
+    max-width: 1100px;
+    margin: 0 auto;
+}
+
+.back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.85rem;
+}
+
+.back-link:hover {
+    color: var(--text);
+}
+
+.usage-inner > h2 {
+    font-size: 1.6rem;
+    margin: 1rem 0 0.25rem;
+}
+
+.usage-inner h3 {
+    font-size: 1rem;
+    margin: 1.6rem 0 0.5rem;
+}
+
+.usage-intro {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.usage-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1.25rem;
+    margin: 1rem 0;
+}
+
+.period-buttons {
+    display: inline-flex;
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.period-buttons button {
+    background: var(--surface);
+    color: var(--text);
+    border: none;
+    border-right: 1px solid var(--border-strong);
+    padding: 0.4rem 0.9rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.period-buttons button:last-child {
+    border-right: none;
+}
+
+.period-buttons button.active {
+    background: var(--accent, #1976d2);
+    color: #fff;
+}
+
+.usage-field {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.usage-field select {
+    min-width: 14rem;
+    padding: 0.35rem 0.5rem;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+}
+
+.usage-check {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+}
+
+.usage-tiles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2.5rem;
+    margin: 1.25rem 0;
+}
+
+.usage-tile {
+    display: flex;
+    flex-direction: column;
+}
+
+.usage-number {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #1976d2;
+}
+
+.usage-caption {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
+.usage-legend {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-bottom: 0.25rem;
+}
+
+.swatch {
+    display: inline-block;
+    width: 0.8rem;
+    height: 0.8rem;
+    border-radius: 2px;
+    margin-left: 0.6rem;
+}
+
+.swatch:first-child {
+    margin-left: 0;
+}
+
+.swatch.in { background: #1976d2; }
+.swatch.out { background: #26a69a; }
+
+.usage-chart {
+    width: 100%;
+    height: auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+
+.usage-chart .grid {
+    stroke: rgba(127, 127, 127, 0.25);
+    stroke-width: 1;
+}
+
+.usage-chart .axis {
+    fill: #8a93a2;
+    font-size: 11px;
+}
+
+.usage-chart .bar-in { fill: #1976d2; }
+.usage-chart .bar-out { fill: #26a69a; }
+.usage-chart .speed-line { fill: none; stroke: #f4a300; stroke-width: 2; }
+.usage-chart .speed-dot { fill: #f4a300; }
+
+.usage-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+
+.usage-table th,
+.usage-table td {
+    padding: 0.45rem 0.75rem;
+    text-align: right;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.usage-table th:first-child,
+.usage-table td.text {
+    text-align: left;
+}
+
+.usage-table th {
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.usage-chats {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.2rem;
+}
+
+.usage-chats a {
+    color: var(--text);
+    font-size: 0.88rem;
+}
+
+.usage-chats a span {
+    color: var(--text-muted);
+}
+
+.usage-note,
+.usage-empty {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+
+.usage-empty {
+    padding: 1.5rem 0;
+}

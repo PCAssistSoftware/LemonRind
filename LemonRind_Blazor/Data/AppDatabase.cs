@@ -190,6 +190,15 @@ public class AppDatabase
 
         AddColumnIfMissing(connection, "Sessions", "AttachedKnowledgeBaseId", "TEXT NULL");
         AddColumnIfMissing(connection, "Messages", "ToolCalls", "TEXT NULL");
+
+        // The numbers behind a reply, for the usage screen: which model answered and what the turn cost. Null on replies
+        // saved before these columns existed (and on any message that is not a model reply).
+        AddColumnIfMissing(connection, "Messages", "Model", "TEXT NULL");
+        AddColumnIfMissing(connection, "Messages", "InputTokens", "INTEGER NULL");
+        AddColumnIfMissing(connection, "Messages", "OutputTokens", "INTEGER NULL");
+        AddColumnIfMissing(connection, "Messages", "TokensPerSecond", "REAL NULL");
+        AddColumnIfMissing(connection, "Messages", "TimeToFirstToken", "REAL NULL");
+        Exec(connection, "CREATE INDEX IF NOT EXISTS IX_Messages_Usage ON Messages(CreatedAt) WHERE InputTokens IS NOT NULL;");
         AddColumnIfMissing(connection, "Folders", "IsCollapsed", "INTEGER NOT NULL DEFAULT 0");
 
         Exec(connection, """
