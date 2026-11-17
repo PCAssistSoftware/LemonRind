@@ -1446,6 +1446,8 @@ public partial class MainViewModel : ObservableObject
             ChatFinishReason? finishReason = null; // how the reply ended: "length" means it hit the output limit
             var usage = TurnUsage.Begin(); // collects what this turn cost (every model request it makes), saved with the reply for the usage screen
 
+            var overflowRetried = false;
+        streamAgain:
             try
             {
                 // StripOldImageContent's result, not _history itself - the
@@ -1566,6 +1568,19 @@ public partial class MainViewModel : ObservableObject
                         }
                     }
                 }
+            }
+            catch (Exception ex) when (!overflowRetried && assistantBubble.ToolCalls.Count == 0 && ContextOverflow.IsOverflow(ex))
+            {
+                // Lemonade refused the request as longer than the model's context window. Once, and only while no tool
+                // has run (a retry would run them again), fold the older messages into a summary and ask again.
+                overflowRetried = true;
+                fullReply.Clear();
+                fullReasoning.Clear();
+                assistantBubble.ReasoningText = "";
+                assistantBubble.Text = "";
+                assistantBubble.PromptProgressText = null;
+                if (!await CompactHistoryIfNeededAsync(assistantBubble, cts.Token, force: true)) throw;
+                goto streamAgain;
             }
             catch (OperationCanceledException) when (cts.IsCancellationRequested)
             {
@@ -1882,13 +1897,17 @@ public partial class MainViewModel : ObservableObject
     /// drops them from _history (the visible Messages/persisted transcript
     /// are untouched - only what's sent to the model shrinks).
     /// </summary>
-    private async Task CompactHistoryIfNeededAsync(ChatMessageViewModel assistantBubble, CancellationToken cancellationToken)
+    private async Task<bool> CompactHistoryIfNeededAsync(ChatMessageViewModel assistantBubble, CancellationToken cancellationToken, bool force = false)
     {
-        if (ContextUsageMax <= 0) return;
-        if ((double)ContextUsageCurrent / ContextUsageMax < _settings.Memory.CompactionTriggerPercent / 100.0) return;
+        // force = Lemonade has just refused the request as too long, so the usual "is the context nearly full" test is skipped.
+        if (!force)
+        {
+            if (ContextUsageMax <= 0) return false;
+            if ((double)ContextUsageCurrent / ContextUsageMax < _settings.Memory.CompactionTriggerPercent / 100.0) return false;
+        }
 
         var compactibleCount = _history.Count - 1 - MessagesToKeepAfterCompaction;
-        if (compactibleCount <= 0) return;
+        if (compactibleCount <= 0) return false;
 
         // Shown BEFORE the summarization call below, which is itself a full
         // model round-trip and can take a while - without this, once
@@ -1937,12 +1956,14 @@ public partial class MainViewModel : ObservableObject
             _compactionCount++;
             assistantBubble.SystemNotes.Remove(compactingNote);
             assistantBubble.SystemNotes.Add($"Compacted older messages to save context space · saved ~{tokensSaved:N0} tokens");
+            return true;
         }
         catch
         {
             // Best-effort - a failed compaction attempt just means the next
             // turn's request stays as large as it already was.
             assistantBubble.SystemNotes.Remove(compactingNote);
+            return false;
         }
     }
 
