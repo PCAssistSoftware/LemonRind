@@ -40,6 +40,9 @@
             <TextBlock Text="Size on disk" Style="{StaticResource DetailLabelStyle}" />
             <TextBlock x:Name="SizeText" Style="{StaticResource DetailValueStyle}" />
 
+            <TextBlock x:Name="FitLabelText" Text="Fits in memory" Style="{StaticResource DetailLabelStyle}" Visibility="Collapsed" />
+            <TextBlock x:Name="FitText" Style="{StaticResource DetailValueStyle}" Visibility="Collapsed" />
+
             <TextBlock Text="Backend" Style="{StaticResource DetailLabelStyle}" />
             <TextBlock x:Name="BackendText" Style="{StaticResource DetailValueStyle}" />
 

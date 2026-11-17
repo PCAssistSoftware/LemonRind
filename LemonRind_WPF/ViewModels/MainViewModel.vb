@@ -854,7 +854,45 @@ Namespace ViewModels
                     If Not IsHealthy Then Await RefreshAvailableModelsAsync(CancellationToken.None)
                 End Sub
             _connectionRetryTimer.Start()
+
+            ' How busy the server's machine is: read every few seconds while the Stats tab shows. Nothing (card hidden)
+            ' until a reading arrives, or when Lemonade does not offer the figures.
+            _serverStatsTimer = New DispatcherTimer With {.Interval = TimeSpan.FromSeconds(3)}
+            AddHandler _serverStatsTimer.Tick, Async Sub(sender, e) Await RefreshServerLoadAsync()
+            _serverStatsTimer.Start()
         End Sub
+
+        Private ReadOnly _serverStatsTimer As DispatcherTimer
+        Private _isReadingServerLoad As Boolean
+
+        Private _serverLoad As ServerLoadViewModel
+        Public Property ServerLoad As ServerLoadViewModel
+            Get
+                Return _serverLoad
+            End Get
+            Set(value As ServerLoadViewModel)
+                If SetProperty(_serverLoad, value) Then OnPropertyChanged(NameOf(HasServerLoad))
+            End Set
+        End Property
+
+        Public ReadOnly Property HasServerLoad As Boolean
+            Get
+                Return _serverLoad IsNot Nothing
+            End Get
+        End Property
+
+        Private Async Function RefreshServerLoadAsync() As Task
+            If RightPanelTab <> "Stats" OrElse _isReadingServerLoad Then Return
+            _isReadingServerLoad = True
+            Try
+                Dim stats = Await _managementClient.GetSystemStatsAsync(CancellationToken.None)
+                ServerLoad = If(stats Is Nothing, Nothing, New ServerLoadViewModel(stats))
+            Catch
+                ServerLoad = Nothing
+            Finally
+                _isReadingServerLoad = False
+            End Try
+        End Function
 
         Private Sub OpenSettings()
             Dim settingsWindow = _settingsWindowFactory()
@@ -919,11 +957,27 @@ Namespace ViewModels
                 ' nothing more real to show in that case.
                 Dim realOrMaxContextWindow = If(loadedInfo?.RecipeOptions?.CtxSize, modelInfo.MaxContextWindow)
 
+                Dim systemStats As LemonadeSystemStats = Nothing
+                Dim ramGb As Double? = Nothing
+                Try
+                    systemStats = Await _managementClient.GetSystemStatsAsync(CancellationToken.None)
+                Catch
+                End Try
+                ' No graphics chip reported: main memory is the limit, so ask for it.
+                If systemStats Is Nothing OrElse systemStats.PrimaryGpu Is Nothing Then
+                    Try
+                        ramGb = Await _managementClient.GetPhysicalMemoryGbAsync(CancellationToken.None)
+                    Catch
+                    End Try
+                End If
+                Dim memoryFit = MemoryFitCheck.Assess(modelInfo.SizeGb, systemStats, ramGb)
+
                 ModelDetailsDialog.Show(
                     modelInfo.Id, modelInfo.Labels, realOrMaxContextWindow, modelInfo.SizeGb, modelInfo.Recipe,
                     isCurrentlyLoaded:=loadedInfo IsNot Nothing,
                     device:=loadedInfo?.Device,
-                    llamacppArgs:=loadedInfo?.RecipeOptions?.LlamacppArgs)
+                    llamacppArgs:=loadedInfo?.RecipeOptions?.LlamacppArgs,
+                    memoryFit:=memoryFit)
             Catch ex As Exception
                 StatusText = $"Couldn't load model details: {ex.Message}"
             End Try

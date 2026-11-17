@@ -1394,6 +1394,42 @@
                              real running total the app accumulates itself
                              turn by turn, kept as its own subsection rather
                              than folded into the same grid. -->
+                        <Border Background="#F5F5F5" CornerRadius="8" Padding="10" Margin="0,0,0,10"
+                                Visibility="{Binding HasServerLoad, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <StackPanel>
+                                <TextBlock Text="Lemonade server" Foreground="Gray" FontSize="12" Margin="0,0,0,6" />
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="Processor" FontSize="11" />
+                                <TextBlock Grid.Column="1" Text="{Binding ServerLoad.CpuText, Mode=OneWay}" FontSize="11" Foreground="Gray" />
+                            </Grid>
+                            <ProgressBar Minimum="0" Maximum="100" Height="6" Margin="0,2,0,6" Value="{Binding ServerLoad.CpuPercent, Mode=OneWay}" />
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="Graphics" FontSize="11" />
+                                <TextBlock Grid.Column="1" Text="{Binding ServerLoad.GraphicsText, Mode=OneWay}" FontSize="11" Foreground="Gray" />
+                            </Grid>
+                            <ProgressBar Minimum="0" Maximum="100" Height="6" Margin="0,2,0,6" Value="{Binding ServerLoad.GraphicsPercent, Mode=OneWay}" />
+                            <StackPanel Visibility="{Binding ServerLoad.HasNpu, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="NPU" FontSize="11" />
+                                <TextBlock Grid.Column="1" Text="{Binding ServerLoad.NpuText, Mode=OneWay}" FontSize="11" Foreground="Gray" />
+                            </Grid>
+                            <ProgressBar Minimum="0" Maximum="100" Height="6" Margin="0,2,0,6" Value="{Binding ServerLoad.NpuPercent, Mode=OneWay}" />
+                            </StackPanel>
+                            <StackPanel Visibility="{Binding ServerLoad.HasGraphicsMemory, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="{Binding ServerLoad.GraphicsMemoryLabel, Mode=OneWay}" FontSize="11" />
+                                <TextBlock Grid.Column="1" Text="{Binding ServerLoad.GraphicsMemoryText, Mode=OneWay}" FontSize="11" Foreground="Gray" />
+                            </Grid>
+                            <ProgressBar Minimum="0" Maximum="100" Height="6" Margin="0,2,0,6" Value="{Binding ServerLoad.GraphicsMemoryPercent, Mode=OneWay}" />
+                            </StackPanel>
+                                <TextBlock Text="{Binding ServerLoad.MemoryNote, Mode=OneWay}" Foreground="Gray" FontSize="10"
+                                           Visibility="{Binding ServerLoad.HasMemoryNote, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                            </StackPanel>
+                        </Border>
                         <TextBlock Text="Last reply" Foreground="Gray" FontSize="12" Margin="0,0,0,8" />
                         <!-- One card per row - three across would be too
                              cramped, especially once labels wrap to two

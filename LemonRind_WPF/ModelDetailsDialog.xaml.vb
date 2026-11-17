@@ -24,13 +24,28 @@ Class ModelDetailsDialog
     Public Shared Shadows Sub Show(modelId As String, labels As IEnumerable(Of String), maxContextWindow As Integer,
                                     sizeGb As Double, recipe As String, isCurrentlyLoaded As Boolean,
                                     device As String, llamacppArgs As String,
-                                    Optional owner As Window = Nothing)
+                                    Optional owner As Window = Nothing,
+                                    Optional memoryFit As LemonRind.Services.MemoryFit = Nothing)
         Dim dialog As New ModelDetailsDialog()
         dialog.ModelIdText.Text = modelId
         dialog.LabelsText.Text = If(labels IsNot Nothing AndAlso labels.Any(), String.Join(", ", labels), "(none reported)")
         dialog.ContextWindowText.Text = If(maxContextWindow > 0, $"{maxContextWindow:N0} tokens", "(unknown)")
         dialog.SizeText.Text = If(sizeGb > 0, $"{sizeGb:N1} GB", "(unknown)")
         dialog.BackendText.Text = If(String.IsNullOrEmpty(recipe), "(unknown)", recipe)
+
+        If memoryFit IsNot Nothing Then
+            dialog.FitLabelText.Visibility = Visibility.Visible
+            dialog.FitText.Visibility = Visibility.Visible
+            dialog.FitText.Text = memoryFit.Message
+            Select Case memoryFit.Verdict
+                Case LemonRind.Services.MemoryFitVerdict.Fits
+                    dialog.FitText.Foreground = Media.Brushes.SeaGreen
+                Case LemonRind.Services.MemoryFitVerdict.Tight
+                    dialog.FitText.Foreground = Media.Brushes.DarkOrange
+                Case LemonRind.Services.MemoryFitVerdict.TooBig
+                    dialog.FitText.Foreground = Media.Brushes.Firebrick
+            End Select
+        End If
 
         If isCurrentlyLoaded AndAlso Not String.IsNullOrEmpty(llamacppArgs) Then
             dialog.RuntimeDetailPanel.Visibility = Visibility.Visible

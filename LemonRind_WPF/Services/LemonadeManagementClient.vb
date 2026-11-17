@@ -229,6 +229,17 @@ Namespace Services
             Return Await _httpClient.GetFromJsonAsync(Of LemonadeStatsInfo)("stats", cancellationToken)
         End Function
 
+        ''' <summary>How busy the server's machine is right now (processor, graphics, memory, NPU).</summary>
+        Public Async Function GetSystemStatsAsync(cancellationToken As CancellationToken) As Task(Of LemonadeSystemStats)
+            Return Await _httpClient.GetFromJsonAsync(Of LemonadeSystemStats)("system-stats", cancellationToken)
+        End Function
+
+        ''' <summary>The server machine's main memory in GB (from /system-info, which is large, so ask only when needed), or Nothing.</summary>
+        Public Async Function GetPhysicalMemoryGbAsync(cancellationToken As CancellationToken) As Task(Of Double?)
+            Dim info = Await _httpClient.GetFromJsonAsync(Of System.Text.Json.JsonElement)("system-info", cancellationToken)
+            Return MemoryFitCheck.PhysicalMemoryGb(info)
+        End Function
+
         ''' <summary>
         ''' Explicitly loads a model into memory. Can take a long time for a
         ''' large model (a 21GB model took roughly two minutes in testing) -
