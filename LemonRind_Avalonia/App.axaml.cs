@@ -134,7 +134,8 @@ public partial class App : Application
         builder.Services.AddSingleton<SchedulerNotifier>();
         builder.Services.AddSingleton<RunningJobTracker>();
         builder.Services.AddSingleton<ScheduledJobRunner>();
-        builder.Services.AddSingleton<IAssistantModule, SchedulerModule>();
+        builder.Services.AddSingleton<SchedulerModule>();
+        builder.Services.AddSingleton<IAssistantModule>(sp => sp.GetRequiredService<SchedulerModule>());
 
         // Coder module. Reuses the PathSandbox/
         // FileWriteApprovalStore singletons - same trust boundary as

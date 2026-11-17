@@ -41,6 +41,7 @@ public partial class SettingsViewModel : ObservableObject
     private readonly KnowledgeIngestionService _knowledgeIngestionService;
     private readonly McpServerRepository _mcpServerRepository;
     private readonly SchedulerRepository _schedulerRepository;
+    private readonly SchedulerModule _schedulerModule;
     private readonly MemoryService _memoryService;
 
     // The left-nav sections. New sections get added here and to
@@ -287,6 +288,7 @@ public partial class SettingsViewModel : ObservableObject
         KnowledgeIngestionService knowledgeIngestionService,
         McpServerRepository mcpServerRepository,
         SchedulerRepository schedulerRepository,
+        SchedulerModule schedulerModule,
         LemonadeManagementClient managementClient,
         MemoryService memoryService)
     {
@@ -298,6 +300,7 @@ public partial class SettingsViewModel : ObservableObject
         _knowledgeIngestionService = knowledgeIngestionService;
         _mcpServerRepository = mcpServerRepository;
         _schedulerRepository = schedulerRepository;
+        _schedulerModule = schedulerModule;
         _settings = store.LoadFresh();
 
         LemonadeBaseUrl = _settings.Lemonade.BaseUrl;
@@ -672,6 +675,37 @@ public partial class SettingsViewModel : ObservableObject
         catch (Exception ex)
         {
             SchedulerStatusText = $"Invalid cron expression: {ex.Message}";
+        }
+    }
+
+    /// <summary>True while Run now is running a job, so a second one cannot be started from here.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanRunJobNow))]
+    private bool _isJobRunningNow;
+
+    public bool CanRunJobNow => !IsJobRunningNow;
+
+    /// <summary>Runs one job now and says how it went. Its normal schedule is left as it was; its chat appears in the sidebar as it works.</summary>
+    [RelayCommand]
+    private async Task RunScheduledJobNowAsync(ScheduledJobRowViewModel? row)
+    {
+        if (row is null || IsJobRunningNow) return;
+
+        IsJobRunningNow = true;
+        SchedulerStatusText = $"Running \"{row.Name}\"...";
+        try
+        {
+            var result = await _schedulerModule.RunNowAsync(row.Id, CancellationToken.None);
+            SchedulerStatusText = $"\"{row.Name}\" finished: {result.Status}, took {RunDuration.Format(result.Seconds)}. Its chat is in the sidebar.";
+        }
+        catch (Exception ex)
+        {
+            SchedulerStatusText = $"Couldn't run \"{row.Name}\": {ex.Message}";
+        }
+        finally
+        {
+            IsJobRunningNow = false;
+            RefreshScheduledJobs();
         }
     }
 

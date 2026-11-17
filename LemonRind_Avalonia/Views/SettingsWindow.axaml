@@ -482,10 +482,15 @@
                                 <DataTemplate x:DataType="vm:ScheduledJobRowViewModel">
                                     <Border BorderBrush="{DynamicResource BorderBrushLight}" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,8">
                                         <StackPanel Spacing="4">
-                                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                            <Grid ColumnDefinitions="Auto,*,Auto,Auto">
                                                 <CheckBox Grid.Column="0" IsChecked="{Binding IsEnabled}" />
                                                 <TextBox Grid.Column="1" Text="{Binding Name}" Margin="6,0,6,0" FontWeight="Bold" />
-                                                <Button Grid.Column="2"
+                                                <Button Grid.Column="2" Content="Run now" Padding="8,0" FontSize="11" Margin="0,0,6,0"
+                                                        ToolTip.Tip="Run this job now. Its normal schedule is left as it was."
+                                                        IsEnabled="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).CanRunJobNow}"
+                                                        Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).RunScheduledJobNowCommand}"
+                                                        CommandParameter="{Binding}" />
+                                                <Button Grid.Column="3"
                                                         Content="✕"
                                                         Padding="4,0"
                                                         FontSize="11"
