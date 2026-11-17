@@ -368,6 +368,9 @@
                         </Border>
                         <Border BorderBrush="{DynamicResource BorderBrushLight}" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,8">
                             <StackPanel Spacing="4">
+                                <TextBlock Text="Lemonade's own tools" FontWeight="SemiBold" />
+                                <TextBlock Text="The Lemonade server you are connected to offers tools of its own: speech to text (Whisper), picture drawing and asking its other models. One click adds them. Some of them load other models, which can swap the one that is loaded, and they run without asking first." Foreground="{DynamicResource TextMuted}" FontSize="12" TextWrapping="Wrap" />
+                                <Button Classes="primary" Content="Add Lemonade's tools" Command="{Binding AddLemonadeMcpToolsCommand}" HorizontalAlignment="Left" Padding="10,4" Margin="0,0,0,8" />
                                 <TextBlock Text="Paste a server's own {&quot;mcpServers&quot;: {...}} config (most MCP servers' docs give you this)" FontSize="12" Foreground="{DynamicResource TextMuted}" TextWrapping="Wrap" />
                                 <TextBox Text="{Binding PendingMcpServerConfigJson}" AcceptsReturn="True" Height="80" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12" />
                                 <Button Classes="primary" Content="Import" Command="{Binding ImportMcpServerConfigJsonCommand}" HorizontalAlignment="Left" Padding="10,4" />

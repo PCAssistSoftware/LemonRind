@@ -488,7 +488,7 @@ public partial class SettingsViewModel : ObservableObject
         var row = new McpServerRowViewModel(
             config.Id,
             config.Name,
-            config.Command,
+            string.IsNullOrEmpty(config.Url) ? config.Command : config.Url,
             string.Join(" ", config.Arguments),
             string.Join(", ", config.EnvironmentVariables.Keys),
             config.IsEnabled);
@@ -545,6 +545,28 @@ public partial class SettingsViewModel : ObservableObject
         {
             McpStatusText = $"Couldn't parse that JSON: {ex.Message}";
         }
+    }
+
+    /// <summary>Adds the tools Lemonade serves itself (speech to text, picture drawing, ...), found next to the chat address.</summary>
+    [RelayCommand]
+    private async Task AddLemonadeMcpTools()
+    {
+        if (_mcpServerRepository.ServerNameExists(LemonadeGateway.ServerName))
+        {
+            McpStatusText = "Lemonade's tools are already added.";
+            return;
+        }
+        if (LemonadeGateway.Describe(_liveSettings.Lemonade.BaseUrl, _liveSettings.Lemonade.ApiKey) is not var (url, headers))
+        {
+            McpStatusText = "Lemonade's address (Settings > Lemonade) is not a web address, so its tools cannot be found.";
+            return;
+        }
+
+        _mcpServerRepository.CreateHttpServer(LemonadeGateway.ServerName, url, headers);
+        RefreshMcpServers();
+        McpStatusText = "Connecting...";
+        await _moduleRegistry.ReconcileEnabledModulesAsync(CancellationToken.None);
+        McpStatusText = "Added Lemonade's tools and connected.";
     }
 
     [RelayCommand]

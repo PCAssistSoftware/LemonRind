@@ -212,6 +212,9 @@ public class AppDatabase
                 CreatedAt TEXT NOT NULL
             );
             """);
+        // A server reached at a web address (Lemonade's own MCP gateway, for one) has a Url and no Command.
+        AddColumnIfMissing(connection, "McpServers", "Url", "TEXT NOT NULL DEFAULT ''");
+        AddColumnIfMissing(connection, "McpServers", "HeadersJson", "TEXT NOT NULL DEFAULT '{}'");
 
         Exec(connection, """
             CREATE TABLE IF NOT EXISTS ScheduledJobs (
