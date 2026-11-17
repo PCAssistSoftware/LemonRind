@@ -762,6 +762,11 @@
                                                 <Button Content="Save" Padding="8,4" Margin="0,0,0,4"
                                                         Command="{Binding DataContext.SaveScheduledJobEditCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                         CommandParameter="{Binding}" />
+                                                <Button Content="Run now" Padding="8,4" Margin="0,0,0,4"
+                                                        ToolTip="Run this job now. Its normal schedule is left as it was."
+                                                        IsEnabled="{Binding DataContext.CanRunJobNow, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                        Command="{Binding DataContext.RunScheduledJobNowCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                        CommandParameter="{Binding}" />
                                                 <Button Content="Delete" Padding="8,4"
                                                         Command="{Binding DataContext.DeleteScheduledJobCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                         CommandParameter="{Binding}" />

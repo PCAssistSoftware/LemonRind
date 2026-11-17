@@ -317,6 +317,7 @@ Namespace ViewModels
         Private ReadOnly _knowledgeIngestionService As KnowledgeIngestionService
         Private ReadOnly _mcpServerRepository As McpServerRepository
         Private ReadOnly _schedulerRepository As SchedulerRepository
+        Private ReadOnly _schedulerModule As SchedulerModule
 
         Private _dataFolder As String
         Public Property DataFolder As String
@@ -1220,6 +1221,26 @@ Namespace ViewModels
 
         Public ReadOnly Property CreateScheduledJobCommand As IRelayCommand
         Public ReadOnly Property DeleteScheduledJobCommand As IRelayCommand(Of ScheduledJobViewModel)
+
+        ''' <summary>Runs one job now (the Run now button). Its normal schedule is left as it was.</summary>
+        Public ReadOnly Property RunScheduledJobNowCommand As IAsyncRelayCommand(Of ScheduledJobViewModel)
+
+        Private _isJobRunningNow As Boolean
+        ''' <summary>True while Run now is running a job, so a second one cannot be started from here.</summary>
+        Public Property IsJobRunningNow As Boolean
+            Get
+                Return _isJobRunningNow
+            End Get
+            Set(value As Boolean)
+                If SetProperty(_isJobRunningNow, value) Then OnPropertyChanged(NameOf(CanRunJobNow))
+            End Set
+        End Property
+
+        Public ReadOnly Property CanRunJobNow As Boolean
+            Get
+                Return Not _isJobRunningNow
+            End Get
+        End Property
         Public ReadOnly Property SaveScheduledJobEditCommand As IRelayCommand(Of ScheduledJobViewModel)
 
         ''' <summary>
@@ -1246,7 +1267,7 @@ Namespace ViewModels
 
         Private ReadOnly _managementClient As LemonadeManagementClient
 
-        Public Sub New(store As AppSettingsStore, liveSettings As AppSettings, moduleRegistry As ModuleRegistry, memoryService As MemoryService, knowledgeRepository As KnowledgeRepository, knowledgeIngestionService As KnowledgeIngestionService, mcpServerRepository As McpServerRepository, schedulerRepository As SchedulerRepository, managementClient As LemonadeManagementClient)
+        Public Sub New(store As AppSettingsStore, liveSettings As AppSettings, moduleRegistry As ModuleRegistry, memoryService As MemoryService, knowledgeRepository As KnowledgeRepository, knowledgeIngestionService As KnowledgeIngestionService, mcpServerRepository As McpServerRepository, schedulerRepository As SchedulerRepository, schedulerModule As SchedulerModule, managementClient As LemonadeManagementClient)
             _store = store
             _settings = store.LoadFresh()
             _liveSettings = liveSettings
@@ -1256,6 +1277,7 @@ Namespace ViewModels
             _knowledgeIngestionService = knowledgeIngestionService
             _mcpServerRepository = mcpServerRepository
             _schedulerRepository = schedulerRepository
+            _schedulerModule = schedulerModule
             _managementClient = managementClient
 
             _dataFolder = _settings.AppData.DataFolder
@@ -1368,6 +1390,7 @@ Namespace ViewModels
 
             CreateScheduledJobCommand = New RelayCommand(AddressOf CreateScheduledJob)
             DeleteScheduledJobCommand = New RelayCommand(Of ScheduledJobViewModel)(AddressOf DeleteScheduledJob)
+            RunScheduledJobNowCommand = New AsyncRelayCommand(Of ScheduledJobViewModel)(AddressOf RunScheduledJobNowAsync)
             SaveScheduledJobEditCommand = New RelayCommand(Of ScheduledJobViewModel)(AddressOf SaveScheduledJobEdit)
 
             ' Captured here (via ApplyUiValuesToSettings, same normalization
@@ -1821,6 +1844,22 @@ Namespace ViewModels
                 SchedulerStatusText = $"Invalid cron expression: {ex.Message}"
             End Try
         End Sub
+
+        Private Async Function RunScheduledJobNowAsync(jobViewModel As ScheduledJobViewModel) As Task
+            If jobViewModel Is Nothing OrElse IsJobRunningNow Then Return
+
+            IsJobRunningNow = True
+            SchedulerStatusText = $"Running the job {jobViewModel.Name}..."
+            Try
+                Dim result = Await _schedulerModule.RunNowAsync(jobViewModel.Id, CancellationToken.None)
+                SchedulerStatusText = $"The job {jobViewModel.Name} finished: {result.Status}, took {RunDuration.Format(result.Seconds)}. Its chat is in the sidebar."
+            Catch ex As Exception
+                SchedulerStatusText = $"Couldn't run the job {jobViewModel.Name}: {ex.Message}"
+            Finally
+                IsJobRunningNow = False
+                LoadScheduledJobs()
+            End Try
+        End Function
 
         Private Sub DeleteScheduledJob(jobViewModel As ScheduledJobViewModel)
             If jobViewModel Is Nothing Then Return

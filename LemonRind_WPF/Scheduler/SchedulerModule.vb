@@ -49,6 +49,10 @@ Namespace Scheduler
         ' the next one.
         Private _isPolling As Boolean = False
 
+        ' One run at a time, whether it was started by the clock or by Run now: a local Lemonade has limited generation
+        ' slots, and two jobs at once would only slow each other down.
+        Private ReadOnly _runGate As New SemaphoreSlim(1, 1)
+
         Public Sub New(settings As AppSettings, repository As SchedulerRepository, runner As ScheduledJobRunner)
             _repository = repository
             _runner = runner
@@ -158,6 +162,34 @@ Namespace Scheduler
             Return $"Deleted the scheduled job ""{job.Name}""."
         End Function
 
+        ''' <summary>
+        ''' Runs one job right now (the "Run now" button), the same way a scheduled run goes, and records the result. Its normal
+        ''' schedule is left as it was. Waits its turn if another job is running.
+        ''' </summary>
+        Public Async Function RunNowAsync(jobId As String, cancellationToken As CancellationToken) As Task(Of JobRunResult)
+            Dim job = _repository.ListJobs().FirstOrDefault(Function(j) j.Id = jobId)
+            If job Is Nothing Then Throw New InvalidOperationException("That job no longer exists.")
+
+            Await _runGate.WaitAsync(cancellationToken)
+            Dim stopwatch = Diagnostics.Stopwatch.StartNew()
+            Dim result As New JobRunResult("failed", 0)
+            Try
+                Using jobTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+                    jobTimeoutCts.CancelAfter(TimeSpan.FromSeconds(_settings.Scheduler.JobTimeoutSeconds))
+                    result = Await _runner.RunJobAsync(job, jobTimeoutCts.Token)
+                End Using
+            Catch
+                result = New JobRunResult("failed", stopwatch.Elapsed.TotalSeconds)
+            Finally
+                Try
+                    _repository.RecordRun(job.Id, DateTime.UtcNow, job.NextRunAt, result.Status, result.Seconds)
+                Finally
+                    _runGate.Release()
+                End Try
+            End Try
+            Return result
+        End Function
+
         Private Async Sub OnPollTimerTick(state As Object)
             If _isPolling Then Return
             _isPolling = True
@@ -173,6 +205,7 @@ Namespace Scheduler
                 For Each job In dueJobs
                     Dim stopwatch = Diagnostics.Stopwatch.StartNew()
                     Dim result As New JobRunResult("failed", 0)
+                    Await _runGate.WaitAsync()
                     Try
                         Using jobTimeoutCts As New CancellationTokenSource(TimeSpan.FromSeconds(_settings.Scheduler.JobTimeoutSeconds))
                             result = Await _runner.RunJobAsync(job, jobTimeoutCts.Token)
@@ -184,9 +217,13 @@ Namespace Scheduler
                         ' poller for future ticks.
                         result = New JobRunResult("failed", stopwatch.Elapsed.TotalSeconds)
                     Finally
-                        ' TimeZoneInfo.Local here too - see ScheduleJob's comment.
-                        Dim parsed = CronExpression.Parse(job.CronExpression)
-                        _repository.RecordRun(job.Id, now, parsed.GetNextOccurrence(now, TimeZoneInfo.Local, inclusive:=False), result.Status, result.Seconds)
+                        Try
+                            ' TimeZoneInfo.Local here too - see ScheduleJob's comment.
+                            Dim parsed = CronExpression.Parse(job.CronExpression)
+                            _repository.RecordRun(job.Id, now, parsed.GetNextOccurrence(now, TimeZoneInfo.Local, inclusive:=False), result.Status, result.Seconds)
+                        Finally
+                            _runGate.Release()
+                        End Try
                     End Try
                 Next
             Finally

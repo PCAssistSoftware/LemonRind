@@ -188,7 +188,8 @@ Class Application
         builder.Services.AddSingleton(Of SchedulerNotifier)()
         builder.Services.AddSingleton(Of RunningJobTracker)()
         builder.Services.AddSingleton(Of ScheduledJobRunner)()
-        builder.Services.AddSingleton(Of IAssistantModule, SchedulerModule)()
+        builder.Services.AddSingleton(Of SchedulerModule)()
+        builder.Services.AddSingleton(Of IAssistantModule)(Function(sp) sp.GetRequiredService(Of SchedulerModule)())
 
         ' AutoBackupModule is a pure background operational safety net,
         ' zero AI tools, registered as IAssistantModule purely for the free
