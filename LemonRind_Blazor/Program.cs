@@ -102,7 +102,8 @@ builder.Services.AddSingleton<SchedulerRepository>();
 builder.Services.AddSingleton<SchedulerNotifier>();
 builder.Services.AddSingleton<RunningJobTracker>();
 builder.Services.AddSingleton<ScheduledJobRunner>();
-builder.Services.AddSingleton<IAssistantModule, SchedulerModule>();
+builder.Services.AddSingleton<SchedulerModule>();
+builder.Services.AddSingleton<IAssistantModule>(sp => sp.GetRequiredService<SchedulerModule>());
 
 // Coder module. Reuses the PathSandbox/FileWriteApprovalStore/
 // FileWriteApprovalGate singletons (no separate sandbox config) - CodeSyntaxValidator/

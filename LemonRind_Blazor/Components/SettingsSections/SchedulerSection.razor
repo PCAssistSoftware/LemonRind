@@ -3,6 +3,7 @@
 @using LemonRindBlazor.Services
 @using LemonRindBlazor.Configuration
 @inject SchedulerRepository Repository
+@inject SchedulerModule SchedulerModule
 @inject LemonadeManagementClient ManagementClient
 @inject AppSettings LiveSettings
 @inject AppSettingsStore SettingsStore
@@ -110,6 +111,7 @@
                 <div class="job-main">
                     <input type="checkbox" checked="@job.IsEnabled" @onchange="e => ToggleJob(job, (bool)e.Value!)" />
                     <input class="job-edit-name" @bind="edit.Name" />
+                    <button class="job-run" title="Run this job now. Its normal schedule is left as it was." disabled="@(_runningJobId is not null)" @onclick="() => RunNow(job)">@(_runningJobId == job.Id ? "Running..." : "Run now")</button>
                     <button class="job-delete" @onclick="() => DeleteJob(job.Id)">Delete</button>
                 </div>
                 <input class="job-edit-cron" @bind="edit.Cron" title="Field order: minute hour day month weekday. E.g. 50 19 * * * runs at 19:50 every day." />
@@ -146,6 +148,29 @@
     private string _newPrompt = "";
     private string _newModelId = "";
     private string _statusText = "";
+    private string? _runningJobId; // the job being run by Run now (one at a time)
+
+    /// <summary>Runs one job now and says how it went; the job's chat appears in the sidebar as it works.</summary>
+    private async Task RunNow(ScheduledJob job)
+    {
+        _runningJobId = job.Id;
+        _statusText = $"Running \"{job.Name}\"...";
+        StateHasChanged();
+        try
+        {
+            var result = await SchedulerModule.RunNowAsync(job.Id, CancellationToken.None);
+            _statusText = $"\"{job.Name}\" finished: {result.Status}, took {RunDuration.Format(result.Seconds)}. Its chat is in the sidebar.";
+        }
+        catch (Exception ex)
+        {
+            _statusText = $"Couldn't run \"{job.Name}\": {ex.Message}";
+        }
+        finally
+        {
+            _runningJobId = null;
+            RefreshJobs();
+        }
+    }
 
     // GUI cron builder (as in the WPF app). Daily/Weekly/Monthly compute the cron string for you;
     // "Custom" leaves _newCron fully free-typed (RebuildCronFromBuilder

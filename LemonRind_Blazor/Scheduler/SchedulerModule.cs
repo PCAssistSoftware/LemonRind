@@ -41,6 +41,10 @@ public class SchedulerModule(AppSettings settings, SchedulerRepository repositor
     // doesn't wait for its callback to finish before scheduling the next one.
     private bool _isPolling;
 
+    // One run at a time, whether it was started by the clock or by Run now: a local Lemonade has limited generation
+    // slots, and two jobs at once would only slow each other down.
+    private readonly SemaphoreSlim _runGate = new(1, 1);
+
     public string Name => "Scheduler";
     public string ConfigKey => "Scheduler";
     public string Description => "Runs a saved prompt through the assistant on a cron schedule (e.g. \"every Friday at 19:00\").";
@@ -128,6 +132,42 @@ public class SchedulerModule(AppSettings settings, SchedulerRepository repositor
         return $"Deleted the scheduled job \"{job.Name}\".";
     }
 
+    /// <summary>
+    /// Runs one job right now (the "Run now" button), the same way a scheduled run goes, and records the result. Its normal
+    /// schedule is left as it was. Waits its turn if another job is running.
+    /// </summary>
+    public async Task<JobRunResult> RunNowAsync(string jobId, CancellationToken cancellationToken)
+    {
+        var job = repository.ListJobs().FirstOrDefault(j => j.Id == jobId)
+            ?? throw new InvalidOperationException("That job no longer exists.");
+
+        await _runGate.WaitAsync(cancellationToken);
+        var stopwatch = Stopwatch.StartNew();
+        var result = new JobRunResult("failed", 0);
+        try
+        {
+            using var jobTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            jobTimeoutCts.CancelAfter(TimeSpan.FromSeconds(settings.Scheduler.JobTimeoutSeconds));
+            result = await runner.RunJobAsync(job, jobTimeoutCts.Token);
+        }
+        catch
+        {
+            result = new JobRunResult("failed", stopwatch.Elapsed.TotalSeconds);
+        }
+        finally
+        {
+            try
+            {
+                repository.RecordRun(job.Id, DateTime.UtcNow, job.NextRunAt, result.Status, result.Seconds);
+            }
+            finally
+            {
+                _runGate.Release();
+            }
+        }
+        return result;
+    }
+
     private async void OnPollTimerTick(object? state)
     {
         if (_isPolling) return;
@@ -145,6 +185,7 @@ public class SchedulerModule(AppSettings settings, SchedulerRepository repositor
             {
                 var stopwatch = Stopwatch.StartNew();
                 var result = new JobRunResult("failed", 0);
+                await _runGate.WaitAsync();
                 try
                 {
                     using var jobTimeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(settings.Scheduler.JobTimeoutSeconds));
@@ -159,8 +200,15 @@ public class SchedulerModule(AppSettings settings, SchedulerRepository repositor
                 }
                 finally
                 {
-                    var parsed = CronExpression.Parse(job.CronExpression);
-                    repository.RecordRun(job.Id, now, parsed.GetNextOccurrence(now, TimeZoneInfo.Local, inclusive: false), result.Status, result.Seconds);
+                    try
+                    {
+                        var parsed = CronExpression.Parse(job.CronExpression);
+                        repository.RecordRun(job.Id, now, parsed.GetNextOccurrence(now, TimeZoneInfo.Local, inclusive: false), result.Status, result.Seconds);
+                    }
+                    finally
+                    {
+                        _runGate.Release();
+                    }
                 }
             }
         }

@@ -197,3 +197,18 @@
     font-size: 0.8rem;
     margin: 0 0 0.5rem 0;
 }
+
+.job-run {
+    margin-left: auto;
+    background: none;
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 2px 8px;
+    cursor: pointer;
+}
+
+.job-run:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
