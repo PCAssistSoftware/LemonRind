@@ -877,6 +877,26 @@
                      underneath) rather than plain label: value text lines. -->
                 <ScrollViewer Grid.Row="1" IsVisible="{Binding IsStatsTabActive}">
                     <StackPanel Spacing="10">
+                        <Border Background="{DynamicResource CardBg}" CornerRadius="8" Padding="10"
+                                IsVisible="{Binding ServerLoad, Converter={x:Static ObjectConverters.IsNotNull}}">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="Lemonade server" FontWeight="Bold" FontSize="12" />
+                                <Grid ColumnDefinitions="*,Auto"><TextBlock Grid.Column="0" Text="Processor" FontSize="11" /><TextBlock Grid.Column="1" Text="{Binding ServerLoad.CpuText}" FontSize="11" Foreground="{DynamicResource TextMuted}" /></Grid>
+                                <ProgressBar Minimum="0" Maximum="100" Height="6" Value="{Binding ServerLoad.CpuPercent}" />
+                                <Grid ColumnDefinitions="*,Auto"><TextBlock Grid.Column="0" Text="Graphics" FontSize="11" /><TextBlock Grid.Column="1" Text="{Binding ServerLoad.GraphicsText}" FontSize="11" Foreground="{DynamicResource TextMuted}" /></Grid>
+                                <ProgressBar Minimum="0" Maximum="100" Height="6" Value="{Binding ServerLoad.GraphicsPercent}" />
+                                <StackPanel Spacing="4" IsVisible="{Binding ServerLoad.HasNpu}">
+                                    <Grid ColumnDefinitions="*,Auto"><TextBlock Grid.Column="0" Text="NPU" FontSize="11" /><TextBlock Grid.Column="1" Text="{Binding ServerLoad.NpuText}" FontSize="11" Foreground="{DynamicResource TextMuted}" /></Grid>
+                                    <ProgressBar Minimum="0" Maximum="100" Height="6" Value="{Binding ServerLoad.NpuPercent}" />
+                                </StackPanel>
+                                <StackPanel Spacing="4" IsVisible="{Binding ServerLoad.HasGraphicsMemory}">
+                                    <Grid ColumnDefinitions="*,Auto"><TextBlock Grid.Column="0" Text="{Binding ServerLoad.GraphicsMemoryLabel}" FontSize="11" /><TextBlock Grid.Column="1" Text="{Binding ServerLoad.GraphicsMemoryText}" FontSize="11" Foreground="{DynamicResource TextMuted}" /></Grid>
+                                    <ProgressBar Minimum="0" Maximum="100" Height="6" Value="{Binding ServerLoad.GraphicsMemoryPercent}" />
+                                </StackPanel>
+                                <TextBlock Text="{Binding ServerLoad.MemoryNote}" FontSize="10" Foreground="{DynamicResource TextMuted}" IsVisible="{Binding ServerLoad.HasMemoryNote}" />
+                            </StackPanel>
+                        </Border>
+
                         <Border Background="{DynamicResource CardBg}" CornerRadius="8" Padding="10">
                             <StackPanel Spacing="10">
                                 <TextBlock Text="Last reply" FontWeight="Bold" FontSize="12" />

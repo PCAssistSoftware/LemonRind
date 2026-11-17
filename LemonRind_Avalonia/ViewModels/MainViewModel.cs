@@ -491,6 +491,37 @@ public partial class MainViewModel : ObservableObject
             if (!IsHealthy) await RefreshAvailableModelsAsync(CancellationToken.None);
         };
         _connectionRetryTimer.Start();
+
+        // How busy the server's machine is: read every few seconds while the Stats tab shows. Null (card hidden)
+        // until a reading arrives, or when Lemonade does not offer the figures.
+        _serverStatsTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        _serverStatsTimer.Tick += async (_, _) => await RefreshServerLoadAsync();
+        _serverStatsTimer.Start();
+    }
+
+    private readonly DispatcherTimer _serverStatsTimer;
+
+    [ObservableProperty] private ServerLoadViewModel? _serverLoad;
+
+    private bool _isReadingServerLoad;
+
+    private async Task RefreshServerLoadAsync()
+    {
+        if (!IsStatsTabActive || _isReadingServerLoad) return;
+        _isReadingServerLoad = true;
+        try
+        {
+            var stats = await _managementClient.GetSystemStatsAsync(CancellationToken.None);
+            ServerLoad = stats is null ? null : new ServerLoadViewModel(stats);
+        }
+        catch
+        {
+            ServerLoad = null;
+        }
+        finally
+        {
+            _isReadingServerLoad = false;
+        }
     }
 
     /// <summary>
@@ -1275,6 +1306,20 @@ public partial class MainViewModel : ObservableObject
             // blown-up dialog.
         }
 
+        MemoryFit? memoryFit = null;
+        if (catalogEntry is not null)
+        {
+            LemonadeSystemStats? stats = null;
+            double? ramGb = null;
+            try { stats = await _managementClient.GetSystemStatsAsync(CancellationToken.None); } catch { }
+            // No graphics chip reported: main memory is the limit, so ask for it.
+            if (stats?.PrimaryGpu is null)
+            {
+                try { ramGb = await _managementClient.GetPhysicalMemoryGbAsync(CancellationToken.None); } catch { }
+            }
+            memoryFit = MemoryFitCheck.Assess(catalogEntry.SizeGb, stats, ramGb);
+        }
+
         await ModelDetailsDialog.ShowAsync(
             modelId,
             catalogEntry?.Labels,
@@ -1283,7 +1328,8 @@ public partial class MainViewModel : ObservableObject
             catalogEntry?.Recipe,
             isCurrentlyLoaded,
             device,
-            llamacppArgs);
+            llamacppArgs,
+            memoryFit);
     }
 
     // What is sent to carry on a reply that stopped at the output limit.

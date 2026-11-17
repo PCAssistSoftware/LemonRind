@@ -34,7 +34,8 @@ public partial class ModelDetailsDialog : Window
         string? recipe,
         bool isCurrentlyLoaded,
         string? device,
-        string? llamacppArgs)
+        string? llamacppArgs,
+        LemonRindAvalonia.Services.MemoryFit? memoryFit = null)
     {
         var dialog = new ModelDetailsDialog();
         dialog.ModelIdText.Text = modelId;
@@ -44,6 +45,24 @@ public partial class ModelDetailsDialog : Window
         dialog.ContextWindowText.Text = maxContextWindow > 0 ? $"{maxContextWindow:N0} tokens" : "(unknown)";
         dialog.SizeText.Text = sizeGb > 0 ? $"{sizeGb:N1} GB" : "(unknown)";
         dialog.BackendText.Text = string.IsNullOrEmpty(recipe) ? "(unknown)" : recipe;
+
+        if (memoryFit is not null)
+        {
+            dialog.FitLabelText.IsVisible = true;
+            dialog.FitText.IsVisible = true;
+            dialog.FitText.Text = memoryFit.Message;
+            var brushKey = memoryFit.Verdict switch
+            {
+                LemonRindAvalonia.Services.MemoryFitVerdict.Fits => "Success",
+                LemonRindAvalonia.Services.MemoryFitVerdict.Tight => "Warning",
+                LemonRindAvalonia.Services.MemoryFitVerdict.TooBig => "Danger",
+                _ => null,
+            };
+            if (brushKey is not null && dialog.TryFindResource(brushKey, dialog.ActualThemeVariant, out var brush) && brush is Avalonia.Media.IBrush colour)
+            {
+                dialog.FitText.Foreground = colour;
+            }
+        }
 
         if (isCurrentlyLoaded && !string.IsNullOrEmpty(llamacppArgs))
         {

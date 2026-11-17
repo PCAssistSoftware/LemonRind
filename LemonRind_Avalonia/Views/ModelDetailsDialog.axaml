@@ -32,6 +32,9 @@
             <TextBlock Classes="detail-label" Text="Size on disk" />
             <TextBlock Name="SizeText" Classes="detail-value" />
 
+            <TextBlock Name="FitLabelText" Classes="detail-label" Text="Fits in memory" IsVisible="False" />
+            <TextBlock Name="FitText" Classes="detail-value" TextWrapping="Wrap" IsVisible="False" />
+
             <TextBlock Classes="detail-label" Text="Backend" />
             <TextBlock Name="BackendText" Classes="detail-value" />
 

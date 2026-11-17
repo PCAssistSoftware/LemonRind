@@ -198,6 +198,17 @@ public class LemonadeManagementClient
     public async Task<LemonadeStatsInfo?> GetStatsAsync(CancellationToken cancellationToken)
         => await _httpClient.GetFromJsonAsync<LemonadeStatsInfo>("stats", cancellationToken);
 
+    /// <summary>How busy the server's machine is right now (processor, graphics, memory, NPU).</summary>
+    public async Task<LemonadeSystemStats?> GetSystemStatsAsync(CancellationToken cancellationToken)
+        => await _httpClient.GetFromJsonAsync<LemonadeSystemStats>("system-stats", cancellationToken);
+
+    /// <summary>The server machine's main memory in GB (from /system-info, which is large, so ask only when needed), or null.</summary>
+    public async Task<double?> GetPhysicalMemoryGbAsync(CancellationToken cancellationToken)
+    {
+        var info = await _httpClient.GetFromJsonAsync<System.Text.Json.JsonElement>("system-info", cancellationToken);
+        return MemoryFitCheck.PhysicalMemoryGb(info);
+    }
+
     /// <summary>Explicitly loads a model into memory. Can take a long time for a large model - callers should show a busy state.</summary>
     public async Task LoadModelAsync(string modelName, CancellationToken cancellationToken)
     {
