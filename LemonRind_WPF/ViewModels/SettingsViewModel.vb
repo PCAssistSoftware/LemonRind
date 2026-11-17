@@ -1217,6 +1217,7 @@ Namespace ViewModels
 
         Public ReadOnly Property ImportMcpServerConfigJsonCommand As IAsyncRelayCommand
         Public ReadOnly Property CreateMcpServerCommand As IAsyncRelayCommand
+        Public ReadOnly Property AddLemonadeMcpToolsCommand As IAsyncRelayCommand
         Public ReadOnly Property DeleteMcpServerCommand As IAsyncRelayCommand(Of McpServerViewModel)
 
         Public ReadOnly Property CreateScheduledJobCommand As IRelayCommand
@@ -1386,6 +1387,7 @@ Namespace ViewModels
 
             ImportMcpServerConfigJsonCommand = New AsyncRelayCommand(AddressOf ImportMcpServerConfigJsonAsync)
             CreateMcpServerCommand = New AsyncRelayCommand(AddressOf CreateMcpServerAsync)
+            AddLemonadeMcpToolsCommand = New AsyncRelayCommand(AddressOf AddLemonadeMcpToolsAsync)
             DeleteMcpServerCommand = New AsyncRelayCommand(Of McpServerViewModel)(AddressOf DeleteMcpServerAsync)
 
             CreateScheduledJobCommand = New RelayCommand(AddressOf CreateScheduledJob)
@@ -1668,7 +1670,7 @@ Namespace ViewModels
             Dim row As New McpServerViewModel With {
                 .Id = serverConfig.Id,
                 .Name = serverConfig.Name,
-                .Command = serverConfig.Command,
+                .Command = If(String.IsNullOrEmpty(serverConfig.Url), serverConfig.Command, serverConfig.Url),
                 .ArgumentsDisplay = String.Join(" ", serverConfig.Arguments),
                 .EnvironmentVariableNamesDisplay = String.Join(", ", serverConfig.EnvironmentVariables.Keys),
                 .IsEnabled = serverConfig.IsEnabled
@@ -1726,6 +1728,24 @@ Namespace ViewModels
             Catch ex As Exception
                 McpStatusText = $"Couldn't parse that JSON: {ex.Message}"
             End Try
+        End Function
+
+        ''' <summary>Adds the tools Lemonade serves itself (speech to text, picture drawing, ...), found next to the chat address.</summary>
+        Private Async Function AddLemonadeMcpToolsAsync() As Task
+            If _mcpServerRepository.ServerNameExists(LemonadeGateway.ServerName) Then
+                McpStatusText = "Lemonade's tools are already added."
+                Return
+            End If
+            Dim gateway = LemonadeGateway.Describe(_liveSettings.Lemonade.BaseUrl, _liveSettings.Lemonade.ApiKey)
+            If gateway Is Nothing Then
+                McpStatusText = "Lemonade's address (Settings > Lemonade) is not a web address, so its tools cannot be found."
+                Return
+            End If
+
+            Dim id = _mcpServerRepository.CreateHttpServer(LemonadeGateway.ServerName, gateway.Url, gateway.Headers)
+            McpServers.Add(ToMcpServerViewModel(_mcpServerRepository.ListServers().First(Function(s) s.Id = id)))
+            Await _moduleRegistry.RestartModuleAsync("Mcp", CancellationToken.None)
+            McpStatusText = "Added Lemonade's tools and connected."
         End Function
 
         Private Async Function CreateMcpServerAsync() As Task

@@ -10,6 +10,10 @@ Namespace Mcp
         Public Property Command As String
         Public Property Arguments As List(Of String)
         Public Property EnvironmentVariables As Dictionary(Of String, String)
+
+        ''' <summary>Set for a server reached at a web address (streamable HTTP) instead of started by a command.</summary>
+        Public Property Url As String = ""
+        Public Property Headers As New Dictionary(Of String, String)
         Public Property IsEnabled As Boolean
         Public Property CreatedAt As DateTime
     End Class
@@ -42,6 +46,29 @@ Namespace Mcp
             Return id
         End Function
 
+        ''' <summary>Adds a server that is already running and reached at a web address.</summary>
+        Public Function CreateHttpServer(name As String, url As String, headers As Dictionary(Of String, String)) As String
+            Dim id = Guid.NewGuid().ToString()
+            Using connection = _database.OpenConnection()
+                Using dbCommand = connection.CreateCommand()
+                    dbCommand.CommandText = "
+                        INSERT INTO McpServers (Id, Name, Command, ArgumentsJson, EnvironmentVariablesJson, Url, HeadersJson, IsEnabled, CreatedAt)
+                        VALUES (@id, @name, '', '[]', '{}', @url, @headersJson, 1, @createdAt);"
+                    dbCommand.Parameters.AddWithValue("@id", id)
+                    dbCommand.Parameters.AddWithValue("@name", name)
+                    dbCommand.Parameters.AddWithValue("@url", url)
+                    dbCommand.Parameters.AddWithValue("@headersJson", JsonSerializer.Serialize(headers))
+                    dbCommand.Parameters.AddWithValue("@createdAt", DateTime.UtcNow.ToString("o"))
+                    dbCommand.ExecuteNonQuery()
+                End Using
+            End Using
+            Return id
+        End Function
+
+        Public Function ServerNameExists(name As String) As Boolean
+            Return ListServers().Any(Function(s) String.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase))
+        End Function
+
         Public Sub SetEnabled(id As String, isEnabled As Boolean)
             Using connection = _database.OpenConnection()
                 Using command = connection.CreateCommand()
@@ -67,7 +94,7 @@ Namespace Mcp
             Dim results As New List(Of McpServerConfig)
             Using connection = _database.OpenConnection()
                 Using command = connection.CreateCommand()
-                    command.CommandText = "SELECT Id, Name, Command, ArgumentsJson, EnvironmentVariablesJson, IsEnabled, CreatedAt FROM McpServers ORDER BY CreatedAt ASC;"
+                    command.CommandText = "SELECT Id, Name, Command, ArgumentsJson, EnvironmentVariablesJson, IsEnabled, CreatedAt, Url, HeadersJson FROM McpServers ORDER BY CreatedAt ASC;"
                     Using reader = command.ExecuteReader()
                         While reader.Read()
                             results.Add(New McpServerConfig With {
@@ -77,7 +104,9 @@ Namespace Mcp
                                 .Arguments = JsonSerializer.Deserialize(Of List(Of String))(reader.GetString(3)),
                                 .EnvironmentVariables = JsonSerializer.Deserialize(Of Dictionary(Of String, String))(reader.GetString(4)),
                                 .IsEnabled = reader.GetInt32(5) <> 0,
-                                .CreatedAt = ParseUtc(reader.GetString(6))
+                                .CreatedAt = ParseUtc(reader.GetString(6)),
+                                .Url = reader.GetString(7),
+                                .Headers = If(JsonSerializer.Deserialize(Of Dictionary(Of String, String))(reader.GetString(8)), New Dictionary(Of String, String))
                             })
                         End While
                     End Using

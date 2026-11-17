@@ -590,6 +590,12 @@
                         <TextBlock Text="Connects to external MCP servers and exposes their tools to the assistant - added/edited/deleted servers reconnect immediately, no restart needed."
                                    Foreground="Gray" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,14" />
 
+                        <TextBlock Text="Lemonade's own tools" FontWeight="Bold" Margin="0,0,0,4" />
+                        <TextBlock Text="The Lemonade server you are connected to offers tools of its own: speech to text (Whisper), picture drawing and asking its other models. One click adds them. Some of them load other models, which can swap the one that is loaded, and they run without asking first."
+                                   Foreground="Gray" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,4" />
+                        <Button Content="Add Lemonade's tools" Padding="12,6" Margin="0,0,0,14" HorizontalAlignment="Left"
+                                Command="{Binding AddLemonadeMcpToolsCommand}" />
+
                         <TextBlock Text="Paste server config JSON" FontWeight="Bold" Margin="0,0,0,4" />
                         <TextBlock Text="The standard config snippet most MCP servers' own docs give you, e.g. from Postmark's README - paste it as-is."
                                    Foreground="Gray" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,4" />

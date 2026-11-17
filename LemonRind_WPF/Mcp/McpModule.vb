@@ -70,6 +70,19 @@ Namespace Mcp
         Public Async Function OnStartupAsync(cancellationToken As CancellationToken) As Task Implements IAssistantModule.OnStartupAsync
             For Each serverConfig In _repository.ListServers().Where(Function(s) s.IsEnabled)
                 Try
+                    ' A server at a web address: nothing to start.
+                    If Not String.IsNullOrEmpty(serverConfig.Url) Then
+                        Dim httpOptions As New HttpClientTransportOptions With {
+                            .Name = serverConfig.Name,
+                            .Endpoint = New Uri(serverConfig.Url),
+                            .AdditionalHeaders = serverConfig.Headers
+                        }
+                        Dim httpClient = Await McpClient.CreateAsync(New HttpClientTransport(httpOptions), cancellationToken:=cancellationToken)
+                        _connectedClients.Add(httpClient)
+                        _tools.AddRange(Await httpClient.ListToolsAsync(cancellationToken:=cancellationToken))
+                        Continue For
+                    End If
+
                     ' Arguments/EnvironmentVariables are both Nothing by
                     ' default on a fresh StdioClientTransportOptions -
                     ' assigned directly here, not mutated in place.

@@ -315,6 +315,19 @@ Namespace Data
                     command.ExecuteNonQuery()
                 End Using
 
+                ' A server reached at a web address (Lemonade's own MCP gateway, for one) has a Url and no Command.
+                For Each mcpColumn In {Tuple.Create("Url", "TEXT NOT NULL DEFAULT ''"), Tuple.Create("HeadersJson", "TEXT NOT NULL DEFAULT '{}'")}
+                    Using command = connection.CreateCommand()
+                        command.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('McpServers') WHERE name = '{mcpColumn.Item1}';"
+                        If CLng(command.ExecuteScalar()) = 0 Then
+                            Using alterCommand = connection.CreateCommand()
+                                alterCommand.CommandText = $"ALTER TABLE McpServers ADD COLUMN {mcpColumn.Item1} {mcpColumn.Item2};"
+                                alterCommand.ExecuteNonQuery()
+                            End Using
+                        End If
+                    End Using
+                Next
+
                 ' Scheduler - a job stores a free-text prompt, run through
                 ' the normal tool-enabled chat pipeline when its cron
                 ' schedule fires. Full assistant/tool access rather than a
