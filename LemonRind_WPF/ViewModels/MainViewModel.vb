@@ -2028,8 +2028,9 @@ Namespace ViewModels
         ''' so the user still sees and can scroll their full conversation;
         ''' only the model's own context gets compacted.
         ''' </summary>
-        Private Async Function CompactHistoryIfNeededAsync(assistantBubble As ChatMessageViewModel, cancellationToken As CancellationToken) As Task
-            If ContextUsageMax <= 0 Then Return
+        Private Async Function CompactHistoryIfNeededAsync(assistantBubble As ChatMessageViewModel, cancellationToken As CancellationToken, Optional force As Boolean = False) As Task(Of Boolean)
+            ' force = Lemonade has just refused the request as too long, so the usual "is the context nearly full" test is skipped.
+            If ContextUsageMax <= 0 AndAlso Not force Then Return False
 
             ' A FRESH, real measurement of what's actually in _history right
             ' now - not ContextUsageCurrent, which only updates after a
@@ -2045,13 +2046,13 @@ Namespace ViewModels
             Dim committed = Await EstimateCommittedContextTokensAsync(cancellationToken)
             Dim currentTokens = committed.SystemPrompt + committed.Tools + committed.History
             Dim compactionTriggerFraction = _memorySettings.CompactionTriggerPercent / 100.0
-            If currentTokens / ContextUsageMax < compactionTriggerFraction Then Return
+            If Not force AndAlso currentTokens / ContextUsageMax < compactionTriggerFraction Then Return False
 
             ' _history(0) is always the system message - everything else is
             ' real conversation. Nothing to usefully compact yet if there
             ' isn't more than the "keep verbatim" tail.
             Dim compactibleCount = _history.Count - 1 - MessagesToKeepAfterCompaction
-            If compactibleCount <= 0 Then Return
+            If compactibleCount <= 0 Then Return False
 
             ' Shown BEFORE the summarization call below, which is itself a
             ' full model round-trip and can take a while. With no note yet (the "Compacted..." one
@@ -2121,11 +2122,13 @@ Namespace ViewModels
                 Dim tokensSaved = Math.Max(0, currentTokens - estimatedTokens)
                 assistantBubble.SystemNotes.Remove(compactingNote)
                 assistantBubble.SystemNotes.Add($"Compacted older messages to save context space · saved ~{tokensSaved:N0} tokens")
+                Return True
             Catch
                 ' Best-effort, same as fact extraction - a failed compaction
                 ' attempt just means the next turn's request stays as large
                 ' as it already was, not a crash or a lost reply.
                 assistantBubble.SystemNotes.Remove(compactingNote)
+                Return False
             End Try
         End Function
 
@@ -2547,6 +2550,7 @@ Namespace ViewModels
                 Dim usage = TurnUsage.Begin() ' collects what this turn cost (every model request it makes), saved with the reply for the usage screen
                 Const maxAttempts = 2
                 Dim attempt = 1
+                Dim overflowRetried = False
                 While attempt <= maxAttempts
                     assistantBubble.Text = ""
                     assistantBubble.ReasoningText = ""
@@ -2565,6 +2569,14 @@ Namespace ViewModels
                     wasCancelled = result.WasCancelled
                     errorMessage = result.ErrorMessage
                     finishReason = result.FinishReason
+
+                    ' Lemonade refused the request as longer than the model's context window. Once, and only while no
+                    ' tool has run (a retry would run them again), fold the older messages into a summary and ask again.
+                    If Not overflowRetried AndAlso Not wasCancelled AndAlso errorMessage IsNot Nothing AndAlso
+                       assistantBubble.ToolCalls.Count = 0 AndAlso ContextOverflow.IsOverflowText(errorMessage) Then
+                        overflowRetried = True
+                        If Await CompactHistoryIfNeededAsync(assistantBubble, cts.Token, force:=True) Then Continue While
+                    End If
 
                     ' A real error isn't retried - the empty-reply retry above
                     ' is for known model flakiness on an otherwise-working
@@ -3109,6 +3121,10 @@ Namespace ViewModels
                 ' Lemonade/network failure mid-stream would do the same.
                 ' Surfaced as a normal-looking error reply instead of a crash.
                 errorMessage = ex.Message
+                ' The SDK's own message does not carry the server's reason, so say it when the body did.
+                If Not ContextOverflow.IsOverflowText(errorMessage) AndAlso ContextOverflow.IsOverflow(ex) Then
+                    errorMessage &= " (the request exceeds the available context size)"
+                End If
             End Try
             Await enumerator.DisposeAsync()
 
