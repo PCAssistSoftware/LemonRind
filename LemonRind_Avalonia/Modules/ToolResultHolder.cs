@@ -149,7 +149,20 @@ public class ToolResultHolder(AppSettings settings)
                 throw;
             }
             Services.TurnUsage.Current?.AddToolCall(Name, failed: false);
-            return holder.Shorten(result);
+            var shortened = holder.Shorten(result);
+
+            // A message typed while the assistant works reaches the model with the result of this step.
+            var steering = Services.TurnSteering.Current?.TakeForModel();
+            if (steering is null) return shortened;
+            var text = shortened switch
+            {
+                null => "",
+                string s => s,
+                JsonElement { ValueKind: JsonValueKind.String } element => element.GetString() ?? "",
+                JsonElement element => element.GetRawText(),
+                _ => shortened.ToString() ?? "",
+            };
+            return $"{text}\n\n[{steering}]";
         }
     }
 }

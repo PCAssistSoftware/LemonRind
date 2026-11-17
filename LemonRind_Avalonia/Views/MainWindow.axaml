@@ -787,7 +787,19 @@
                  match the growing TextBox's own height, since nothing had
                  an explicit VerticalAlignment set before and all defaulted
                  to Stretch. The WPF app does the same. -->
-            <Grid Grid.Row="3" ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,8,0,0">
+            <StackPanel Grid.Row="3">
+            <!-- A message typed while the assistant is still working: shown here until it is handed over. -->
+            <Border IsVisible="{Binding QueuedStripText, Converter={x:Static avdc:ObjectConverters.IsNotNull}}"
+                    Background="{DynamicResource Surface3}"
+                    CornerRadius="8"
+                    Padding="8,4"
+                    Margin="0,8,0,0">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="{Binding QueuedStripText}" FontSize="12" Foreground="{DynamicResource TextMuted}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Command="{Binding CancelQueuedCommand}" Padding="5" Margin="8,0,0,0" ToolTip.Tip="Do not send this"><ctl:Icon Kind="x" Width="12" Height="12" /></Button>
+                </Grid>
+            </Border>
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,8,0,0">
                 <Button Grid.Column="0"
                         Width="38" Height="38" Padding="0"
                         ToolTip.Tip="Attach a file or image"
@@ -820,7 +832,7 @@
                 <TextBox Grid.Column="2"
                          Name="InputTextBox"
                          Text="{Binding InputText}"
-                         PlaceholderText="Type a message..."
+                         PlaceholderText="{Binding InputPlaceholder}"
                          AcceptsReturn="True"
                          TextWrapping="Wrap"
                          MaxHeight="140"
@@ -847,6 +859,7 @@
                     <ctl:Icon Kind="stop" Width="16" Height="16" HorizontalAlignment="Center" />
                 </Button>
             </Grid>
+            </StackPanel>
         </Grid>
 
         <!-- Right panel: Stats/Modules tab switch. Its width is set by the

@@ -180,10 +180,18 @@ public partial class MainWindow : Window
     // later, during Bubble) never fires at all.
     private void OnInputTextBoxKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter && e.KeyModifiers != KeyModifiers.Shift && DataContext is MainViewModel viewModel && viewModel.SendCommand.CanExecute(null))
+        if (e.Key == Key.Enter && e.KeyModifiers != KeyModifiers.Shift && DataContext is MainViewModel viewModel)
         {
-            viewModel.SendCommand.Execute(null);
-            e.Handled = true;
+            if (viewModel.SendCommand.CanExecute(null))
+            {
+                viewModel.SendCommand.Execute(null);
+                e.Handled = true;
+            }
+            else if (viewModel.IsBusy)
+            {
+                viewModel.QueueTypedMessage(); // a reply is being worked on: queue the message
+                e.Handled = true;
+            }
         }
     }
 

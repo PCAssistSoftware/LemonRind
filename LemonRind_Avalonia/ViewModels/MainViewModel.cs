@@ -1349,8 +1349,113 @@ public partial class MainViewModel : ObservableObject
 
     private bool CanSend() => !IsBusy && !string.IsNullOrWhiteSpace(InputText) && !string.IsNullOrWhiteSpace(SelectedModel) && AttachedImageVisionWarningText is null;
 
+    // --- Messages typed while a reply is being worked on (see TurnSteering) ---------------------------------------
+
+    private TurnSteering? _steering;
+    private bool _lastTurnCompleted;
+
+    /// <summary>What the strip above the box says about a waiting message, or null when there is none.</summary>
+    [ObservableProperty]
+    private string? _queuedStripText;
+
+    /// <summary>The box's hint: while a reply runs, Enter queues the message.</summary>
+    public string InputPlaceholder => IsBusy ? "Type to queue a message for the assistant (Enter)" : "Type a message...";
+
+    partial void OnIsBusyChanged(bool value) => OnPropertyChanged(nameof(InputPlaceholder));
+
+    /// <summary>Enter while a reply runs: hold the message for the assistant instead of doing nothing (the Stop button still stops).</summary>
+    public void QueueTypedMessage()
+    {
+        if (!IsBusy || _steering is null || string.IsNullOrWhiteSpace(InputText)) return;
+        _steering.Queue(InputText);
+        InputText = "";
+        UpdateQueuedStrip();
+    }
+
+    private void OnSteeringChanged() => Avalonia.Threading.Dispatcher.UIThread.Post(UpdateQueuedStrip);
+
+    private void UpdateQueuedStrip()
+    {
+        var waiting = _steering?.Waiting ?? [];
+        var handedOver = _steering?.LastHandedOver;
+        QueuedStripText = waiting.Count > 0
+            ? "Queued, goes to the assistant at its next step: " + string.Join(" / ", waiting)
+            : handedOver is not null ? "Handed to the assistant: " + handedOver : null;
+    }
+
+    /// <summary>The cross on the strip: take the waiting messages back into the box.</summary>
+    [RelayCommand]
+    private void CancelQueued()
+    {
+        if (_steering is null) return;
+        var waiting = _steering.Cancel();
+        if (waiting.Count == 0) return;
+        var draft = InputText.Trim();
+        if (draft.Length > 0) waiting.Add(draft);
+        InputText = string.Join("\n\n", waiting);
+        UpdateQueuedStrip();
+    }
+
+    /// <summary>After a turn: show and save the messages the assistant was given, and send (or give back) the rest.</summary>
+    private async Task AfterTurnAsync()
+    {
+        var steering = _steering;
+        _steering = null;
+        if (steering is not null) steering.Changed -= OnSteeringChanged;
+        QueuedStripText = null;
+        if (steering is null) return;
+
+        var applied = steering.TakeApplied();
+        var unsent = steering.Cancel();
+        if (applied.Count > 0)
+        {
+            if (_lastTurnCompleted)
+            {
+                foreach (var note in applied)
+                {
+                    var bubble = new ChatMessageViewModel(isUser: true, initialText: note);
+                    Messages.Add(bubble);
+                    SetDateDividerIfNeeded(bubble);
+                    _history.Add(new ChatMessage(ChatRole.User, note));
+                    _sessionRepository.SaveMessage(_currentSessionId, ChatRole.User.Value, note, reasoningContent: null);
+                }
+            }
+            else
+            {
+                unsent.InsertRange(0, applied); // the turn did not keep them: nothing is lost
+            }
+        }
+
+        if (unsent.Count == 0) return;
+        var waitingText = string.Join("\n\n", unsent);
+        var typed = InputText.Trim();
+        if (_lastTurnCompleted && typed.Length == 0)
+        {
+            InputText = waitingText;
+            if (CanSend())
+            {
+                await SendAsync(); // goes through the usual checks
+                return;
+            }
+            return; // cannot send now (for example no model): the text stays in the box
+        }
+        // Stopped, failed or you are already typing: put it back for you to send when ready.
+        InputText = typed.Length == 0 ? waitingText : waitingText + "\n\n" + typed;
+    }
+
     [RelayCommand(CanExecute = nameof(CanSend))]
     private async Task SendAsync()
+    {
+        // The queue is begun here so it belongs to everything the turn awaits, tool calls included.
+        _steering = TurnSteering.Begin();
+        _steering.Changed += OnSteeringChanged;
+        QueuedStripText = null;
+        _lastTurnCompleted = false;
+        await SendCoreAsync();
+        await AfterTurnAsync();
+    }
+
+    private async Task SendCoreAsync()
     {
         var userText = InputText.Trim();
         InputText = "";
@@ -1695,6 +1800,7 @@ public partial class MainViewModel : ObservableObject
             // deliberately-interrupted turn.
             if (!wasCancelled)
             {
+                _lastTurnCompleted = true;
                 try
                 {
                     var stats = await _managementClient.GetStatsAsync(CancellationToken.None);
