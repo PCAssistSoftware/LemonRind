@@ -104,8 +104,8 @@ public static class MemoryFitCheck
 
         var share = sizeGb.Value / capacity;
         var summary = $"{sizeGb.Value:0.0} GB of {capacity:0} GB of {where} ({share:0%})";
-        if (share <= ComfortableShare) return new(MemoryFitVerdict.Fits, $"Fits: {summary}.");
-        if (share <= 1.0) return new(MemoryFitVerdict.Tight, $"Tight: {summary}. Little room is left for a long context.");
+        if (share <= ComfortableShare) return new(MemoryFitVerdict.Fits, $"Fits: {summary}. That is the model file alone: the context (KV cache) and working space need more.");
+        if (share <= 1.0) return new(MemoryFitVerdict.Tight, $"Tight: {summary}. That is the model file alone, and the context (KV cache) and working space need more, so there is little room.");
         return new(MemoryFitVerdict.TooBig, $"Too big: {summary}. It could only run partly from slower memory, if at all.");
     }
 }
