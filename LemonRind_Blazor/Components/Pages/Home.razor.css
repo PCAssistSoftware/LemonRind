@@ -1032,6 +1032,47 @@
     gap: 0.7rem 0.5rem;
 }
 
+.meter-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    margin-top: 0.35rem;
+}
+
+.meter-value {
+    color: var(--text-muted);
+}
+
+.meter-bar {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--hover);
+    overflow: hidden;
+}
+
+.meter-bar > div {
+    height: 100%;
+    background: var(--accent);
+}
+
+.meter-note {
+    margin-top: 0.4rem;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+.fit-fits {
+    color: var(--success);
+}
+
+.fit-tight {
+    color: #9a4f00;
+}
+
+.fit-toobig {
+    color: #c0392b;
+}
+
 .stat-tile {
     display: flex;
     flex-direction: column;

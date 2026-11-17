@@ -351,6 +351,34 @@
         <div class="right-panel-content">
             @if (_rightPanelTab == "Stats")
             {
+                @if (_serverStats is not null)
+                {
+                    var gpu = _serverStats.PrimaryGpu;
+                    var graphicsPercent = _serverStats.GpuPercent ?? gpu?.GpuPercent;
+                    <div class="panel-card server-card">
+                        <h4>Lemonade server</h4>
+                        <div class="meter-row"><span>Processor</span><span class="meter-value">@PercentText(_serverStats.CpuPercent)</span></div>
+                        <div class="meter-bar"><div style="width: @MeterWidth(_serverStats.CpuPercent)"></div></div>
+                        <div class="meter-row"><span>Graphics</span><span class="meter-value">@PercentText(graphicsPercent)</span></div>
+                        <div class="meter-bar"><div style="width: @MeterWidth(graphicsPercent)"></div></div>
+                        @if (_serverStats.NpuPercent is not null)
+                        {
+                            <div class="meter-row"><span>NPU</span><span class="meter-value">@PercentText(_serverStats.NpuPercent)</span></div>
+                            <div class="meter-bar"><div style="width: @MeterWidth(_serverStats.NpuPercent)"></div></div>
+                        }
+                        @if (gpu?.MemoryTotalGb is > 0)
+                        {
+                            var usedGb = gpu.MemoryUsedGb ?? 0;
+                            <div class="meter-row"><span>Graphics memory@(gpu.MemoryType == "shared" ? " (shared)" : "")</span><span class="meter-value">@usedGb.ToString("0.0") / @gpu.MemoryTotalGb.Value.ToString("0") GB</span></div>
+                            <div class="meter-bar"><div style="width: @MeterWidth(100 * usedGb / gpu.MemoryTotalGb.Value)"></div></div>
+                        }
+                        @if (_serverStats.MemoryGb is not null)
+                        {
+                            <div class="meter-note">Main memory in use: @_serverStats.MemoryGb.Value.ToString("0.0") GB</div>
+                        }
+                    </div>
+                }
+
                 <div class="panel-card">
                     <h4>Last reply</h4>
                     <div class="stat-grid">
@@ -521,6 +549,11 @@
                     <dd>@catalogEntry.MaxContextWindow.ToString("N0") tokens</dd>
                     <dt>Size on disk</dt>
                     <dd>@catalogEntry.SizeGb.ToString("0.##") GB</dd>
+                    @if (_modelFit is not null)
+                    {
+                        <dt>Fits in memory</dt>
+                        <dd class="fit-@_modelFit.Verdict.ToString().ToLowerInvariant()">@_modelFit.Message</dd>
+                    }
                     <dt>Backend</dt>
                     <dd>@(catalogEntry.Recipe ?? "(unknown)")</dd>
                 </dl>
@@ -1060,16 +1093,52 @@
     private bool _isModelDetailsOpen;
     private bool _isLoadingModelDetails;
     private LemonadeLoadedModelInfo? _loadedModelDetails;
+    private MemoryFit? _modelFit;
+
+    // How busy the server's machine is, read every few seconds while the Stats tab shows. Null (card hidden) until a
+    // reading arrives, or when Lemonade does not offer the figures.
+    private LemonadeSystemStats? _serverStats;
+    private Timer? _serverStatsTimer;
+
+    private async void OnServerStatsTimerTick(object? state)
+    {
+        if (_rightPanelTab != "Stats") return;
+        try
+        {
+            _serverStats = await ManagementClient.GetSystemStatsAsync(CancellationToken.None);
+        }
+        catch
+        {
+            _serverStats = null;
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static string PercentText(double? value) => value is null ? "n/a" : $"{value.Value:0}%";
+    private static string MeterWidth(double? value) => $"{Math.Clamp(value ?? 0, 0, 100):0}%";
 
     private async Task ShowModelDetailsAsync()
     {
         _isModelDetailsOpen = true;
         _isLoadingModelDetails = true;
         _loadedModelDetails = null;
+        _modelFit = null;
         StateHasChanged();
 
         try
         {
+            if (_modelCatalog.TryGetValue(_selectedModel, out var catalogEntry))
+            {
+                LemonadeSystemStats? stats = null;
+                double? ramGb = null;
+                try { stats = await ManagementClient.GetSystemStatsAsync(CancellationToken.None); } catch { }
+                // No graphics chip reported: main memory is the limit, so ask for it.
+                if (stats?.PrimaryGpu is null)
+                {
+                    try { ramGb = await ManagementClient.GetPhysicalMemoryGbAsync(CancellationToken.None); } catch { }
+                }
+                _modelFit = MemoryFitCheck.Assess(catalogEntry.SizeGb, stats, ramGb);
+            }
             var health = await ManagementClient.GetHealthAsync(CancellationToken.None);
             _loadedModelDetails = health?.AllModelsLoaded.FirstOrDefault(m => string.Equals(m.ModelName, _selectedModel, StringComparison.OrdinalIgnoreCase));
         }
@@ -1477,6 +1546,7 @@
         // lifetime rather than being started/stopped around IsHealthy
         // transitions.
         _connectionRetryTimer = new Timer(OnConnectionRetryTimerTick, null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15));
+        _serverStatsTimer = new Timer(OnServerStatsTimerTick, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(3));
     }
 
     /// <summary>
@@ -2707,6 +2777,7 @@
         _searchDebounceCts?.Cancel();
         _sendCts?.Cancel();
         _connectionRetryTimer?.Dispose();
+        _serverStatsTimer?.Dispose();
         ApprovalGate.OnPendingRequestChanged -= OnPendingApprovalChanged;
         SchedulerNotifier.SessionUpdated -= OnSchedulerSessionUpdated;
         RunningJobs.Changed -= OnRunningJobsChanged;
