@@ -115,8 +115,8 @@ Namespace Services
 
             Dim share = sizeGb.Value / capacity
             Dim summary = $"{sizeGb.Value:0.0} GB of {capacity:0} GB of {where} ({share:0%})"
-            If share <= ComfortableShare Then Return New MemoryFit With {.Verdict = MemoryFitVerdict.Fits, .Message = $"Fits: {summary}."}
-            If share <= 1.0 Then Return New MemoryFit With {.Verdict = MemoryFitVerdict.Tight, .Message = $"Tight: {summary}. Little room is left for a long context."}
+            If share <= ComfortableShare Then Return New MemoryFit With {.Verdict = MemoryFitVerdict.Fits, .Message = $"Fits: {summary}. That is the model file alone: the context (KV cache) and working space need more."}
+            If share <= 1.0 Then Return New MemoryFit With {.Verdict = MemoryFitVerdict.Tight, .Message = $"Tight: {summary}. That is the model file alone, and the context (KV cache) and working space need more, so there is little room."}
             Return New MemoryFit With {.Verdict = MemoryFitVerdict.TooBig, .Message = $"Too big: {summary}. It could only run partly from slower memory, if at all."}
         End Function
 
