@@ -314,6 +314,17 @@
             <div class="attach-error">@AttachedImageVisionWarningText</div>
         }
 
+        @if (_steering is not null && (_steering.Waiting.Count > 0 || _steeringHandedOver is not null))
+        {
+            <div class="queued-strip">
+                <span class="queued-text">@(_steeringHandedOver is not null ? "Handed to the assistant: " + _steeringHandedOver : "Queued, goes to the assistant at its next step: " + string.Join(" / ", _steering.Waiting))</span>
+                @if (_steeringHandedOver is null)
+                {
+                    <button class="remove-attachment" title="Do not send this" @onclick="CancelQueuedMessages"><Icon Name="x" Size="13" /></button>
+                }
+            </div>
+        }
+
         <div class="input-row">
             <label class="icon-btn attach-btn" title="Attach a file or image"><Icon Name="paperclip" Size="18" /><InputFile OnChange="OnAttachFile" class="attach-input" /></label>
             @if (IsKnowledgeModuleEnabled)
@@ -328,7 +339,7 @@
                 </select>
             }
             <textarea @ref="_inputBox" @bind="_inputText" @bind:event="oninput" rows="1"
-                      placeholder="Type a message..." disabled="@_isBusy" class="input-box"></textarea>
+                      placeholder="@(_isBusy ? "Type to queue a message for the assistant (Enter)" : "Type a message...")" class="input-box"></textarea>
             @if (_isBusy)
             {
                 <button class="stop-button icon-only" title="Stop" aria-label="Stop" @onclick="StopGeneration"><Icon Name="stop" Size="16" /></button>
@@ -2095,11 +2106,84 @@
     {
         await InvokeAsync(async () =>
         {
-            if (!string.IsNullOrWhiteSpace(_inputText) && !_isBusy && !_isLoadingModel && AttachedImageVisionWarningText is null)
+            if (_isBusy)
+            {
+                // A reply is being worked on: hold the message for the assistant instead of stopping anything.
+                if (!string.IsNullOrWhiteSpace(_inputText) && _steering is not null)
+                {
+                    _steering.Queue(_inputText);
+                    _inputText = "";
+                    _steeringHandedOver = null;
+                    StateHasChanged();
+                }
+                return;
+            }
+            if (!string.IsNullOrWhiteSpace(_inputText) && !_isLoadingModel && AttachedImageVisionWarningText is null)
             {
                 await SendAsync();
             }
         });
+    }
+
+    // Messages typed while a reply is being worked on (see TurnSteering). Set when a turn begins, cleared when it ends.
+    private TurnSteering? _steering;
+    private string? _steeringHandedOver;
+    private bool _lastTurnCompleted;
+
+    private void CancelQueuedMessages()
+    {
+        if (_steering is null) return;
+        var waiting = _steering.Cancel();
+        if (waiting.Count == 0) return;
+        var draft = _inputText.Trim();
+        if (draft.Length > 0) waiting.Add(draft);
+        _inputText = string.Join("\n\n", waiting);
+    }
+
+    /// <summary>After a turn: show and save the messages the assistant was given, and send (or give back) the rest.</summary>
+    private async Task AfterTurnAsync()
+    {
+        var steering = _steering;
+        _steering = null;
+        _steeringHandedOver = null;
+        if (steering is null) return;
+
+        var applied = steering.TakeApplied();
+        var unsent = steering.Cancel();
+        if (applied.Count > 0)
+        {
+            if (_lastTurnCompleted)
+            {
+                foreach (var note in applied)
+                {
+                    var bubble = new DisplayMessage { IsUser = true, Text = note };
+                    _messages.Add(bubble);
+                    SetDateDividerIfNeeded(bubble);
+                    _history.Add(new ChatMessage(ChatRole.User, note));
+                    SessionRepository.SaveMessage(_currentSessionId, ChatRole.User.Value, note, reasoningContent: null);
+                }
+            }
+            else
+            {
+                unsent.InsertRange(0, applied); // the turn did not keep them: nothing is lost
+            }
+        }
+
+        if (unsent.Count > 0)
+        {
+            var waiting = string.Join("\n\n", unsent);
+            var draft = _inputText.Trim();
+            if (_lastTurnCompleted && draft.Length == 0)
+            {
+                _inputText = waiting;
+                StateHasChanged();
+                await SendAsync(); // goes through the usual checks
+                return;
+            }
+            // Stopped, failed or you are already typing: put it back for you to send when ready.
+            _inputText = draft.Length == 0 ? waiting : waiting + "\n\n" + draft;
+        }
+        StateHasChanged();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -2182,6 +2266,31 @@
     }
 
     private async Task SendAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_inputText) || _isBusy) return;
+
+        // The queue is begun here so it belongs to everything the turn awaits, tool calls included.
+        if (_steering is not null) _steering.Changed -= OnSteeringChanged;
+        _steering = TurnSteering.Begin();
+        _steering.Changed += OnSteeringChanged;
+        _steeringHandedOver = null;
+        _lastTurnCompleted = false;
+        await SendCoreAsync();
+        await AfterTurnAsync();
+    }
+
+    private void OnSteeringChanged()
+    {
+        // Raised from a tool's thread when the model is handed a queued message.
+        var handedOver = _steering?.LastHandedOver;
+        _ = InvokeAsync(() =>
+        {
+            if (_steering is not null && _steering.Waiting.Count == 0 && handedOver is not null) _steeringHandedOver = handedOver;
+            StateHasChanged();
+        });
+    }
+
+    private async Task SendCoreAsync()
     {
         var userText = _inputText.Trim();
         if (string.IsNullOrWhiteSpace(userText) || _isBusy) return;
@@ -2514,6 +2623,7 @@
         }
         await RefreshHealthAsync();
 
+        _lastTurnCompleted = !wasCancelled && !hadError;
         _isBusy = false;
         StateHasChanged();
     }
