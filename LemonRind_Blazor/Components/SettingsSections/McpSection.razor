@@ -1,8 +1,10 @@
 @using System.Text.Json
+@using LemonRindBlazor.Configuration
 @using LemonRindBlazor.Mcp
 @using LemonRindBlazor.Modules
 @inject McpServerRepository Repository
 @inject ModuleRegistry ModuleRegistry
+@inject AppSettings LiveSettings
 
 <div class="mcp-page">
     <p class="mcp-intro">
@@ -11,6 +13,16 @@
         give you this) - the real, primary way to add one here, not just an alternative to the manual
         fields below.
     </p>
+
+    <div class="lemonade-box">
+        <strong>Lemonade's own tools</strong>
+        <p>
+            The Lemonade server you are connected to offers tools of its own: speech to text (Whisper), picture
+            drawing and asking its other models. One click adds them. Some of them load other models, which can
+            swap the one that is loaded, and they run without asking first.
+        </p>
+        <button class="btn-primary" @onclick="AddLemonadeTools" disabled="@_servers.Any(s => string.Equals(s.Name, LemonadeGateway.ServerName, StringComparison.OrdinalIgnoreCase))">Add Lemonade's tools</button>
+    </div>
 
     <div class="import-box">
         <textarea @bind="_pendingConfigJson" placeholder='{"mcpServers": {"name": {"command": "npx", "args": [...], "env": {...}}}}' rows="4"></textarea>
@@ -41,7 +53,7 @@
                     <input type="checkbox" checked="@server.IsEnabled" @onchange="e => ToggleServer(server, (bool)e.Value!)" />
                     <span class="server-name">@server.Name</span>
                 </label>
-                <span class="server-command">@server.Command @string.Join(" ", server.Arguments)</span>
+                <span class="server-command">@(string.IsNullOrEmpty(server.Url) ? $"{server.Command} {string.Join(" ", server.Arguments)}" : server.Url)</span>
                 <button class="server-delete" @onclick="() => DeleteServer(server.Id)">Delete</button>
             </div>
         }
@@ -125,6 +137,25 @@
         {
             _statusText = $"Couldn't parse that JSON: {ex.Message}";
         }
+    }
+
+    private async Task AddLemonadeTools()
+    {
+        if (Repository.ServerNameExists(LemonadeGateway.ServerName))
+        {
+            _statusText = "Lemonade's tools are already added.";
+            return;
+        }
+        if (LemonadeGateway.Describe(LiveSettings.Lemonade.BaseUrl, LiveSettings.Lemonade.ApiKey) is not var (url, headers))
+        {
+            _statusText = "Lemonade's address (Settings > Lemonade) is not a web address, so its tools cannot be found.";
+            return;
+        }
+
+        Repository.CreateHttpServer(LemonadeGateway.ServerName, url, headers);
+        RefreshServers();
+        await ModuleRegistry.ReconcileEnabledModulesAsync(CancellationToken.None);
+        _statusText = "Added Lemonade's tools and connected.";
     }
 
     private async Task CreateServer()

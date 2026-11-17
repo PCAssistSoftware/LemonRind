@@ -58,6 +58,24 @@ public class McpModule(AppSettings settings, McpServerRepository repository, ILo
             ProcessJob? job = null;
             try
             {
+                // A server at a web address: nothing to start, so no process or job to track.
+                if (!string.IsNullOrEmpty(serverConfig.Url))
+                {
+                    var httpOptions = new HttpClientTransportOptions
+                    {
+                        Name = serverConfig.Name,
+                        Endpoint = new Uri(serverConfig.Url),
+                        AdditionalHeaders = serverConfig.Headers,
+                    };
+                    var httpClientOptions = new McpClientOptions { InitializationTimeout = TimeSpan.FromSeconds(30) };
+                    var httpClient = await McpClient.CreateAsync(new HttpClientTransport(httpOptions, loggerFactory), httpClientOptions, loggerFactory, cancellationToken);
+                    _connectedClients.Add(httpClient);
+                    _connectedProcessIds.Add(null);
+                    _connectedJobs.Add(null);
+                    _tools.AddRange(await httpClient.ListToolsAsync(cancellationToken: cancellationToken));
+                    continue;
+                }
+
                 var transportOptions = new StdioClientTransportOptions
                 {
                     Name = serverConfig.Name,
