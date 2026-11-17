@@ -2269,6 +2269,9 @@
         // AppendVolatileContext layers this turn's volatile
         // context (see above) onto that same outgoing copy, never onto
         // _history itself.
+        var overflowRetried = false;
+    streamAgain:
+        _sendCts = cts; // the finally below clears it, so a retry puts the Stop button's target back
         var outgoingMessages = AppendVolatileContext(StripOldImageContent(_history), volatileContextText);
         try
         {
@@ -2350,6 +2353,18 @@
         }
         catch (Exception ex)
         {
+            // Lemonade refused the request as longer than the model's context window. Once, and only while no tool has
+            // run (a retry would run them again), fold the older messages into a summary and ask again.
+            if (!overflowRetried && assistantMessage.ToolCalls.Count == 0 && ContextOverflow.IsOverflow(ex))
+            {
+                overflowRetried = true;
+                fullReply.Clear();
+                fullReasoning.Clear();
+                assistantMessage.ReasoningText = "";
+                assistantMessage.Text = "";
+                if (await CompactHistoryIfNeededAsync(assistantMessage, force: true)) goto streamAgain;
+            }
+
             hadError = true;
             fullReply.Clear();
             fullReply.Append($"⚠️ Something went wrong generating a reply: {ex.Message}");
@@ -2630,16 +2645,20 @@
     /// final "saved ~N tokens" note on success, or removing it silently on
     /// failure.
     /// </summary>
-    private async Task CompactHistoryIfNeededAsync(DisplayMessage assistantMessage)
+    private async Task<bool> CompactHistoryIfNeededAsync(DisplayMessage assistantMessage, bool force = false)
     {
-        if (_contextUsageMax <= 0 || _contextUsageCurrent is null) return;
-        if ((double)_contextUsageCurrent.Value / _contextUsageMax < Settings.Memory.CompactionTriggerPercent / 100.0) return;
+        // force = Lemonade has just refused the request as too long, so the usual "is the context nearly full" test is skipped.
+        if (!force)
+        {
+            if (_contextUsageMax <= 0 || _contextUsageCurrent is null) return false;
+            if ((double)_contextUsageCurrent.Value / _contextUsageMax < Settings.Memory.CompactionTriggerPercent / 100.0) return false;
+        }
 
         var compactibleCount = _history.Count - 1 - MessagesToKeepAfterCompaction;
-        if (compactibleCount <= 0) return;
+        if (compactibleCount <= 0) return false;
 
         const string inProgressNote = "Compacting older messages...";
-        var tokensBeforeCompaction = _contextUsageCurrent.Value;
+        var tokensBeforeCompaction = _contextUsageCurrent ?? 0;
         assistantMessage.SystemNotes.Add(inProgressNote);
         StateHasChanged();
 
@@ -2671,6 +2690,7 @@
             var savedTokens = Math.Max(0, tokensBeforeCompaction - _contextUsageCurrent.Value);
             assistantMessage.SystemNotes.Add($"Compacted older messages - saved ~{savedTokens:N0} tokens");
             _compactionCount++;
+            return true;
         }
         catch
         {
@@ -2678,6 +2698,7 @@
             // turn's request stays as large as it already was. Remove the
             // in-progress note rather than leaving it stuck forever.
             assistantMessage.SystemNotes.Remove(inProgressNote);
+            return false;
         }
     }
 
