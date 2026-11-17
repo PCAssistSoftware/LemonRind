@@ -118,7 +118,11 @@ Class MainWindow
     Private Sub OnInputTextBoxPreviewKeyDown(sender As Object, e As KeyEventArgs)
         If e.Key = Key.Return AndAlso Keyboard.Modifiers <> ModifierKeys.Shift Then
             e.Handled = True
-            If _viewModel.SendCommand.CanExecute(Nothing) Then _viewModel.SendCommand.Execute(Nothing)
+            If _viewModel.SendCommand.CanExecute(Nothing) Then
+                _viewModel.SendCommand.Execute(Nothing)
+            ElseIf _viewModel.IsBusy Then
+                _viewModel.QueueTypedMessage() ' a reply is being worked on: queue the message
+            End If
         End If
     End Sub
 

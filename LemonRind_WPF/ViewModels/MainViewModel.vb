@@ -820,6 +820,7 @@ Namespace ViewModels
             ' Raised from the job's own thread, so the note is updated on the UI thread.
             AddHandler _runningJobs.Changed, Sub() Application.Current.Dispatcher.BeginInvoke(Sub() UpdateJobRunningNote())
             SendCommand = New AsyncRelayCommand(AddressOf SendAsync, AddressOf CanSend)
+            CancelQueuedCommand = New RelayCommand(AddressOf CancelQueued)
             ContinueReplyCommand = New AsyncRelayCommand(AddressOf ContinueReplyAsync)
             NewChatCommand = New RelayCommand(AddressOf NewChat)
             AttachFileCommand = New RelayCommand(AddressOf AttachFile)
@@ -2404,7 +2405,113 @@ Namespace ViewModels
             InputText = typed
         End Function
 
+        ' --- Messages typed while a reply is being worked on (see TurnSteering) -----------------------------------------
+
+        Private _steering As TurnSteering
+        Private _lastTurnCompleted As Boolean
+
+        Private _queuedStripText As String
+        ''' <summary>What the strip above the box says about a waiting message, or Nothing when there is none.</summary>
+        Public Property QueuedStripText As String
+            Get
+                Return _queuedStripText
+            End Get
+            Set(value As String)
+                If SetProperty(_queuedStripText, value) Then OnPropertyChanged(NameOf(HasQueuedStrip))
+            End Set
+        End Property
+
+        Public ReadOnly Property HasQueuedStrip As Boolean
+            Get
+                Return Not String.IsNullOrEmpty(_queuedStripText)
+            End Get
+        End Property
+
+        Public ReadOnly Property CancelQueuedCommand As IRelayCommand
+
+        ''' <summary>Enter while a reply runs: hold the message for the assistant instead of ignoring it (the Stop button still stops).</summary>
+        Public Sub QueueTypedMessage()
+            If Not IsBusy OrElse _steering Is Nothing OrElse String.IsNullOrWhiteSpace(InputText) Then Return
+            _steering.Queue(InputText)
+            InputText = ""
+            UpdateQueuedStrip()
+        End Sub
+
+        Private Sub OnSteeringChanged()
+            ' Raised from a tool's thread when the model is handed a queued message.
+            Application.Current?.Dispatcher.BeginInvoke(Sub() UpdateQueuedStrip())
+        End Sub
+
+        Private Sub UpdateQueuedStrip()
+            Dim waiting = If(_steering Is Nothing, New List(Of String), _steering.Waiting)
+            Dim handedOver = _steering?.LastHandedOver
+            If waiting.Count > 0 Then
+                QueuedStripText = "Queued, goes to the assistant at its next step: " & String.Join(" / ", waiting)
+            ElseIf handedOver IsNot Nothing Then
+                QueuedStripText = "Handed to the assistant: " & handedOver
+            Else
+                QueuedStripText = Nothing
+            End If
+        End Sub
+
+        ''' <summary>The cross on the strip: take the waiting messages back into the box.</summary>
+        Private Sub CancelQueued()
+            If _steering Is Nothing Then Return
+            Dim waiting = _steering.Cancel()
+            If waiting.Count = 0 Then Return
+            Dim draft = InputText.Trim()
+            If draft.Length > 0 Then waiting.Add(draft)
+            InputText = String.Join(vbLf & vbLf, waiting)
+            UpdateQueuedStrip()
+        End Sub
+
+        ''' <summary>After a turn: show and save the messages the assistant was given, and send (or give back) the rest.</summary>
+        Private Async Function AfterTurnAsync() As Task
+            Dim steering = _steering
+            _steering = Nothing
+            If steering IsNot Nothing Then RemoveHandler steering.Changed, AddressOf OnSteeringChanged
+            QueuedStripText = Nothing
+            If steering Is Nothing Then Return
+
+            Dim applied = steering.TakeApplied()
+            Dim unsent = steering.Cancel()
+            If applied.Count > 0 Then
+                If _lastTurnCompleted Then
+                    For Each note In applied
+                        Dim bubble As New ChatMessageViewModel(isUser:=True, initialText:=note)
+                        Messages.Add(bubble)
+                        SetDateDividerIfNeeded(bubble)
+                        _history.Add(New ChatMessage(ChatRole.User, note))
+                        _sessionRepository.SaveMessage(_currentSessionId, ChatRole.User.Value, note, reasoningContent:="")
+                    Next
+                Else
+                    unsent.InsertRange(0, applied) ' the turn did not keep them: nothing is lost
+                End If
+            End If
+
+            If unsent.Count = 0 Then Return
+            Dim waitingText = String.Join(vbLf & vbLf, unsent)
+            Dim typed = InputText.Trim()
+            If _lastTurnCompleted AndAlso typed.Length = 0 Then
+                InputText = waitingText
+                If CanSend() Then Await SendAsync() ' goes through the usual checks
+                Return
+            End If
+            ' Stopped, failed or you are already typing: put it back for you to send when ready.
+            InputText = If(typed.Length = 0, waitingText, waitingText & vbLf & vbLf & typed)
+        End Function
+
         Private Async Function SendAsync() As Task
+            ' The queue is begun here so it belongs to everything the turn awaits, tool calls included.
+            _steering = TurnSteering.Begin()
+            AddHandler _steering.Changed, AddressOf OnSteeringChanged
+            QueuedStripText = Nothing
+            _lastTurnCompleted = False
+            Await SendCoreAsync()
+            Await AfterTurnAsync()
+        End Function
+
+        Private Async Function SendCoreAsync() As Task
             Dim userText = InputText.Trim()
             InputText = ""
             IsBusy = True
@@ -2646,6 +2753,7 @@ Namespace ViewModels
                 ' From here the bubble is done changing - switches its
                 ' Markdown-rendered view on (see IsStreaming's comment).
                 assistantBubble.IsStreaming = False
+                _lastTurnCompleted = Not wasCancelled AndAlso errorMessage Is Nothing
 
                 If wasCancelled Then
                     assistantBubble.Text &= If(assistantBubble.Text.Length > 0, Environment.NewLine, "") & "[Stopped]"

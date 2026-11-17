@@ -1239,6 +1239,19 @@
                 <TextBlock Text="{Binding AttachedImageVisionWarning}" Foreground="#B8860B" FontSize="12"
                            Margin="0,4,0,0" TextWrapping="Wrap"
                            Visibility="{Binding AttachedImageVisionWarning, Converter={StaticResource NullToVisibilityConverter}}" />
+
+                <!-- A message typed while the assistant is still working: shown here until it is handed over. -->
+                <Border Padding="8,3" CornerRadius="8" Background="#F5F5F5" Margin="0,0,0,0"
+                        Visibility="{Binding HasQueuedStrip, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{Binding QueuedStripText, Mode=OneWay}" FontSize="12" Foreground="Gray" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Content="&#10005;" Padding="6,0" Margin="8,0,0,0" ToolTip="Do not send this" Command="{Binding CancelQueuedCommand}" />
+                    </Grid>
+                </Border>
             </StackPanel>
 
             <Grid Grid.Row="1">

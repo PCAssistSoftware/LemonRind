@@ -173,7 +173,23 @@ Namespace Modules
                     Throw
                 End Try
                 Services.TurnUsage.Current?.AddToolCall(Name, False)
-                Return _holder.Shorten(result)
+                Dim shortened = _holder.Shorten(result)
+
+                ' A message typed while the assistant works reaches the model with the result of this step.
+                Dim steering = Services.TurnSteering.Current?.TakeForModel()
+                If steering Is Nothing Then Return shortened
+                Dim text As String
+                If shortened Is Nothing Then
+                    text = ""
+                ElseIf TypeOf shortened Is String Then
+                    text = DirectCast(shortened, String)
+                ElseIf TypeOf shortened Is JsonElement Then
+                    Dim element = DirectCast(shortened, JsonElement)
+                    text = If(element.ValueKind = JsonValueKind.String, element.GetString(), element.GetRawText())
+                Else
+                    text = shortened.ToString()
+                End If
+                Return text & vbLf & vbLf & "[" & steering & "]"
             End Function
         End Class
 
