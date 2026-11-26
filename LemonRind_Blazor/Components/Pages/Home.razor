@@ -2795,6 +2795,7 @@
     // blank line between them per strict CommonMark - closer to how a chat
     // model actually formats its own output.
     private static readonly MarkdownPipeline ChatMarkdownPipeline = new MarkdownPipelineBuilder()
+        .UsePipeTables() // models often answer with a table; without this it showed as rows of | characters
         .UseSoftlineBreakAsHardlineBreak()
         .DisableHtml()
         .Build();

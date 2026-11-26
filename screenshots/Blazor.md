@@ -2,7 +2,7 @@
 
 The browser edition (C# / Blazor Server) - the same features as the desktop editions, used from any web browser on any OS. Light theme throughout, plus one dark-mode view. Other editions: [WPF](WPF.md) | [Avalonia](Avalonia.md) | [back to the README](../README.md)
 
-*The screenshots use sample data (a few made-up chats, memories, a knowledge base and a scheduled job) and a real reply from a local model.*
+*The screenshots use sample data (a few made-up chats, memories, a knowledge base and a scheduled job); the reply in the main window is made up too.*
 
 **Main chat window** - streaming replies, collapsible thinking panel, per-turn/session stats, context usage, chat list with folders, tags and relative times
 
@@ -11,6 +11,10 @@ The browser edition (C# / Blazor Server) - the same features as the desktop edit
 **Dark mode** - follows the browser/OS theme, or choose Light/Dark in Settings -> Interface
 
 ![Overview, dark mode](<Blazor/Overview (dark).png>)
+
+**The avatar** - the three cats, and the avatar listening, thinking, speaking and asleep
+
+![The avatar](<Blazor/Avatar.png>)
 
 **Settings - Lemonade server**
 

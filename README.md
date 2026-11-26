@@ -70,7 +70,7 @@ dotnet publish LemonRind_Avalonia/LemonRindAvalonia.csproj -c Debug -r linux-x64
 
 The same app as a Blazor Server web app: start it, then open it in any browser - handy for a Linux box or a headless server. It has the same theme, resizable panes, icons and log-viewer controls as the Avalonia edition (theme and pane widths are remembered per browser), and on a narrow window or phone the chat list and stats panel turn into slide-in drawers.
 
-It also has an animated holographic cat that shows what the assistant is doing: listening while you type, thinking, speaking as the reply arrives, and asleep when no model is loaded. Choose Genie, Jess or Sid, and whether it sits at the top of the chat list or the stats panel, in Settings -> Interface.
+It also has an animated holographic cat avatar that shows what the assistant is doing: listening while you type, thinking, speaking as the reply arrives, and asleep when no model is loaded. Choose Genie, Jess or Sid, and whether it sits at the top of the chat list or the stats panel, in Settings -> Interface.
 
 ```
 cd LemonRind_Blazor

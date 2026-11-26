@@ -329,3 +329,26 @@ h1:focus {
 .btn-danger:hover:not(:disabled) {
     background: var(--chip-bad-bg);
 }
+
+/* Tables in a chat reply (Markdown tables). Here, not in Home.razor.css, because a reply's HTML is not part of the
+   page's own markup, so the page's scoped styles do not reach it. Wide tables scroll inside the bubble. */
+.bubble-text table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+    margin: 0.4em 0 0.6em;
+    font-size: 0.92em;
+}
+
+.bubble-text th, .bubble-text td {
+    border: 1px solid var(--border-strong);
+    padding: 0.3em 0.6em;
+    text-align: left;
+    vertical-align: top;
+}
+
+.bubble-text th {
+    font-weight: 600;
+    background: var(--code-bg);
+}
