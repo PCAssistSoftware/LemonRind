@@ -1805,8 +1805,7 @@
         _contextUsageCurrent = null;
         _attachedKnowledgeBaseId = "";
         _compactionCount = 0;
-        _sessionTotalInputTokens = 0;
-        _sessionTotalOutputTokens = 0;
+        ShowStoredStats([]);
         _openMenuSessionId = null;
         RefreshStableSystemPrompt();
         RefreshSessions();
@@ -1846,7 +1845,9 @@
         // input yet to derive this turn's volatile context from anyway.
         RefreshStableSystemPrompt();
 
-        foreach (var stored in SessionRepository.LoadMessages(sessionId))
+        var storedMessages = SessionRepository.LoadMessages(sessionId);
+        ShowStoredStats(storedMessages);
+        foreach (var stored in storedMessages)
         {
             var isUser = string.Equals(stored.Role, ChatRole.User.Value, StringComparison.OrdinalIgnoreCase);
             var displayMessage = new DisplayMessage { IsUser = isUser, Text = stored.Content, ReasoningText = stored.ReasoningContent ?? "", CreatedAt = stored.CreatedAt.ToLocalTime() };
@@ -2847,6 +2848,22 @@
             }
         }
         return result;
+    }
+
+    /// <summary>
+    /// An opened chat shows its own figures straight away: "Last reply" from its newest reply that has them, and the
+    /// session totals added up over all its replies. (Older replies saved before these were recorded count as none.)
+    /// </summary>
+    private void ShowStoredStats(List<StoredChatMessage> stored)
+    {
+        var withStats = stored.Where(m => m.InputTokens is not null).ToList();
+        var last = withStats.LastOrDefault();
+        _lastInputTokens = last?.InputTokens ?? 0;
+        _lastOutputTokens = last?.OutputTokens ?? 0;
+        _lastTokensPerSecond = last?.TokensPerSecond ?? 0;
+        _lastTimeToFirstToken = last?.TimeToFirstToken ?? 0;
+        _sessionTotalInputTokens = withStats.Sum(m => m.InputTokens ?? 0);
+        _sessionTotalOutputTokens = withStats.Sum(m => m.OutputTokens ?? 0);
     }
 
     private async Task RefreshStatsAsync()

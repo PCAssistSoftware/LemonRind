@@ -12,6 +12,12 @@ public class StoredChatMessage
     // ToolCallResult.SerializeForStorage (older rows hold just comma-separated
     // tool names, e.g. "search_web,read_webpage").
     public string? ToolCalls { get; set; }
+
+    // What the turn cost, saved with an assistant reply (null on older rows and on other messages).
+    public int? InputTokens { get; set; }
+    public int? OutputTokens { get; set; }
+    public double? TokensPerSecond { get; set; }
+    public double? TimeToFirstToken { get; set; }
 }
 
 public class FolderSummary
@@ -463,7 +469,8 @@ public class ChatSessionRepository(AppDatabase database)
         using var connection = database.OpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Role, Content, ReasoningContent, CreatedAt, ToolCalls FROM Messages
+            SELECT Role, Content, ReasoningContent, CreatedAt, ToolCalls,
+                   InputTokens, OutputTokens, TokensPerSecond, TimeToFirstToken FROM Messages
             WHERE SessionId = @sessionId
             ORDER BY Id ASC;
             """;
@@ -479,6 +486,10 @@ public class ChatSessionRepository(AppDatabase database)
                 ReasoningContent = reader.IsDBNull(2) ? null : reader.GetString(2),
                 CreatedAt = DateTimeHelpers.ParseUtc(reader.GetString(3)),
                 ToolCalls = reader.IsDBNull(4) ? null : reader.GetString(4),
+                InputTokens = reader.IsDBNull(5) ? null : reader.GetInt32(5),
+                OutputTokens = reader.IsDBNull(6) ? null : reader.GetInt32(6),
+                TokensPerSecond = reader.IsDBNull(7) ? null : reader.GetDouble(7),
+                TimeToFirstToken = reader.IsDBNull(8) ? null : reader.GetDouble(8),
             });
         }
 
