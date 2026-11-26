@@ -675,7 +675,7 @@
    wwwroot/lemon.js), not a single-line <input>. */
 /* The assistant's cat at the top of a side panel: a fixed-size screen that does not shrink in the panel. */
 .lr-avatar {
-    height: 190px;
+    height: 220px;
     flex-shrink: 0;
     border-radius: 10px;
     overflow: hidden;
