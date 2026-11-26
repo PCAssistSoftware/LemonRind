@@ -23,13 +23,14 @@ Keeping four editions in step is not practical, so from November 2026 only two a
 - **Blazor** is kept as the .NET edition, to keep up with Microsoft's AI libraries. It gets fixes when a Lemonade release changes something, and new features when they are worth bringing across, so it will not always match the Python edition.
 - **WPF** and **Avalonia** are **archived**: no longer developed, and not tested against new Lemonade releases. Their code stays here for reference and still builds, but a future Lemonade may change something they rely on.
 
-The feature lists below describe the editions as they were when WPF and Avalonia were archived; newer features are in the Blazor and Python editions only.
+The feature lists below describe the editions as they were when WPF and Avalonia were archived; newer features are in the Blazor and Python editions only. The one exception is the avatar, which the Avalonia edition also has.
 
 ## Requirements
 
 - A running [Lemonade Server](https://lemonade-server.ai/) instance (local or on your network), with at least one chat model downloaded
 - **WPF**: Windows and the .NET 10 runtime
 - **Avalonia / Blazor**: the .NET 10 SDK to build and run from source (or the runtime to run a published build) on Windows, Linux or macOS
+- **Avalonia on Linux**: the WebKitGTK libraries for the avatar (on Ubuntu or Debian: `sudo apt install libgtk-3-0 libwebkit2gtk-4.1-0 libsoup-3.0-0`). Windows uses WebView2, which comes with Windows 11; macOS uses its own WebKit.
 - Optional, per module you want to use: a web search/read engine (self-hosted [SearXNG](https://docs.searxng.org/), or an API key for Jina, Tavily, or Firecrawl), an MCP server (e.g. Postmark for email - needs Node.js for `npx`-based servers)
 
 ## The three editions
@@ -55,6 +56,7 @@ The same app as a native desktop application on Windows, Linux and macOS, from o
 - A light/dark theme (follows the system, or choose in Settings -> Interface)
 - Resizable side panes (their widths are remembered), vector icons, relative times in the chat list
 - A log viewer with severity/text filtering, pause and copy
+- The same animated cat avatar as the Blazor edition, shown in a built-in web view. Choose Genie, Jess or Sid, and whether it sits at the top of the chat list or the stats panel, in Settings -> Interface.
 
 ```
 dotnet run --project LemonRind_Avalonia/LemonRindAvalonia.csproj

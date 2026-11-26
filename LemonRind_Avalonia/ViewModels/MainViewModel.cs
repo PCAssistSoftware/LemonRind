@@ -497,6 +497,58 @@ public partial class MainViewModel : ObservableObject
         _serverStatsTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
         _serverStatsTimer.Tick += async (_, _) => await RefreshServerLoadAsync();
         _serverStatsTimer.Start();
+
+        _avatar = new AvatarBrain(SendToAvatar);
+        _avatarTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+        _avatarTimer.Tick += async (_, _) => await OnAvatarTickAsync();
+        _avatarTimer.Start();
+    }
+
+    // --- The assistant's cat (see AvatarBrain) ---------------------------------------------------------------------
+
+    private readonly AvatarBrain _avatar;
+    private readonly DispatcherTimer _avatarTimer;
+    private int _avatarTicks;
+
+    /// <summary>A message for the cat page, as JSON; the window passes it to the web view.</summary>
+    public event Action<string>? AvatarMessage;
+
+    /// <summary>Settings closed: the window shows, hides or moves the cat, or loads another one.</summary>
+    public event Action? AvatarSettingsChanged;
+
+    public bool AvatarEnabled => _settings.Ui.AvatarEnabled;
+    public string AvatarCat => AvatarBrain.Cats.Contains(_settings.Ui.AvatarCat) ? _settings.Ui.AvatarCat : "genie";
+    public bool AvatarOnRight => string.Equals(_settings.Ui.AvatarPosition, "right", StringComparison.OrdinalIgnoreCase);
+
+
+    /// <summary>The page has (re)loaded: tell it where things stand.</summary>
+    public void AvatarPageLoaded() => _avatar.Resend();
+
+    private void SendToAvatar(object message)
+    {
+        if (_settings.Ui.AvatarEnabled) AvatarMessage?.Invoke(JsonSerializer.Serialize(message));
+    }
+
+    private async Task OnAvatarTickAsync()
+    {
+        _avatar.Tick();
+        _avatarTicks++;
+        // Every 30 seconds, while no reply is running: is the chosen chat model loaded? With none, the cat sleeps.
+        if (_avatarTicks % 150 == 15 && !IsBusy) await RefreshAvatarModelReadyAsync();
+    }
+
+    private async Task RefreshAvatarModelReadyAsync()
+    {
+        try
+        {
+            var health = await _managementClient.GetHealthAsync(CancellationToken.None);
+            _avatar.SetModelReady(health is not null && !string.IsNullOrEmpty(SelectedModel)
+                && health.AllModelsLoaded.Any(m => string.Equals(m.ModelName, SelectedModel, StringComparison.OrdinalIgnoreCase)));
+        }
+        catch
+        {
+            _avatar.SetModelReady(false); // Lemonade cannot be reached
+        }
     }
 
     private readonly DispatcherTimer _serverStatsTimer;
@@ -549,6 +601,7 @@ public partial class MainViewModel : ObservableObject
             RefreshKnowledgeBases();
             IsKnowledgeModuleEnabled = _moduleRegistry.AllModules.FirstOrDefault(m => m.ConfigKey == "Knowledge")?.IsEnabled ?? false;
             RefreshModuleStatusDisplay();
+            AvatarSettingsChanged?.Invoke(); // shown, hidden, another cat or the other side
         };
         window.Show();
     }
@@ -1533,6 +1586,9 @@ public partial class MainViewModel : ObservableObject
 
         IsBusy = true;
         SendCommand.NotifyCanExecuteChanged();
+        _avatar.TurnStarted();
+        var avatarStopped = false; // how the turn ended, for the cat's look afterwards
+        var avatarFailed = false;
         try
         {
             // Selecting an image-labeled model directly
@@ -1617,6 +1673,7 @@ public partial class MainViewModel : ObservableObject
                 {
                     if (update.FinishReason is { } reason) finishReason = reason;
                     fullReply.Append(update.Text);
+                    _avatar.OnText(update.Text);
                     assistantBubble.Text = fullReply.ToString();
 
                     // Prompt-processing progress ("Processing
@@ -1684,6 +1741,7 @@ public partial class MainViewModel : ObservableObject
                         {
                             fullReasoning.Append(reasoning.Text);
                             assistantBubble.ReasoningText = fullReasoning.ToString();
+                            if (fullReply.Length == 0) _avatar.OnThinking();
 
                             // Reasoning tokens don't flip hasStartedAnswering
                             // (that's reserved for real answer text - see
@@ -1707,6 +1765,7 @@ public partial class MainViewModel : ObservableObject
                         else if (content is FunctionCallContent functionCall && !assistantBubble.ToolCalls.Any(t => t.CallId == functionCall.CallId))
                         {
                             assistantBubble.ToolCalls.Add(new ToolCallResult { Name = functionCall.Name, CallId = functionCall.CallId });
+                            _avatar.OnThinking();
                         }
                         else if (content is FunctionResultContent functionResult)
                         {
@@ -1739,6 +1798,7 @@ public partial class MainViewModel : ObservableObject
                 // rather than discarding it - a partial answer the user
                 // watched arrive is still worth keeping.
                 wasCancelled = true;
+                avatarStopped = true;
                 if (fullReply.Length > 0) fullReply.Append(' ');
                 fullReply.Append("[Stopped]");
                 assistantBubble.Text = fullReply.ToString();
@@ -1843,9 +1903,12 @@ public partial class MainViewModel : ObservableObject
         {
             assistantBubble.Text = $"⚠️ Something went wrong generating a reply: {ex.Message}";
             StatusText = "Error - see reply above";
+            avatarFailed = true;
         }
         finally
         {
+            if (avatarStopped) _avatar.TurnStopped();
+            else _avatar.TurnFinished(ok: !avatarFailed);
             assistantBubble.IsStreaming = false;
             _generationCts = null;
             IsBusy = false;
@@ -2422,7 +2485,11 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
-    partial void OnInputTextChanged(string value) => SendCommand.NotifyCanExecuteChanged();
+    partial void OnInputTextChanged(string value)
+    {
+        SendCommand.NotifyCanExecuteChanged();
+        if (!string.IsNullOrEmpty(value)) _avatar?.Typing(); // null only while the constructor is still running
+    }
 
     partial void OnAttachedImagePathChanged(string? value) => SendCommand.NotifyCanExecuteChanged();
 

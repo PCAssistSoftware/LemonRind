@@ -238,6 +238,15 @@
                         <CheckBox IsChecked="{Binding ThinkingPanelOpenByDefault}" Content="Thinking panel open by default" />
                         <TextBlock Text="Expand a reply's reasoning panel automatically instead of starting collapsed. Applies to replies shown from now on - no restart needed."
                                    Foreground="{DynamicResource TextMuted}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8" />
+
+                        <TextBlock Text="Avatar" FontWeight="Bold" Margin="0,8,0,0" />
+                        <CheckBox IsChecked="{Binding AvatarEnabled}" Content="Show the avatar" />
+                        <TextBlock Text="An animated cat avatar that shows what the assistant is doing: listening while you type, thinking, speaking as the reply arrives, and asleep when no model is loaded or nothing has happened for a while."
+                                   Foreground="{DynamicResource TextMuted}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8" />
+                        <TextBlock Text="Cat" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <ComboBox ItemsSource="{Binding AvatarCatOptions}" SelectedItem="{Binding AvatarCat}" HorizontalAlignment="Left" MinWidth="180" Margin="0,0,0,8" />
+                        <TextBlock Text="Where it sits" Foreground="{DynamicResource TextMuted}" FontSize="12" />
+                        <ComboBox ItemsSource="{Binding AvatarPositionOptions}" SelectedItem="{Binding AvatarPosition}" HorizontalAlignment="Left" MinWidth="240" Margin="0,0,0,8" />
                     </StackPanel>
 
                     <StackPanel Spacing="4" IsVisible="{Binding SelectedSection, Converter={x:Static conv:SectionVisibilityConverter.Instance}, ConverterParameter=Storage}">

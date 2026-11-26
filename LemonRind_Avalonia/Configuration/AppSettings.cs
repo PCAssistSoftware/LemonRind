@@ -160,6 +160,11 @@ public class UiSettings
     /// <summary>Widths of the resizable side panes (set by dragging the splitters); 0 = use the default.</summary>
     public double SidebarWidth { get; set; } = 0;
     public double RightPanelWidth { get; set; } = 0;
+
+    /// <summary>The assistant's cat (see Services/AvatarBrain).</summary>
+    public bool AvatarEnabled { get; set; } = true;
+    public string AvatarCat { get; set; } = "genie";       // genie, jess or sid
+    public string AvatarPosition { get; set; } = "left";   // top of the chat list (left) or of the stats panel (right)
 }
 
 public class ModuleSettings
@@ -260,5 +265,8 @@ public class AppSettings
         target.Ui.Theme = Ui.Theme;
         target.Ui.SidebarWidth = Ui.SidebarWidth;
         target.Ui.RightPanelWidth = Ui.RightPanelWidth;
+        target.Ui.AvatarEnabled = Ui.AvatarEnabled;
+        target.Ui.AvatarCat = Ui.AvatarCat;
+        target.Ui.AvatarPosition = Ui.AvatarPosition;
     }
 }

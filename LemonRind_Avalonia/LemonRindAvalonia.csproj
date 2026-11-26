@@ -11,10 +11,13 @@
   <ItemGroup>
     <Folder Include="Models\" />
     <AvaloniaResource Include="Assets\**" />
+    <!-- The assistant's cat: a self-contained web page shown in a NativeWebView, read from beside the app. -->
+    <Content Include="Avatar\holo-cat.html" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.1.3" />
+    <PackageReference Include="Avalonia.Controls.WebView" Version="12.1.2" />
     <PackageReference Include="Avalonia.Desktop" Version="12.1.3" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.3" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.3" />

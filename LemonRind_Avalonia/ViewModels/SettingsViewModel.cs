@@ -136,6 +136,13 @@ public partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty] private bool _thinkingPanelOpenByDefault;
 
+    // The assistant's cat: shown or not, which cat, and which side panel it sits at the top of.
+    public string[] AvatarCatOptions { get; } = ["Genie", "Jess", "Sid"];
+    public string[] AvatarPositionOptions { get; } = ["Top of the chat list (left)", "Top of the stats panel (right)"];
+    [ObservableProperty] private bool _avatarEnabled = true;
+    [ObservableProperty] private string _avatarCat = "Genie";
+    [ObservableProperty] private string _avatarPosition = "Top of the chat list (left)";
+
     // Theme (System / Light / Dark): applied the moment it's picked so the choice is visible straight away, and
     // persisted with Save like every other field.
     public string[] ThemeOptions => LemonRindAvalonia.Services.ThemeService.Options;
@@ -354,6 +361,9 @@ public partial class SettingsViewModel : ObservableObject
         StorageSummaryText = string.Join(Environment.NewLine, StorageUsage.BuildLines(_settings.AppData.ResolvedDataFolder()));
 
         ThinkingPanelOpenByDefault = _settings.Ui.ThinkingPanelOpenByDefault;
+        AvatarEnabled = _settings.Ui.AvatarEnabled;
+        AvatarCat = AvatarCatOptions.FirstOrDefault(c => string.Equals(c, _settings.Ui.AvatarCat, StringComparison.OrdinalIgnoreCase)) ?? "Genie";
+        AvatarPosition = AvatarPositionOptions[string.Equals(_settings.Ui.AvatarPosition, "right", StringComparison.OrdinalIgnoreCase) ? 1 : 0];
         Theme = string.IsNullOrWhiteSpace(_settings.Ui.Theme) ? "System" : _settings.Ui.Theme;
         // Test hook: LEMONRIND_SECTION=Modules etc. preselects a section (used for screenshots).
         if (Environment.GetEnvironmentVariable("LEMONRIND_SECTION") is { } testSection && Sections.Contains(testSection)) SelectedSection = testSection;
@@ -861,6 +871,9 @@ public partial class SettingsViewModel : ObservableObject
         _settings.Modules.MaxToolOutputChars = (int)Math.Clamp(ModulesMaxToolOutputChars, 500, 1_000_000);
 
         _settings.Ui.ThinkingPanelOpenByDefault = ThinkingPanelOpenByDefault;
+        _settings.Ui.AvatarEnabled = AvatarEnabled;
+        _settings.Ui.AvatarCat = (AvatarCat ?? "Genie").ToLowerInvariant();
+        _settings.Ui.AvatarPosition = AvatarPosition == AvatarPositionOptions[1] ? "right" : "left";
         _settings.Ui.Theme = Theme;
 
         _settings.AppData.DataFolder = string.IsNullOrWhiteSpace(DataFolder) ? new AppDataSettings().DataFolder : DataFolder.Trim();

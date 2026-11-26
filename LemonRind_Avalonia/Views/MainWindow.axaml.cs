@@ -3,6 +3,7 @@ using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using LemonRindAvalonia.Services;
 using LemonRindAvalonia.ViewModels;
 
 namespace LemonRindAvalonia.Views;
@@ -126,9 +127,74 @@ public partial class MainWindow : Window
         }
     }
 
+    // --- The assistant's cat (see AvatarBrain) ---------------------------------------------------------------------
+    // A web page (Avatar/holo-cat.html) in a NativeWebView: WebView2 on Windows, WKWebView on macOS, WebKit on Linux.
+
+    private NativeWebView? _avatarView;
+    private bool _avatarPageReady;
+
+    /// <summary>Show, hide or move the cat, or load another one, to match Settings.</summary>
+    private void ShowAvatar()
+    {
+        if (DataContext is not MainViewModel viewModel) return;
+        var host = viewModel.AvatarOnRight ? AvatarHostRight : AvatarHostLeft;
+        var other = viewModel.AvatarOnRight ? AvatarHostLeft : AvatarHostRight;
+        other.Child = null;
+        other.IsVisible = false;
+        if (!viewModel.AvatarEnabled)
+        {
+            host.Child = null;
+            host.IsVisible = false;
+            _avatarView = null;
+            return;
+        }
+        if (_avatarView is null || host.Child != _avatarView)
+        {
+            // A native view cannot simply be moved between panels, so the other side gets a new one.
+            _avatarView = new NativeWebView();
+            _avatarView.NavigationCompleted += OnAvatarPageLoaded;
+            host.Child = _avatarView;
+        }
+        host.IsVisible = true;
+        _avatarPageReady = false;
+        _avatarView.Source = AvatarBrain.PageUrl(viewModel.AvatarCat);
+    }
+
+    private void OnAvatarPageLoaded(object? sender, WebViewNavigationCompletedEventArgs e)
+    {
+        if (!e.IsSuccess || sender != _avatarView || DataContext is not MainViewModel viewModel) return;
+        _avatarPageReady = true;
+        viewModel.AvatarPageLoaded();
+    }
+
+    private async void OnAvatarMessage(string json)
+    {
+        if (_avatarView is null || !_avatarPageReady) return;
+        try { await _avatarView.InvokeScript($"window.postMessage({json}, '*')"); }
+        catch (Exception) { /* the page is reloading or closing: the next message or the reload's Resend catches up */ }
+    }
+
+    // The cat fills the panel's width at a 10:9 shape, between 200 and 360 pixels tall (as in the other editions).
+    private static void SizeAvatarHost(Border host)
+    {
+        var height = Math.Clamp(host.Bounds.Width * 0.9, 200, 360);
+        if (double.IsNaN(host.Height) || Math.Abs(host.Height - height) > 0.5) host.Height = height; // NaN = not set yet
+    }
+
     private async void OnWindowOpened(object? sender, EventArgs e)
     {
         ApplyPaneWidths();
+
+        foreach (var host in new[] { AvatarHostLeft, AvatarHostRight })
+        {
+            host.PropertyChanged += (_, change) => { if (change.Property == BoundsProperty) SizeAvatarHost(host); };
+        }
+        if (DataContext is MainViewModel avatarViewModel)
+        {
+            avatarViewModel.AvatarMessage += OnAvatarMessage;
+            avatarViewModel.AvatarSettingsChanged += ShowAvatar;
+            ShowAvatar();
+        }
 
         if (DataContext is MainViewModel hookViewModel) _ = RunTestHooksAsync(hookViewModel);
         // Wired up here, not via a plain KeyDown="..." XAML attribute on

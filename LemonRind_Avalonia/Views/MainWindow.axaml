@@ -141,11 +141,13 @@
 
         <!-- Sidebar -->
         <Border Grid.Column="0" Background="{DynamicResource PaneBg}" />
-        <Grid Grid.Column="0" RowDefinitions="Auto,Auto,*,Auto" Margin="8">
-            <Button Grid.Row="0" Command="{Binding NewChatCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="10,12" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8">
+        <Grid Grid.Column="0" RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="8">
+            <!-- The assistant's cat (see AvatarBrain); filled from code-behind when it sits on this side. -->
+            <Border x:Name="AvatarHostLeft" Grid.Row="0" Margin="0,0,0,8" CornerRadius="8" ClipToBounds="True" IsVisible="False" />
+            <Button Grid.Row="1" Command="{Binding NewChatCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="10,12" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8">
                 <StackPanel Orientation="Horizontal" Spacing="9" HorizontalAlignment="Center"><ctl:Icon Kind="plus" Width="18" Height="18" /><TextBlock Text="New chat" VerticalAlignment="Center" /></StackPanel>
             </Button>
-            <TextBox Grid.Row="1" Text="{Binding SearchText}" PlaceholderText="Search chats" Margin="0,0,0,8" />
+            <TextBox Grid.Row="2" Text="{Binding SearchText}" PlaceholderText="Search chats" Margin="0,0,0,8" />
 
             <!-- SidebarItems is a flat mix of FolderHeaderSummary
                  and ChatSessionSummary rows (see MainViewModel.
@@ -153,7 +155,7 @@
                  deliberately, so Avalonia picks the matching IMPLICIT
                  DataTemplate below (one per type, keyed only by DataType,
                  no x:Key) automatically per row. -->
-            <ListBox Grid.Row="2" Classes="sidebar-list" Background="Transparent" ItemsSource="{Binding SidebarItems}" SelectedItem="{Binding SelectedSidebarItem}">
+            <ListBox Grid.Row="3" Classes="sidebar-list" Background="Transparent" ItemsSource="{Binding SidebarItems}" SelectedItem="{Binding SelectedSidebarItem}">
                 <ListBox.DataTemplates>
                     <DataTemplate x:DataType="vm:FolderHeaderSummary">
                         <Button Command="{Binding ToggleExpandedCommand}"
@@ -274,7 +276,7 @@
                     </DataTemplate>
                 </ListBox.DataTemplates>
             </ListBox>
-            <Button Grid.Row="3"
+            <Button Grid.Row="4"
                     Command="{Binding OpenSettingsCommand}"
                     HorizontalAlignment="Stretch"
                     HorizontalContentAlignment="Center"
@@ -872,8 +874,10 @@
                  WPF app's own equivalent panel too. Each one's Visibility
                  switches with the active tab, same as the two ScrollViewers
                  above them. -->
-            <Grid RowDefinitions="Auto,*,Auto">
-                <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="4" Margin="0,0,0,8">
+            <Grid RowDefinitions="Auto,Auto,*,Auto">
+                <!-- The assistant's cat (see AvatarBrain); filled from code-behind when it sits on this side. -->
+                <Border x:Name="AvatarHostRight" Grid.Row="0" Margin="0,0,0,8" CornerRadius="8" ClipToBounds="True" IsVisible="False" />
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="4" Margin="0,0,0,8">
                     <Button Content="Stats"
                             Command="{Binding SelectRightPanelTabCommand}"
                             CommandParameter="Stats"
@@ -888,7 +892,7 @@
                      Modules tab's card treatment), with the actual numbers
                      shown as big bold "stat tiles" (value + small caption
                      underneath) rather than plain label: value text lines. -->
-                <ScrollViewer Grid.Row="1" IsVisible="{Binding IsStatsTabActive}">
+                <ScrollViewer Grid.Row="2" IsVisible="{Binding IsStatsTabActive}">
                     <StackPanel Spacing="10">
                         <Border Background="{DynamicResource CardBg}" CornerRadius="8" Padding="10"
                                 IsVisible="{Binding ServerLoad, Converter={x:Static ObjectConverters.IsNotNull}}">
@@ -971,7 +975,7 @@
                      green/red convention, the module name, and its
                      Enabled/Disabled label as a light pill) rather than
                      plain text lines. -->
-                <ScrollViewer Grid.Row="1" IsVisible="{Binding IsModulesTabActive}">
+                <ScrollViewer Grid.Row="2" IsVisible="{Binding IsModulesTabActive}">
                     <ItemsControl ItemsSource="{Binding ModuleStatusItems}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="vm:ModuleStatusItem">
@@ -997,14 +1001,14 @@
                     </ItemsControl>
                 </ScrollViewer>
 
-                <StackPanel Grid.Row="2" Spacing="6" Margin="0,8,0,0" IsVisible="{Binding IsStatsTabActive}">
+                <StackPanel Grid.Row="3" Spacing="6" Margin="0,8,0,0" IsVisible="{Binding IsStatsTabActive}">
                     <Button Command="{Binding OpenSystemPromptCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="10,12" FontSize="14"><StackPanel Orientation="Horizontal" Spacing="9" HorizontalAlignment="Center"><ctl:Icon Kind="file-text" Width="17" Height="17" /><TextBlock Text="View system prompt" VerticalAlignment="Center" /></StackPanel></Button>
                     <Button Command="{Binding OpenTurnContextCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="10,12" FontSize="14"><StackPanel Orientation="Horizontal" Spacing="9" HorizontalAlignment="Center"><ctl:Icon Kind="layers" Width="17" Height="17" /><TextBlock Text="View turn context" VerticalAlignment="Center" /></StackPanel></Button>
                     <Button Command="{Binding OpenToolsSentCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="10,12" FontSize="14"><StackPanel Orientation="Horizontal" Spacing="9" HorizontalAlignment="Center"><ctl:Icon Kind="wrench" Width="17" Height="17" /><TextBlock Text="View tools sent" VerticalAlignment="Center" /></StackPanel></Button>
                     <Button Command="{Binding OpenUsageCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="10,12" FontSize="14"><StackPanel Orientation="Horizontal" Spacing="9" HorizontalAlignment="Center"><ctl:Icon Kind="chart" Width="17" Height="17" /><TextBlock Text="View usage" VerticalAlignment="Center" /></StackPanel></Button>
                     <Button Command="{Binding OpenLogViewerCommand}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Padding="10,12" FontSize="14"><StackPanel Orientation="Horizontal" Spacing="9" HorizontalAlignment="Center"><ctl:Icon Kind="terminal" Width="17" Height="17" /><TextBlock Text="View logs" VerticalAlignment="Center" /></StackPanel></Button>
                 </StackPanel>
-                <Button Grid.Row="2"
+                <Button Grid.Row="3"
                         Command="{Binding OpenSettingsCommand}"
                         IsVisible="{Binding IsModulesTabActive}"
                         HorizontalAlignment="Stretch"
