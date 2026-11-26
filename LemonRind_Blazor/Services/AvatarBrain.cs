@@ -33,7 +33,7 @@ public sealed class AvatarBrain(Action<object> send, Func<double>? clock = null)
     public bool ModelReady { get; private set; } = true;
 
     /// <summary>The cat page's address for one of the cats (genie, jess or sid).</summary>
-    public static string PageUrl(string cat) => $"avatar/holo-cat.html?debug=0&label=0&cat={Uri.EscapeDataString(cat)}&cps={TextSpeed}";
+    public static string PageUrl(string cat) => $"avatar/holo-cat.html?debug=0&label=0&zoom=1.1&cat={Uri.EscapeDataString(cat)}&cps={TextSpeed}";
 
     public void Typing()
     {

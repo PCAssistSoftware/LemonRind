@@ -673,9 +673,13 @@
 
 /* A textarea (Enter sends, Shift+Enter = newline, grows to 140px - see
    wwwroot/lemon.js), not a single-line <input>. */
-/* The assistant's cat at the top of a side panel: a fixed-size screen that does not shrink in the panel. */
+/* The assistant's cat at the top of a side panel: as wide as the panel, its height following the width (within
+   limits), so widening the panel gives a bigger cat. It does not shrink when the panel is short. */
 .lr-avatar {
-    height: 220px;
+    align-self: stretch;
+    aspect-ratio: 10 / 9;
+    min-height: 200px;
+    max-height: 360px;
     flex-shrink: 0;
     border-radius: 10px;
     overflow: hidden;
