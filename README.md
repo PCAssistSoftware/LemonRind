@@ -8,7 +8,7 @@ A local-first AI assistant backed by a locally-running [Lemonade Server](https:/
 |---|---|---|---|---|
 | **Blazor** | `LemonRind_Blazor\` | C#, Blazor Server, .NET 10 | Any OS - the app runs as a small web server and you use it in a browser | Maintained |
 | **Python** | [`LemonRind_Python`](https://github.com/PCAssistSoftware/LemonRind_Python) (own repo) | Python 3.12+, NiceGUI (plus a terminal chat) | Any OS - the app runs as a small web server and you use it in a browser | Main edition |
-| **WPF** (the original) | `LemonRind_WPF\` | VB.NET, WPF, .NET 10 | Windows | **Archived** |
+| **WPF** | `LemonRind_WPF\` | VB.NET, WPF, .NET 10 | Windows | **Archived** |
 | **Avalonia** | `LemonRind_Avalonia\` | C#, Avalonia 12, .NET 10 | Windows, Linux, macOS (native desktop app) | **Archived** |
 
 This was built as a learning exercise and proof of concept - a way to explore agentic AI app design (tool calling, memory, context management, RAG) hands-on, not a polished commercial product. The WPF app came first; the Avalonia and Blazor editions were then ported from it, stage by stage, to see how the same design carries across UI frameworks and operating systems.
