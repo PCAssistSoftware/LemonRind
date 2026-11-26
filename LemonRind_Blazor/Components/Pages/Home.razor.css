@@ -673,6 +673,22 @@
 
 /* A textarea (Enter sends, Shift+Enter = newline, grows to 140px - see
    wwwroot/lemon.js), not a single-line <input>. */
+/* The assistant's cat at the top of a side panel: a fixed-size screen that does not shrink in the panel. */
+.lr-avatar {
+    height: 190px;
+    flex-shrink: 0;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+}
+
+.lr-avatar iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    display: block;
+}
+
 .queued-strip {
     display: flex;
     align-items: center;

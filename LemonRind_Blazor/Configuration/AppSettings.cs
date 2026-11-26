@@ -165,6 +165,11 @@ public class SchedulerSettings
 public class UiSettings
 {
     public bool ThinkingPanelOpenByDefault { get; set; } = false;
+
+    // The animated cat that shows what the assistant is doing (Settings > Interface).
+    public bool AvatarEnabled { get; set; } = true;
+    public string AvatarCat { get; set; } = "genie";       // genie, jess or sid
+    public string AvatarPosition { get; set; } = "left";   // top of the chat list (left) or of the stats panel (right)
 }
 
 /// <summary>
@@ -245,6 +250,9 @@ public class AppSettings
         target.Backup.KeepCount = Backup.KeepCount;
 
         target.Ui.ThinkingPanelOpenByDefault = Ui.ThinkingPanelOpenByDefault;
+        target.Ui.AvatarEnabled = Ui.AvatarEnabled;
+        target.Ui.AvatarCat = Ui.AvatarCat;
+        target.Ui.AvatarPosition = Ui.AvatarPosition;
 
         target.Scheduler.JobTimeoutSeconds = Scheduler.JobTimeoutSeconds;
         target.Scheduler.MaxToolRounds = Scheduler.MaxToolRounds;

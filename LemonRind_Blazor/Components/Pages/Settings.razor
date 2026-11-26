@@ -218,6 +218,33 @@
                             <span class="module-description">Expand a reply's reasoning panel automatically instead of starting collapsed</span>
                         </label>
                     </div>
+                    <h4>The assistant's cat</h4>
+                    <div class="toggle-row">
+                        <label class="switch">
+                            <input type="checkbox" id="avatar-enabled" checked="@_edited.Ui.AvatarEnabled"
+                                   @onchange="e => _edited.Ui.AvatarEnabled = (bool)e.Value!" />
+                            <span class="slider"></span>
+                        </label>
+                        <label class="toggle-text" for="avatar-enabled">
+                            <span class="module-name">Show the cat</span>
+                            <span class="module-description">An animated cat that shows what the assistant is doing: listening while you type, thinking, speaking as the reply arrives, and asleep when no model is loaded or nothing has happened for a while</span>
+                        </label>
+                    </div>
+                    <label>
+                        Cat
+                        <select id="avatar-cat" value="@_edited.Ui.AvatarCat" @onchange='e => _edited.Ui.AvatarCat = e.Value?.ToString() ?? "genie"'>
+                            <option value="genie">Genie</option>
+                            <option value="jess">Jess</option>
+                            <option value="sid">Sid</option>
+                        </select>
+                    </label>
+                    <label>
+                        Where it sits
+                        <select id="avatar-position" value="@_edited.Ui.AvatarPosition" @onchange='e => _edited.Ui.AvatarPosition = e.Value?.ToString() ?? "left"'>
+                            <option value="left">Top of the chat list (left)</option>
+                            <option value="right">Top of the stats panel (right)</option>
+                        </select>
+                    </label>
                 </section>
             }
             else if (_selectedSection == "Memories")

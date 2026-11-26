@@ -35,6 +35,10 @@
     @* Narrow windows: the chat list and the Stats/Modules panel become slide-in drawers (see the media queries in Home.razor.css). *@
     <div class="drawer-backdrop" @onclick="CloseDrawers"></div>
     <div class="sidebar">
+        @if (Settings.Ui.AvatarEnabled && Settings.Ui.AvatarPosition != "right")
+        {
+            <div class="lr-avatar"><iframe id="lr-avatar" src="@AvatarBrain.PageUrl(Settings.Ui.AvatarCat)" title="Assistant status"></iframe></div>
+        }
         <button class="new-chat-btn" @onclick="NewChat"><Icon Name="plus" Size="15" /> New chat</button>
         <input class="search-box" placeholder="Search chats" @bind="_searchText" @bind:event="oninput" @bind:after="OnSearchChanged" />
         <div class="session-list">
@@ -338,7 +342,7 @@
                     }
                 </select>
             }
-            <textarea @ref="_inputBox" @bind="_inputText" @bind:event="oninput" rows="1"
+            <textarea @ref="_inputBox" @bind="_inputText" @bind:event="oninput" @bind:after="OnInputTyped" rows="1"
                       placeholder="@(_isBusy ? "Type to queue a message for the assistant (Enter)" : "Type a message...")" class="input-box"></textarea>
             @if (_isBusy)
             {
@@ -354,6 +358,10 @@
     <div class="resize-handle" data-var="--rpanel-w" data-side="right" title="Drag to resize - double-click to reset"></div>
 
     <div class="right-panel">
+        @if (Settings.Ui.AvatarEnabled && Settings.Ui.AvatarPosition == "right")
+        {
+            <div class="lr-avatar"><iframe id="lr-avatar" src="@AvatarBrain.PageUrl(Settings.Ui.AvatarCat)" title="Assistant status"></iframe></div>
+        }
         <div class="right-panel-tabs">
             <button class="right-panel-tab @(_rightPanelTab == "Stats" ? "active" : "")" @onclick='() => _rightPanelTab = "Stats"'>Stats</button>
             <button class="right-panel-tab @(_rightPanelTab == "Modules" ? "active" : "")" @onclick='() => _rightPanelTab = "Modules"'>Modules</button>
@@ -1558,6 +1566,7 @@
         // transitions.
         _connectionRetryTimer = new Timer(OnConnectionRetryTimerTick, null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15));
         _serverStatsTimer = new Timer(OnServerStatsTimerTick, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(3));
+        StartAvatar();
     }
 
     /// <summary>
@@ -1624,12 +1633,58 @@
             var health = await ManagementClient.GetHealthAsync(CancellationToken.None);
             _isHealthy = string.Equals(health?.Status, "ok", StringComparison.OrdinalIgnoreCase) || health is not null;
             _lastHealthCheckError = null;
+            _avatar?.SetModelReady(IsSelectedModelLoaded(health));
         }
         catch (Exception ex)
         {
             _isHealthy = false;
             _lastHealthCheckError = ex.Message;
+            _avatar?.SetModelReady(false);
         }
+    }
+
+    private bool IsSelectedModelLoaded(LemonadeHealthInfo? health) =>
+        health is not null && !string.IsNullOrEmpty(_selectedModel)
+        && health.AllModelsLoaded.Any(m => string.Equals(m.ModelName, _selectedModel, StringComparison.OrdinalIgnoreCase));
+
+    // --- The assistant's cat (see AvatarBrain) ---------------------------------------------------------------------
+
+    private AvatarBrain? _avatar;
+    private Timer? _avatarTimer;
+    private int _avatarTicks;
+
+    private void StartAvatar()
+    {
+        _avatar = new AvatarBrain(SendToAvatar);
+        _avatarTimer = new Timer(OnAvatarTick, null, TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(200));
+    }
+
+    private void OnInputTyped() => _avatar?.Typing();
+
+    private void SendToAvatar(object message)
+    {
+        if (!Settings.Ui.AvatarEnabled) return;
+        _ = SendToAvatarAsync(message);
+    }
+
+    private async Task SendToAvatarAsync(object message)
+    {
+        try { await JS.InvokeVoidAsync("lemon.avatarSend", message); }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException or TaskCanceledException) { /* page closing or not ready */ }
+    }
+
+    private void OnAvatarTick(object? state)
+    {
+        _ = InvokeAsync(async () =>
+        {
+            if (_avatar is null) return;
+            _avatarTicks++;
+            _avatar.Tick();
+            // The page needs a moment to load before it takes messages: then tell it where things stand.
+            if (_avatarTicks == 10) _avatar.Resend();
+            // Every 30 seconds, while no reply is running: is a chat model loaded?
+            if (_avatarTicks % 150 == 15 && !_isBusy) await RefreshHealthAsync();
+        });
     }
 
     private void RefreshSessions()
@@ -2299,6 +2354,7 @@
 
         _inputText = "";
         _isBusy = true;
+        _avatar?.TurnStarted();
 
         // _history[0] only gets the STABLE refresh here (see
         // RefreshStableSystemPrompt's own comment on why). This turn's
@@ -2394,6 +2450,7 @@
         if (_modelCategories.GetValueOrDefault(_selectedModel) == ModelCategoryImage)
         {
             await SendImageGenerationTurnAsync(userText, assistantMessage, cts.Token);
+            _avatar?.TurnFinished(ok: true);
             _sendCts = null;
             _isBusy = false;
             StateHasChanged();
@@ -2458,6 +2515,7 @@
             {
                 if (update.FinishReason is { } reason) finishReason = reason;
                 fullReply.Append(update.Text);
+                _avatar?.OnText(update.Text);
                 assistantMessage.Text = fullReply.ToString();
 
                 foreach (var content in update.Contents)
@@ -2465,11 +2523,13 @@
                     if (content is TextReasoningContent reasoning)
                     {
                         fullReasoning.Append(reasoning.Text);
+                        if (fullReply.Length == 0) _avatar?.OnThinking();
                         assistantMessage.ReasoningText = fullReasoning.ToString();
                     }
                     else if (content is FunctionCallContent functionCall && !assistantMessage.ToolCalls.Any(t => t.CallId == functionCall.CallId))
                     {
                         assistantMessage.ToolCalls.Add(new ToolCallResult { Name = functionCall.Name, CallId = functionCall.CallId });
+                        _avatar?.OnThinking();
                     }
                     else if (content is FunctionResultContent functionResult)
                     {
@@ -2561,6 +2621,8 @@
 
         // A reply that has text but stopped at the output limit may stop part way: say so, and offer to carry on.
         assistantMessage.IsCutOff = !wasCancelled && !hadError && finishReason == ChatFinishReason.Length && fullReply.Length > 0;
+        if (wasCancelled) _avatar?.TurnStopped();
+        else _avatar?.TurnFinished(ok: !hadError);
 
         var replyText = fullReply.ToString();
         assistantMessage.GeneratedImageUrl = TryExtractGeneratedImageUrl(replyText);
@@ -2888,6 +2950,7 @@
         _sendCts?.Cancel();
         _connectionRetryTimer?.Dispose();
         _serverStatsTimer?.Dispose();
+        _avatarTimer?.Dispose();
         ApprovalGate.OnPendingRequestChanged -= OnPendingApprovalChanged;
         SchedulerNotifier.SessionUpdated -= OnSchedulerSessionUpdated;
         RunningJobs.Changed -= OnRunningJobsChanged;

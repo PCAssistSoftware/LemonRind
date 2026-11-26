@@ -1,5 +1,11 @@
 // Small browser-side helpers the Blazor pages can't do from C# alone.
 window.lemon = {
+    // Passes a message to the assistant's cat (the avatar iframe), if it is on the page.
+    avatarSend(message) {
+        const frame = document.getElementById('lr-avatar');
+        if (frame && frame.contentWindow) frame.contentWindow.postMessage(message, '*');
+    },
+
     // Enter sends, Shift+Enter inserts a newline (matches the desktop apps).
     // Has to be a real DOM listener: a Blazor @onkeydown can't conditionally
     // preventDefault in time, since the round trip to the server is async.
