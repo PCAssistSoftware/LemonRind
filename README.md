@@ -2,18 +2,28 @@
 
 ### "All the zest, none of the cloud."
 
-A local-first AI assistant backed by a locally-running [Lemonade Server](https://lemonade-server.ai/) - everything runs on your own machine, including the model itself. It comes in **three editions** that share one feature set:
+A local-first AI assistant backed by a locally-running [Lemonade Server](https://lemonade-server.ai/) - everything runs on your own machine, including the model itself. It was written in **three .NET editions** plus a separate Python edition. Two of the .NET editions are now archived (see [Project status](#project-status)):
 
-| Edition | Folder | Stack | Runs on |
-|---|---|---|---|
-| **WPF** (the original) | `LemonRind_WPF\` | VB.NET, WPF, .NET 10 | Windows |
-| **Avalonia** | `LemonRind_Avalonia\` | C#, Avalonia 12, .NET 10 | Windows, Linux, macOS (native desktop app) |
-| **Blazor** | `LemonRind_Blazor\` | C#, Blazor Server, .NET 10 | Any OS - the app runs as a small web server and you use it in a browser |
-| **Python** | [`LemonRind_Python`](https://github.com/PCAssistSoftware/LemonRind_Python) (own repo) | Python 3.12+, NiceGUI (plus a terminal chat) | Any OS - the app runs as a small web server and you use it in a browser |
+| Edition | Folder | Stack | Runs on | Status |
+|---|---|---|---|---|
+| **WPF** (the original) | `LemonRind_WPF\` | VB.NET, WPF, .NET 10 | Windows | **Archived** |
+| **Avalonia** | `LemonRind_Avalonia\` | C#, Avalonia 12, .NET 10 | Windows, Linux, macOS (native desktop app) | **Archived** |
+| **Blazor** | `LemonRind_Blazor\` | C#, Blazor Server, .NET 10 | Any OS - the app runs as a small web server and you use it in a browser | Maintained |
+| **Python** | [`LemonRind_Python`](https://github.com/PCAssistSoftware/LemonRind_Python) (own repo) | Python 3.12+, NiceGUI (plus a terminal chat) | Any OS - the app runs as a small web server and you use it in a browser | Main edition |
 
 This was built as a learning exercise and proof of concept - a way to explore agentic AI app design (tool calling, memory, context management, RAG) hands-on, not a polished commercial product. The WPF app came first; the Avalonia and Blazor editions were then ported from it, stage by stage, to see how the same design carries across UI frameworks and operating systems.
 
 I then decided to create a Python version as everything I read tells me that is the better route to take when programming for AI tools, and it was an area I wanted to learn about.
+
+## Project status
+
+Keeping four editions in step is not practical, so from November 2026 only two are developed:
+
+- **Python** is the main edition. New features arrive there first.
+- **Blazor** is kept as the .NET edition, to keep up with Microsoft's AI libraries. It gets fixes when a Lemonade release changes something, and new features when they are worth bringing across, so it will not always match the Python edition.
+- **WPF** and **Avalonia** are **archived**: no longer developed, and not tested against new Lemonade releases. Their code stays here for reference and still builds, but a future Lemonade may change something they rely on.
+
+The feature lists below describe the editions as they were when WPF and Avalonia were archived; newer features are in the Blazor and Python editions only.
 
 ## Requirements
 
@@ -26,7 +36,9 @@ I then decided to create a Python version as everything I read tells me that is 
 
 Everything below under "Core chat experience" to "Data & security" applies to **all three** unless noted. The solution file `LemonRind.slnx` opens all three projects together in Visual Studio; `LemonRind.CrossPlatform.slnx` holds just Avalonia and Blazor, for building on Linux or macOS (the WPF project is Windows-only).
 
-### WPF (`LemonRind_WPF`)
+### WPF (`LemonRind_WPF`) - archived
+
+**Archived: no longer developed** (see [Project status](#project-status)).
 
 The original and the behavioural reference for the other two. Open `LemonRind.slnx` in Visual Studio, or:
 
@@ -34,7 +46,9 @@ The original and the behavioural reference for the other two. Open `LemonRind.sl
 dotnet run --project LemonRind_WPF/LemonRind.vbproj
 ```
 
-### Avalonia (`LemonRind_Avalonia`) - cross-platform desktop
+### Avalonia (`LemonRind_Avalonia`) - cross-platform desktop, archived
+
+**Archived: no longer developed** (see [Project status](#project-status)).
 
 The same app as a native desktop application on Windows, Linux and macOS, from one C# codebase. It additionally has:
 
